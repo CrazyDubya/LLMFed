@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+# Add other dependencies here, e.g., sqlalchemy, pydantic, requests, kafka-python/pika
+sqlalchemy
+psycopg2-binary
