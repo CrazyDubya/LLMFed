@@ -52,7 +52,6 @@ def create_agent(db: Session, agent_data: AgentCreateData) -> AgentDB | None:
     # Generate server-side fields
     agent_id = str(uuid.uuid4())
     api_key = f"llmfed_{uuid.uuid4()}"
-    created_at = datetime.now().isoformat()
 
     # Create SQLAlchemy DB model instance
     db_agent = AgentDB(
@@ -62,10 +61,11 @@ def create_agent(db: Session, agent_data: AgentCreateData) -> AgentDB | None:
         role=agent_data.role,
         gimmick_description=agent_data.gimmick_description,
         llm_config=agent_data.llm_config, # Store dict directly
-        created_at=created_at,
         api_key=api_key,
         webhook_url=agent_data.webhook_url,
-        federation_id=agent_data.federation_id # Assign federation_id from input
+        federation_id=agent_data.federation_id, # Assign federation_id from input
+        current_heat=agent_data.current_heat,
+        momentum=agent_data.momentum
     )
 
     try:
@@ -168,7 +168,6 @@ def create_federation(db: Session, fed_data: FederationCreateData) -> Federation
     logger.info(f"Attempting to create federation '{fed_data.name}' for user {fed_data.owner_user_id}")
     # Generate server-side fields
     federation_id = str(uuid.uuid4())
-    created_at = datetime.now().isoformat()
 
     # Create SQLAlchemy DB model instance
     db_federation = FederationDB(
@@ -177,7 +176,8 @@ def create_federation(db: Session, fed_data: FederationCreateData) -> Federation
         description=fed_data.description,
         tier=fed_data.tier,
         owner_user_id=fed_data.owner_user_id,
-        created_at=created_at
+        max_agents=fed_data.max_agents,
+        is_active=fed_data.is_active
     )
 
     try:

@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLMFed - AI Wrestling Federation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        h1 {
+            color: #333;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #666;
+            font-size: 1.1rem;
+        }
+        
+        .main-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .card h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5rem;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #5a67d8;
+        }
+        
+        .agent-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .agent-item {
+            padding: 10px;
+            margin-bottom: 10px;
+            background: #f7f7f7;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .agent-name {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .agent-role {
+            font-size: 0.9rem;
+            color: #666;
+        }
+        
+        .heat-indicator {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #ff6b6b;
+            color: white;
+            border-radius: 3px;
+            font-size: 0.8rem;
+        }
+        
+        .status-bar {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            font-size: 0.9rem;
+            color: #666;
+        }
+        
+        .error {
+            background: #fee;
+            color: #c00;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        
+        .success {
+            background: #efe;
+            color: #060;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>LLMFed</h1>
+            <p class="subtitle">AI-Powered Wrestling Federation Simulator</p>
+        </header>
+
+        <div class="main-grid">
+            <!-- Create Agent Card -->
+            <div class="card">
+                <h2>Create Agent</h2>
+                <form id="create-agent-form">
+                    <div class="form-group">
+                        <label for="agent-name">Agent Name</label>
+                        <input type="text" id="agent-name" required placeholder="e.g., The Undertaker">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="agent-role">Role</label>
+                        <select id="agent-role">
+                            <option value="participant">Participant (Wrestler)</option>
+                            <option value="referee">Referee</option>
+                            <option value="announcer">Announcer</option>
+                            <option value="promoter">Promoter</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="agent-gimmick">Gimmick Description</label>
+                        <textarea id="agent-gimmick" required placeholder="Describe the character's personality and style..."></textarea>
+                    </div>
+                    
+                    <button type="submit">Create Agent</button>
+                    <div id="agent-status"></div>
+                </form>
+            </div>
+
+            <!-- Agents List Card -->
+            <div class="card">
+                <h2>Active Agents</h2>
+                <div class="agent-list" id="agents-list">
+                    <p style="color: #999;">Loading agents...</p>
+                </div>
+                <button onclick="refreshAgents()">Refresh</button>
+            </div>
+
+            <!-- Engine Control Card -->
+            <div class="card">
+                <h2>Engine Control</h2>
+                <div class="form-group">
+                    <label for="tick-count">Number of Ticks</label>
+                    <input type="number" id="tick-count" value="1" min="1" max="100">
+                </div>
+                <button onclick="advanceEngine()">Advance Simulation</button>
+                <div class="status-bar" id="engine-status">
+                    Ready
+                </div>
+            </div>
+
+            <!-- Federation Info Card -->
+            <div class="card">
+                <h2>Federation Status</h2>
+                <div id="federation-info">
+                    <p><strong>API Status:</strong> <span id="api-status">Checking...</span></p>
+                    <p><strong>Database:</strong> <span id="db-status">Checking...</span></p>
+                    <p><strong>Engine:</strong> <span id="engine-status-info">Checking...</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8091';
+        
+        // Check API health on load
+        async function checkHealth() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                
+                document.getElementById('api-status').textContent = data.status === 'ok' ? 'Connected' : 'Error';
+                document.getElementById('db-status').textContent = data.database === 'connected' ? 'Connected' : 'Error';
+                document.getElementById('engine-status-info').textContent = data.engine_initialized ? 'Initialized' : 'Not initialized';
+            } catch (error) {
+                document.getElementById('api-status').textContent = 'Offline';
+                document.getElementById('db-status').textContent = 'Unknown';
+                document.getElementById('engine-status-info').textContent = 'Unknown';
+            }
+        }
+        
+        // Create agent
+        document.getElementById('create-agent-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const statusDiv = document.getElementById('agent-status');
+            statusDiv.innerHTML = '<div class="status-bar">Creating agent...</div>';
+            
+            const agentData = {
+                user_id: 'web_user_' + Date.now(),
+                name: document.getElementById('agent-name').value,
+                role: document.getElementById('agent-role').value,
+                gimmick_description: document.getElementById('agent-gimmick').value,
+                llm_config: {
+                    model: 'gpt-3.5-turbo',
+                    temperature: 0.8
+                }
+            };
+            
+            try {
+                const response = await fetch(`${API_BASE}/agents`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(agentData)
+                });
+                
+                if (response.ok) {
+                    const agent = await response.json();
+                    statusDiv.innerHTML = `<div class="success">Agent "${agent.name}" created successfully!</div>`;
+                    document.getElementById('create-agent-form').reset();
+                    refreshAgents();
+                } else {
+                    const error = await response.json();
+                    statusDiv.innerHTML = `<div class="error">Error: ${error.detail || 'Failed to create agent'}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="error">Connection error: ${error.message}</div>`;
+            }
+        });
+        
+        // Refresh agents list
+        async function refreshAgents() {
+            const listDiv = document.getElementById('agents-list');
+            listDiv.innerHTML = '<p style="color: #999;">Loading agents...</p>';
+            
+            try {
+                // First get all federations
+                const fedResponse = await fetch(`${API_BASE}/federations`);
+                const federations = await fedResponse.json();
+                
+                // Then get agents for each federation (simplified - assuming no federation for now)
+                const agents = [];
+                
+                // Also try to get agents directly if available
+                // Note: This endpoint might not exist, but we'll try
+                for (const fed of federations) {
+                    const agentsResponse = await fetch(`${API_BASE}/federations/${fed.federation_id}/agents`);
+                    if (agentsResponse.ok) {
+                        const fedAgents = await agentsResponse.json();
+                        agents.push(...fedAgents);
+                    }
+                }
+                
+                if (agents.length === 0) {
+                    listDiv.innerHTML = '<p style="color: #999;">No agents found. Create one to get started!</p>';
+                } else {
+                    listDiv.innerHTML = agents.map(agent => `
+                        <div class="agent-item">
+                            <div>
+                                <div class="agent-name">${agent.name}</div>
+                                <div class="agent-role">${agent.role}</div>
+                            </div>
+                            <div class="heat-indicator">Heat: ${agent.current_heat}</div>
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                listDiv.innerHTML = `<p style="color: #c00;">Error loading agents: ${error.message}</p>`;
+            }
+        }
+        
+        // Advance engine
+        async function advanceEngine() {
+            const statusDiv = document.getElementById('engine-status');
+            statusDiv.textContent = 'Running simulation...';
+            
+            const ticks = document.getElementById('tick-count').value;
+            
+            try {
+                const response = await fetch(`${API_BASE}/engine/advance?n_ticks=${ticks}`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    const results = await response.json();
+                    statusDiv.textContent = `Completed ${results.length} tick(s) successfully`;
+                } else {
+                    const error = await response.json();
+                    statusDiv.textContent = `Error: ${error.detail || 'Failed to advance engine'}`;
+                }
+            } catch (error) {
+                statusDiv.textContent = `Connection error: ${error.message}`;
+            }
+        }
+        
+        // Initialize on load
+        window.addEventListener('load', () => {
+            checkHealth();
+            refreshAgents();
+            
+            // Refresh health status every 10 seconds
+            setInterval(checkHealth, 10000);
+        });
+    </script>
+</body>
+</html>
