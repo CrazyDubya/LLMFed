@@ -32,7 +32,8 @@ class LLMClient:
         if base and ("127.0.0.1" in base or "localhost" in base):
             self.force_remote = True
             # Set dummy API key so openai library allows requests through local proxy
-            openai.api_key = "local_proxy_dummy"
+            if OPENAI_AVAILABLE:
+                openai.api_key = "local_proxy_dummy"
             self.api_key = "local_proxy_dummy"
         # Dynamically pick up model name at init
         self.model_name = os.getenv("OPENAI_MODEL", MODEL_NAME)
