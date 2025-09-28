@@ -56,8 +56,7 @@ logs/
 *.sqlite
 *.sqlite3
 
-# Models and data
-models/
+# Data and ML artifacts
 data/
 cache/
 *.pkl
