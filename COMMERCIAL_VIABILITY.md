@@ -568,7 +568,6 @@ DLC Packs ($4.99-9.99 each):
 
 **Technical:**
 - [ ] Fix failing tests (prioritize multi-role tick processing)
-- [ ] Add pytest to requirements.txt
 - [ ] Create Docker deployment configuration
 - [ ] Implement basic JWT authentication
 - [ ] Set up GitHub Actions CI/CD
