@@ -351,7 +351,7 @@ DLC Packs ($4.99-9.99 each):
 - Target: 50 paying beta users ($500 MRR)
 
 **Phase 3: Public Launch (Month 4)**
-- ProductHunt launch
+- Product Hunt launch
 - Wrestling news sites (WrestleTalk, Fightful)
 - Tech press (TechCrunch, The Verge - AI angle)
 - YouTube influencer partnerships (5-10 creators)
