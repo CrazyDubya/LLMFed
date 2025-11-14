@@ -82,7 +82,7 @@
    - **Gap**: Limited narrative depth, simple AI
    - **Opportunity**: Superior storytelling through LLMs
 
-3. **JourneyScale/AI Dungeon**
+3. **Latitude/AI Dungeon**
    - AI-powered interactive storytelling
    - Subscription model ($10-30/month)
    - **Gap**: Generic fantasy, not wrestling-focused
