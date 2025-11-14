@@ -450,7 +450,7 @@ DLC Packs ($4.99-9.99 each):
   - Value: 150M+ active users
 
 **AI/Tech Companies:**
-- **Ollama, HuggingFace**
+- **Ollama, Hugging Face**
   - Partnership: Featured showcase, model optimization
   - Value: Technical support + visibility
 
