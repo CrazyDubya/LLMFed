@@ -30,7 +30,7 @@ class PromptBuilder:
             "backstage": BackstageActionResponse,
         }
         ResponseModel = schema_map.get(context.role, AgentActionResponse)
-        schema = ResponseModel.schema()
+        schema = ResponseModel.model_json_schema()
         # Optional role-specific instruction
         preamble = f"You are acting as the {context.role}. Respond accordingly."
         return {
@@ -43,7 +43,7 @@ class PromptBuilder:
             # Include full state (e.g., gimmick, heat, momentum, match context)
             "state": context.state,
             # List available actions for agent
-            "available_actions": [action.dict() for action in context.available_actions],
+            "available_actions": [action.model_dump() for action in context.available_actions],
             "hints": hints,
             # JSON schema reminder for agent to follow when responding
             "response_schema": schema,

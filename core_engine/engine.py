@@ -125,7 +125,7 @@ class Engine:
         try:
             if role == "participant":
                 resp = AgentActionResponse(**data)
-                return resp.chosen_action_id, resp.commentary or "", {k: v for k,v in resp.dict().items() if k not in ("event_id","chosen_action_id","commentary")}
+                return resp.chosen_action_id, resp.commentary or "", {k: v for k,v in resp.model_dump().items() if k not in ("event_id","chosen_action_id","commentary")}
             if role == "referee":
                 resp = RefereeCallResponse(**data)
                 aid = f"referee_{resp.call}"
@@ -199,7 +199,7 @@ class Engine:
                             request_id=request.request_id,
                             agent_id=agent_id,
                             due_tick=tick_index,
-                            context_json=context.json(),
+                            context_json=context.model_dump_json(),
                             status="processed"
                         ))
                         db.commit()
