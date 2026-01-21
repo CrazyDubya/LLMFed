@@ -58,9 +58,14 @@ except ImportError:
 # Import error handlers and validation
 from api_gateway.error_handlers import register_error_handlers, ResourceNotFoundError
 from api_gateway.validation import ValidationError
+from api_gateway.logging_config import setup_logging, logging_middleware, performance_monitor
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+import os
+log_level = os.getenv("LOG_LEVEL", "INFO")
+use_json_logging = os.getenv("JSON_LOGGING", "false").lower() == "true"
+setup_logging(log_level=log_level, use_json=use_json_logging)
+
 logger = logging.getLogger(__name__)
 
 # Initialize rate limiter
@@ -68,8 +73,44 @@ limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="LLMFed API",
-    description="API for managing and interacting with LLM Wrestling Agents and Federations.",
-    version="0.1.0"
+    description="""
+# LLMFed - Federated Learning Management System
+
+An AI-powered wrestling federation simulator featuring autonomous LLM agents.
+
+## Features
+
+* 🤖 **Multi-Agent AI System**: Six distinct agent roles
+* ⚡ **Tick-Based Simulation**: Discrete time-step processing
+* 🧠 **LLM Integration**: Support for multiple providers
+* 🎯 **Dynamic Storytelling**: Emergent narratives
+* 🔒 **Security**: JWT auth, rate limiting, CORS
+* 📊 **Monitoring**: Built-in performance tracking
+
+## Authentication
+
+Most endpoints require JWT authentication. Get your token from `/auth/token` endpoint.
+
+## Rate Limiting
+
+- Root endpoint: 100 requests/minute
+- Agent creation: 10 requests/minute
+- Other endpoints: Configurable per endpoint
+
+## Documentation
+
+For complete usage examples, see the [API Usage Examples](https://github.com/CrazyDubya/LLMFed/blob/main/API_USAGE_EXAMPLES.md).
+    """,
+    version="0.2.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_tags=[
+        {"name": "health", "description": "Health check endpoints"},
+        {"name": "federations", "description": "Federation management operations"},
+        {"name": "agents", "description": "Agent management operations"},
+        {"name": "engine", "description": "Simulation engine control"},
+        {"name": "monitoring", "description": "Performance monitoring"}
+    ]
 )
 
 # Add rate limiter to app state
@@ -88,12 +129,15 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
     allow_headers=["*"],
-    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
+    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "X-Request-ID"],
 )
 
 # Add trusted host middleware (prevent host header attacks)
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
+
+# Add logging middleware
+app.middleware("http")(logging_middleware)
 
 
 # Security headers middleware
@@ -111,7 +155,7 @@ async def add_security_headers(request: Request, call_next):
 # Register error handlers
 register_error_handlers(app)
 
-@app.get("/", summary="Root endpoint", description="Provides a simple welcome message.")
+@app.get("/", summary="Root endpoint", description="Provides a simple welcome message.", tags=["health"])
 @limiter.limit("100/minute")
 def read_root(request: Request):
     logger.info("Root endpoint accessed.")
@@ -468,13 +512,46 @@ def prompter_hints(request: PrompterHintRequest):
     prompt = PromptBuilder.build_prompt(request.context, request.hints)
     return prompt
 
-@app.get("/health")
+@app.get("/health", tags=["health"])
 def health_check():
+    """Enhanced health check endpoint."""
+    from datetime import datetime
     return {
         "status": "ok",
+        "version": "0.2.0",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
         "database": "connected",
-        "engine_initialized": True
+        "engine_initialized": True,
+        "services": {
+            "api": "up",
+            "database": "connected",
+            "engine": "initialized"
+        }
     }
+
+@app.get("/metrics", tags=["monitoring"], summary="Performance Metrics")
+def get_performance_metrics():
+    """
+    Get performance metrics for API endpoints.
+    
+    Returns statistics about request counts, durations, and error rates.
+    """
+    from datetime import datetime
+    metrics = performance_monitor.get_metrics()
+    return {
+        "endpoints": metrics,
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    }
+
+@app.post("/metrics/reset", tags=["monitoring"], summary="Reset Metrics")
+def reset_performance_metrics():
+    """
+    Reset performance metrics.
+    
+    Clears all collected metrics. Useful for starting fresh monitoring periods.
+    """
+    performance_monitor.reset_metrics()
+    return {"message": "Metrics reset successfully"}
 
 @app.get("/api/tags", summary="List available LLM models from proxy")
 def list_proxy_models():

@@ -6,7 +6,7 @@ Provides validation functions and decorators for request data.
 
 import re
 from typing import Optional, List
-from pydantic import BaseModel, validator, Field
+from pydantic import BaseModel, field_validator, Field
 from fastapi import HTTPException, status
 
 
@@ -242,24 +242,28 @@ class EnhancedAgentCreateData(BaseModel):
     llm_config: dict
     federation_id: Optional[str] = Field(None, max_length=100)
     
-    @validator('user_id')
+    @field_validator('user_id')
+    @classmethod
     def validate_user_id_field(cls, v):
         """Validate user ID format."""
         return validate_user_id(v)
     
-    @validator('name')
+    @field_validator('name')
+    @classmethod
     def validate_name_field(cls, v):
         """Validate agent name format."""
         return validate_agent_name(v)
     
-    @validator('gimmick_description')
+    @field_validator('gimmick_description')
+    @classmethod
     def validate_gimmick(cls, v):
         """Validate gimmick description."""
         if v:
             return sanitize_string(v, max_length=500)
         return v
     
-    @validator('llm_config')
+    @field_validator('llm_config')
+    @classmethod
     def validate_llm_config_field(cls, v):
         """Validate LLM config structure."""
         if not isinstance(v, dict):
@@ -287,19 +291,22 @@ class EnhancedFederationCreateData(BaseModel):
     tier: int = Field(default=1, ge=1, le=5)
     owner_user_id: str = Field(..., min_length=3, max_length=100)
     
-    @validator('name')
+    @field_validator('name')
+    @classmethod
     def validate_name_field(cls, v):
         """Validate federation name format."""
         return validate_federation_name(v)
     
-    @validator('description')
+    @field_validator('description')
+    @classmethod
     def validate_description_field(cls, v):
         """Validate description."""
         if v:
             return sanitize_string(v, max_length=1000)
         return v
     
-    @validator('owner_user_id')
+    @field_validator('owner_user_id')
+    @classmethod
     def validate_owner_field(cls, v):
         """Validate owner user ID."""
         return validate_user_id(v)
