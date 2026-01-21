@@ -3,7 +3,9 @@ import os
 os.environ.setdefault("OPENAI_MODEL", "long-gemma")
 os.environ.setdefault("OPENAI_API_BASE", "http://127.0.0.1:11434/v1")
 
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from dataclasses import asdict
 import logging
 import traceback
@@ -11,6 +13,9 @@ from typing import Optional, List
 import uuid
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Import models
 try:
@@ -54,21 +59,62 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(
     title="LLMFed API",
     description="API for managing and interacting with LLM Wrestling Agents and Federations.",
     version="0.1.0"
 )
 
+# Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Configure CORS
+ALLOWED_ORIGINS = os.getenv(
+    "CORS_ORIGINS", 
+    "http://localhost:3000,http://localhost:8091"
+).split(",")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allow_headers=["*"],
+    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
+)
+
+# Add trusted host middleware (prevent host header attacks)
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
+
+
+# Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Add security headers to all responses."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = "default-src 'self'"
+    return response
+
 @app.get("/", summary="Root endpoint", description="Provides a simple welcome message.")
-def read_root():
+@limiter.limit("100/minute")
+def read_root(request: Request):
     logger.info("Root endpoint accessed.")
     return {"message": "Welcome to the LLMFed API"}
 
 # --- Agent Management Endpoints ---
 
 @app.post("/agents", summary="Create Agent", response_model=Agent, status_code=201)
-def create_agent_endpoint(agent_data: AgentCreateData, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def create_agent_endpoint(request: Request, agent_data: AgentCreateData, db: Session = Depends(get_db)):
     """Creates a new LLM agent in the database."""
     logger.info(f"Received request to create agent for user: {agent_data.user_id}")
 
@@ -360,7 +406,16 @@ def list_narrative_logs(limit: int = Query(100, ge=1, le=1000), db: Session = De
 
 @app.get("/engine/debug", summary="Engine Debug Info")
 def engine_debug():
-    """Return engine and database status."""
+    """Return engine and database status. Only available in debug mode."""
+    # Check if debug mode is enabled via environment variable
+    debug_enabled = os.getenv("DEBUG_MODE", "false").lower() == "true"
+    
+    if not debug_enabled:
+        raise HTTPException(
+            status_code=404,
+            detail="Endpoint not found"
+        )
+    
     from agent_service.database import engine
     from models.db_models import Base
     from sqlalchemy import inspect
