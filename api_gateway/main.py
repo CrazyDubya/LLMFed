@@ -3,7 +3,9 @@ import os
 os.environ.setdefault("OPENAI_MODEL", "long-gemma")
 os.environ.setdefault("OPENAI_API_BASE", "http://127.0.0.1:11434/v1")
 
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from dataclasses import asdict
 import logging
 import traceback
@@ -11,6 +13,9 @@ from typing import Optional, List
 import uuid
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Import models
 try:
@@ -50,25 +55,117 @@ except ImportError:
     from core_engine.prompt_builder import PromptBuilder
     from core_engine.llm_client import LLMClient
 
+# Import error handlers and validation
+from api_gateway.error_handlers import register_error_handlers, ResourceNotFoundError
+from api_gateway.validation import ValidationError
+from api_gateway.logging_config import setup_logging, logging_middleware, performance_monitor
+
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+import os
+log_level = os.getenv("LOG_LEVEL", "INFO")
+use_json_logging = os.getenv("JSON_LOGGING", "false").lower() == "true"
+setup_logging(log_level=log_level, use_json=use_json_logging)
+
 logger = logging.getLogger(__name__)
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="LLMFed API",
-    description="API for managing and interacting with LLM Wrestling Agents and Federations.",
-    version="0.1.0"
+    description="""
+# LLMFed - Federated Learning Management System
+
+An AI-powered wrestling federation simulator featuring autonomous LLM agents.
+
+## Features
+
+* 🤖 **Multi-Agent AI System**: Six distinct agent roles
+* ⚡ **Tick-Based Simulation**: Discrete time-step processing
+* 🧠 **LLM Integration**: Support for multiple providers
+* 🎯 **Dynamic Storytelling**: Emergent narratives
+* 🔒 **Security**: JWT auth, rate limiting, CORS
+* 📊 **Monitoring**: Built-in performance tracking
+
+## Authentication
+
+Most endpoints require JWT authentication. Get your token from `/auth/token` endpoint.
+
+## Rate Limiting
+
+- Root endpoint: 100 requests/minute
+- Agent creation: 10 requests/minute
+- Other endpoints: Configurable per endpoint
+
+## Documentation
+
+For complete usage examples, see the [API Usage Examples](https://github.com/CrazyDubya/LLMFed/blob/main/API_USAGE_EXAMPLES.md).
+    """,
+    version="0.2.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_tags=[
+        {"name": "health", "description": "Health check endpoints"},
+        {"name": "federations", "description": "Federation management operations"},
+        {"name": "agents", "description": "Agent management operations"},
+        {"name": "engine", "description": "Simulation engine control"},
+        {"name": "monitoring", "description": "Performance monitoring"}
+    ]
 )
 
-@app.get("/", summary="Root endpoint", description="Provides a simple welcome message.")
-def read_root():
+# Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Configure CORS
+ALLOWED_ORIGINS = os.getenv(
+    "CORS_ORIGINS", 
+    "http://localhost:3000,http://localhost:8091"
+).split(",")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allow_headers=["*"],
+    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "X-Request-ID"],
+)
+
+# Add trusted host middleware (prevent host header attacks)
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
+
+# Add logging middleware
+app.middleware("http")(logging_middleware)
+
+
+# Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Add security headers to all responses."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = "default-src 'self'"
+    return response
+
+# Register error handlers
+register_error_handlers(app)
+
+@app.get("/", summary="Root endpoint", description="Provides a simple welcome message.", tags=["health"])
+@limiter.limit("100/minute")
+def read_root(request: Request):
     logger.info("Root endpoint accessed.")
     return {"message": "Welcome to the LLMFed API"}
 
 # --- Agent Management Endpoints ---
 
 @app.post("/agents", summary="Create Agent", response_model=Agent, status_code=201)
-def create_agent_endpoint(agent_data: AgentCreateData, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def create_agent_endpoint(request: Request, agent_data: AgentCreateData, db: Session = Depends(get_db)):
     """Creates a new LLM agent in the database."""
     logger.info(f"Received request to create agent for user: {agent_data.user_id}")
 
@@ -360,7 +457,16 @@ def list_narrative_logs(limit: int = Query(100, ge=1, le=1000), db: Session = De
 
 @app.get("/engine/debug", summary="Engine Debug Info")
 def engine_debug():
-    """Return engine and database status."""
+    """Return engine and database status. Only available in debug mode."""
+    # Check if debug mode is enabled via environment variable
+    debug_enabled = os.getenv("DEBUG_MODE", "false").lower() == "true"
+    
+    if not debug_enabled:
+        raise HTTPException(
+            status_code=404,
+            detail="Endpoint not found"
+        )
+    
     from agent_service.database import engine
     from models.db_models import Base
     from sqlalchemy import inspect
@@ -406,13 +512,46 @@ def prompter_hints(request: PrompterHintRequest):
     prompt = PromptBuilder.build_prompt(request.context, request.hints)
     return prompt
 
-@app.get("/health")
+@app.get("/health", tags=["health"])
 def health_check():
+    """Enhanced health check endpoint."""
+    from datetime import datetime
     return {
         "status": "ok",
+        "version": "0.2.0",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
         "database": "connected",
-        "engine_initialized": True
+        "engine_initialized": True,
+        "services": {
+            "api": "up",
+            "database": "connected",
+            "engine": "initialized"
+        }
     }
+
+@app.get("/metrics", tags=["monitoring"], summary="Performance Metrics")
+def get_performance_metrics():
+    """
+    Get performance metrics for API endpoints.
+    
+    Returns statistics about request counts, durations, and error rates.
+    """
+    from datetime import datetime
+    metrics = performance_monitor.get_metrics()
+    return {
+        "endpoints": metrics,
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    }
+
+@app.post("/metrics/reset", tags=["monitoring"], summary="Reset Metrics")
+def reset_performance_metrics():
+    """
+    Reset performance metrics.
+    
+    Clears all collected metrics. Useful for starting fresh monitoring periods.
+    """
+    performance_monitor.reset_metrics()
+    return {"message": "Metrics reset successfully"}
 
 @app.get("/api/tags", summary="List available LLM models from proxy")
 def list_proxy_models():

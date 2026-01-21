@@ -7,3 +7,7 @@ python-dotenv
 httpx
 openai
 pytest
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+slowapi
