@@ -55,6 +55,10 @@ except ImportError:
     from core_engine.prompt_builder import PromptBuilder
     from core_engine.llm_client import LLMClient
 
+# Import error handlers and validation
+from api_gateway.error_handlers import register_error_handlers, ResourceNotFoundError
+from api_gateway.validation import ValidationError
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -103,6 +107,9 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     response.headers["Content-Security-Policy"] = "default-src 'self'"
     return response
+
+# Register error handlers
+register_error_handlers(app)
 
 @app.get("/", summary="Root endpoint", description="Provides a simple welcome message.")
 @limiter.limit("100/minute")
