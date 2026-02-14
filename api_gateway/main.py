@@ -503,11 +503,11 @@ def prompter_hints(request: PrompterHintRequest):
 @app.get("/health", tags=["health"])
 def health_check():
     """Enhanced health check endpoint."""
-    from datetime import datetime
+    from datetime import datetime, timezone
     return {
         "status": "ok",
         "version": "0.2.0",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "database": "connected",
         "engine_initialized": True,
         "services": {
@@ -524,11 +524,11 @@ def get_performance_metrics():
     
     Returns statistics about request counts, durations, and error rates.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
     metrics = performance_monitor.get_metrics()
     return {
         "endpoints": metrics,
-        "timestamp": datetime.utcnow().isoformat() + "Z"
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     }
 
 @app.post("/metrics/reset", tags=["monitoring"], summary="Reset Metrics")

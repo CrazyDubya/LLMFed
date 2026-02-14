@@ -9,12 +9,11 @@ from __future__ import annotations
 
 from typing import Dict, Any
 
-
 class RuleBook:
     """Static utility to validate actions."""
 
     @staticmethod
-    def validate(action_id: str, description: str | None = None, meta: Dict[str, Any] | None = None) -> AppliedAction:
+    def validate(action_id: str, description: str | None = None, meta: Dict[str, Any] | None = None):
         """Return an AppliedAction — trivial pass-through for now."""
         from core_engine.engine import AppliedAction
         return AppliedAction(

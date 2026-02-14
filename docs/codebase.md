@@ -19,24 +19,26 @@ This document provides an overview of the codebase structure, components, and fu
 │   ├── __init__.py
 │   ├── __pycache__/
 │   └── main.py
-├── codebase.md           # This documentation file
-├── codebase_template.md  # Original template file
 ├── config.py             # Configuration settings (currently database URL)
-├── core_engine/          # Placeholder for core simulation logic
+├── docs/                 # Long-form documentation (this file, usage guide, etc.)
+│   ├── codebase.md       # This documentation file
+│   └── ...
+├── scripts/              # Demo and helper scripts
+│   ├── demo.py
+│   └── ...
+├── core_engine/         # Core simulation logic
 │   ├── __init__.py
 │   ├── engine.py
 │   ├── dispatcher.py
 │   ├── rulebook.py
 │   └── heat.py
-├── llm_abstraction/      # Placeholder for LLM interaction layer
+├── llm_abstraction/     # LLM interaction layer
 │   └── __init__.py
-├── llmfed.db             # SQLite database file
-├── models/               # Data models (Pydantic entities, SQLAlchemy DB models)
+├── models/              # Data models (Pydantic entities, SQLAlchemy DB models)
 │   ├── __init__.py
-│   ├── __pycache__/
 │   ├── db_models.py
 │   └── entities.py
-└── requirements.txt      # Project dependencies
+└── requirements.txt     # Project dependencies
 ```
 
 ## File Descriptions

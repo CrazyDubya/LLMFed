@@ -1,7 +1,9 @@
 import pytest
+import uuid
 from agent_service.database import SessionLocal, init_db
 from agent_service.crud import create_federation, get_federation_by_id, get_federations
 from models.entities import FederationCreateData, FederationUpdateData
+
 
 @pytest.fixture(scope="module")
 def db():
@@ -12,8 +14,9 @@ def db():
 
 
 def test_create_get_federation(db):
+    unique_name = f"Fed1_{uuid.uuid4().hex[:8]}"
     fed_data = FederationCreateData(
-        name="Fed1",
+        name=unique_name,
         description="Desc",
         tier="independent",
         owner_user_id="owner1"

@@ -92,6 +92,8 @@ LLMFed follows a clean, modular architecture with clear separation of concerns:
 
 ## 🚀 Quick Start
 
+For dev/run commands and project layout, see [AGENTS.md](AGENTS.md).
+
 ### Prerequisites
 
 - Python 3.8 or higher
@@ -117,6 +119,7 @@ LLMFed follows a clean, modular architecture with clear separation of concerns:
    ```bash
    pip install -r requirements.txt
    ```
+   Or for an editable install (recommended so imports work from any working directory): `pip install -e .`
 
 4. **Configure environment** (Optional)
    ```bash
@@ -152,7 +155,7 @@ LLMFed follows a clean, modular architecture with clear separation of concerns:
 #### Option 1: Using the Demo Script
 
 ```bash
-python demo.py
+python scripts/demo.py
 ```
 
 #### Option 2: Using the API
@@ -215,10 +218,10 @@ for result in results:
 
 ## 📖 Documentation
 
-- **[USAGE_GUIDE.md](USAGE_GUIDE.md)** - Comprehensive API reference and usage examples
-- **[ANALYSIS.md](ANALYSIS.md)** - Technical analysis and architecture details
-- **[ENHANCEMENT_PROPOSAL.md](ENHANCEMENT_PROPOSAL.md)** - Roadmap and planned features
-- **[codebase.md](codebase.md)** - Detailed codebase documentation
+- **[docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md)** - Comprehensive API reference and usage examples
+- **[docs/ANALYSIS.md](docs/ANALYSIS.md)** - Technical analysis and architecture details
+- **[docs/ENHANCEMENT_PROPOSAL.md](docs/ENHANCEMENT_PROPOSAL.md)** - Roadmap and planned features
+- **[docs/codebase.md](docs/codebase.md)** - Detailed codebase documentation
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines
 - **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** - Community standards
 
@@ -305,6 +308,8 @@ python -m pytest tests/ --cov=. --cov-report=html
 
 ## 🗺️ Roadmap
 
+The current frontend is a static single-page interface (see [frontend/README.md](frontend/README.md)); a full Web-based UI (e.g. Vite/React) is planned for a later release.
+
 ### Short-term (v0.2.0)
 - [ ] Web-based UI for federation management
 - [ ] WebSocket support for real-time updates
@@ -323,7 +328,7 @@ python -m pytest tests/ --cov=. --cov-report=html
 - [ ] Cross-promotional events
 - [ ] Mobile application
 
-See [ENHANCEMENT_PROPOSAL.md](ENHANCEMENT_PROPOSAL.md) for detailed roadmap.
+See [docs/ENHANCEMENT_PROPOSAL.md](docs/ENHANCEMENT_PROPOSAL.md) for detailed roadmap.
 
 ## 🤝 Contributing
 

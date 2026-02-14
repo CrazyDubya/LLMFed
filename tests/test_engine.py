@@ -11,18 +11,26 @@ def test_set_hints_stores_hints():
 
 
 def test_run_ticks_returns_results_and_uses_hints(monkeypatch):
-    # Prepare fake LLM response
+    from types import SimpleNamespace
+    from core_engine import engine as engine_mod
+
+    # Mock get_agents to return one agent per role so we get one TickResult per role
+    def fake_get_agents(db):
+        return [
+            SimpleNamespace(agent_id=f"agent_{r}", role=r, gimmick_description="")
+            for r in engine_instance.ROLE_ORDER
+        ]
+
     fake_response = {"action_id": "x", "description": "fake", "meta": {}}
     monkeypatch.setattr(engine_instance.llm_client, 'send_prompt', lambda prompt: fake_response)
+    monkeypatch.setattr(engine_mod, 'get_agents', fake_get_agents)
 
-    # Set hints and run
     hints = {"tip": "increase drama"}
     engine_instance.set_hints(hints)
     results = engine_instance.run_ticks(1)
 
-    # Validate results
     assert isinstance(results, list)
-    # Default agent is a participant, so expect 1 result (one agent, one role)
+    # Default agent is a participant, so expect at least 1 result
     assert len(results) >= 1
     for result in results:
         assert hasattr(result, 'tick_id')

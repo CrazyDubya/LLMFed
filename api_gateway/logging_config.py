@@ -8,8 +8,8 @@ import logging
 import time
 import json
 import uuid
-from typing import Any, Dict, Optional
-from datetime import datetime
+from typing import Any, Dict
+from datetime import datetime, timezone
 from fastapi import Request
 import sys
 
@@ -24,7 +24,7 @@ class StructuredFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format log record as JSON."""
         log_data = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
