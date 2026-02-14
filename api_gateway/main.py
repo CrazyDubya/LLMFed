@@ -157,7 +157,10 @@ def create_agent_endpoint(request: Request, agent_data: AgentCreateData, db: Ses
         raise HTTPException(status_code=422, detail=f"Invalid llm_config format: {e}")
 
     # Pass the original agent_data (which includes the llm_config dict)
-    db_agent = crud.create_agent(db=db, agent_data=agent_data)
+    try:
+        db_agent = crud.create_agent(db=db, agent_data=agent_data)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
     if db_agent is None:
         logger.error(f"Failed to create agent '{agent_data.name}' in database.")
@@ -195,7 +198,10 @@ def update_agent_endpoint(agent_id: str, update_data: AgentUpdateData, db: Sessi
             logger.error(f"LLM Config validation error during update: {e}")
             raise HTTPException(status_code=422, detail=f"Invalid llm_config format: {e}")
 
-    updated_agent = crud.update_agent(db=db, agent_id=agent_id, update_data=update_data)
+    try:
+        updated_agent = crud.update_agent(db=db, agent_id=agent_id, update_data=update_data)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     if updated_agent is None:
         # crud.update_agent returns None if agent not found or on DB error
         # Check if agent exists first for clearer 404 vs 500
@@ -248,7 +254,10 @@ def create_federation_endpoint(fed_data: FederationCreateData, db: Session = Dep
     # Basic validation (e.g., check if user exists)
     # Real user validation would go here
 
-    db_federation = crud.create_federation(db=db, fed_data=fed_data)
+    try:
+        db_federation = crud.create_federation(db=db, fed_data=fed_data)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     if db_federation is None:
         logger.error(f"Failed to create federation '{fed_data.name}' in database.")
         raise HTTPException(status_code=500, detail="Failed to create federation in database.")
@@ -293,7 +302,10 @@ def update_federation_endpoint(federation_id: str, update_data: FederationUpdate
 
     # Add ownership check here in a real app
 
-    updated_federation = crud.update_federation(db=db, federation_id=federation_id, update_data=update_data)
+    try:
+        updated_federation = crud.update_federation(db=db, federation_id=federation_id, update_data=update_data)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     if updated_federation is None:
         # Check if federation exists for 404 vs 500
         existing_federation = crud.get_federation_by_id(db=db, federation_id=federation_id)
@@ -384,6 +396,8 @@ def advance_engine(
     try:
         results = engine_instance.run_ticks(n_ticks)
         return [asdict(r) for r in results]
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         tb = traceback.format_exc()
         logger.error(f"Failed to advance engine: {e}\n{tb}")

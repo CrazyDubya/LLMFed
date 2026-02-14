@@ -77,7 +77,7 @@ class BackstageActionResponse(BaseModel):
 
 
 # Agent CRUD Models
-VALID_ROLES = ("participant", "referee", "crowd", "announcer", "promoter", "backstage")
+VALID_ROLES = ("promoter", "participant", "referee", "crowd", "announcer", "backstage")
 
 
 class AgentCreateData(BaseModel):
