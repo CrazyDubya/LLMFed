@@ -10,10 +10,10 @@ def test_engine_prompt_includes_state_and_actions(monkeypatch):
             self.current_heat = 42
             self.momentum = 7
             self.agent_id = "agentX"
+            self.role = "participant"
     dummy_db = DummyAgentDB()
-    # Monkeypatch get_agents and get_agent_by_id
+    # Monkeypatch get_agents
     monkeypatch.setattr('core_engine.engine.get_agents', lambda db: [dummy_db])
-    monkeypatch.setattr('core_engine.engine.get_agent_by_id', lambda db, aid: dummy_db)
 
     captured = {}
     def fake_send_prompt(prompt):

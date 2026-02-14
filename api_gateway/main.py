@@ -1,67 +1,41 @@
 import os
+import sys
+import logging
+import traceback
+import uuid
+from typing import Optional, List
+
 # Configure local Ollama before any imports to enforce using long-gemma
 os.environ.setdefault("OPENAI_MODEL", "long-gemma")
 os.environ.setdefault("OPENAI_API_BASE", "http://127.0.0.1:11434/v1")
+
+# Ensure project root is on sys.path for all internal imports
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from dataclasses import asdict
-import logging
-import traceback
-from typing import Optional, List
-import uuid
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-# Import models
-try:
-    from models.entities import Agent, AgentCreateData, AgentUpdateData, Federation, FederationCreateData, FederationUpdateData, EventContext, AgentActionResponse, PrompterHintRequest
-    from models.db_models import AgentDB, FederationDB, EngineRequestDB, NarrativeLogDB
-except ImportError:
-    import sys, os
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.append(project_root)
-    from models.entities import Agent, AgentCreateData, AgentUpdateData, Federation, FederationCreateData, FederationUpdateData, EventContext, AgentActionResponse, PrompterHintRequest
-    from models.db_models import AgentDB, FederationDB, EngineRequestDB, NarrativeLogDB
-
-# Import database stuff and CRUD functions
-try:
-    from agent_service import crud
-    from agent_service.database import get_db, SessionLocal, engine
-except ImportError as e:
-    import sys, os
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
-    from agent_service import crud
-    from agent_service.database import get_db, SessionLocal, engine
-    logging.warning(f"Had to adjust path for agent_service import: {e}")
-
-# Engine import
-try:
-    from core_engine.engine import engine_instance
-    from core_engine.prompt_builder import PromptBuilder
-    from core_engine.llm_client import LLMClient
-except ImportError:
-    # If package path issues, adjust
-    import sys, os
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.append(project_root)
-    from core_engine.engine import engine_instance
-    from core_engine.prompt_builder import PromptBuilder
-    from core_engine.llm_client import LLMClient
-
-# Import error handlers and validation
+from models.entities import Agent, AgentCreateData, AgentUpdateData, Federation, FederationCreateData, FederationUpdateData, EventContext, AgentActionResponse, PrompterHintRequest
+from models.db_models import AgentDB, FederationDB, EngineRequestDB, NarrativeLogDB
+from agent_service import crud
+from agent_service.database import get_db, SessionLocal, engine
+from core_engine.engine import engine_instance
+from core_engine.prompt_builder import PromptBuilder
+from core_engine.llm_client import LLMClient
 from api_gateway.error_handlers import register_error_handlers, ResourceNotFoundError
 from api_gateway.validation import ValidationError
 from api_gateway.logging_config import setup_logging, logging_middleware, performance_monitor
 
 # Configure logging
-import os
 log_level = os.getenv("LOG_LEVEL", "INFO")
 use_json_logging = os.getenv("JSON_LOGGING", "false").lower() == "true"
 setup_logging(log_level=log_level, use_json=use_json_logging)
@@ -183,7 +157,10 @@ def create_agent_endpoint(request: Request, agent_data: AgentCreateData, db: Ses
         raise HTTPException(status_code=422, detail=f"Invalid llm_config format: {e}")
 
     # Pass the original agent_data (which includes the llm_config dict)
-    db_agent = crud.create_agent(db=db, agent_data=agent_data)
+    try:
+        db_agent = crud.create_agent(db=db, agent_data=agent_data)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
     if db_agent is None:
         logger.error(f"Failed to create agent '{agent_data.name}' in database.")
@@ -210,7 +187,7 @@ def get_agent_endpoint(agent_id: str, db: Session = Depends(get_db)):
 @app.patch("/agents/{agent_id}", summary="Update Agent", response_model=Agent)
 def update_agent_endpoint(agent_id: str, update_data: AgentUpdateData, db: Session = Depends(get_db)):
     """Updates specific fields of an existing agent."""
-    logger.info(f"Received request to update agent ID: {agent_id} with data: {update_data.dict(exclude_unset=True)}")
+    logger.info(f"Received request to update agent ID: {agent_id} with data: {update_data.model_dump(exclude_unset=True)}")
 
     # Validation for llm_config if provided
     if update_data.llm_config is not None:
@@ -221,7 +198,10 @@ def update_agent_endpoint(agent_id: str, update_data: AgentUpdateData, db: Sessi
             logger.error(f"LLM Config validation error during update: {e}")
             raise HTTPException(status_code=422, detail=f"Invalid llm_config format: {e}")
 
-    updated_agent = crud.update_agent(db=db, agent_id=agent_id, update_data=update_data)
+    try:
+        updated_agent = crud.update_agent(db=db, agent_id=agent_id, update_data=update_data)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     if updated_agent is None:
         # crud.update_agent returns None if agent not found or on DB error
         # Check if agent exists first for clearer 404 vs 500
@@ -274,7 +254,10 @@ def create_federation_endpoint(fed_data: FederationCreateData, db: Session = Dep
     # Basic validation (e.g., check if user exists)
     # Real user validation would go here
 
-    db_federation = crud.create_federation(db=db, fed_data=fed_data)
+    try:
+        db_federation = crud.create_federation(db=db, fed_data=fed_data)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     if db_federation is None:
         logger.error(f"Failed to create federation '{fed_data.name}' in database.")
         raise HTTPException(status_code=500, detail="Failed to create federation in database.")
@@ -315,11 +298,14 @@ def list_agents_in_federation_endpoint(federation_id: str, db: Session = Depends
 @app.patch("/federations/{federation_id}", summary="Update Federation", response_model=Federation)
 def update_federation_endpoint(federation_id: str, update_data: FederationUpdateData, db: Session = Depends(get_db)):
     """Updates specific fields of an existing federation (e.g., name, description)."""
-    logger.info(f"Received request to update federation ID: {federation_id} with data: {update_data.dict(exclude_unset=True)}")
+    logger.info(f"Received request to update federation ID: {federation_id} with data: {update_data.model_dump(exclude_unset=True)}")
 
     # Add ownership check here in a real app
 
-    updated_federation = crud.update_federation(db=db, federation_id=federation_id, update_data=update_data)
+    try:
+        updated_federation = crud.update_federation(db=db, federation_id=federation_id, update_data=update_data)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     if updated_federation is None:
         # Check if federation exists for 404 vs 500
         existing_federation = crud.get_federation_by_id(db=db, federation_id=federation_id)
@@ -368,7 +354,7 @@ def delete_federation_endpoint(federation_id: str, db: Session = Depends(get_db)
 def submit_agent_action(agent_id: str, action_response: AgentActionResponse, db: Session = Depends(get_db)):
     """Endpoint for an agent to submit its chosen action in response to an event."""
     logger.info(f"Received action from agent {agent_id} for event {action_response.event_id}")
-    logger.debug(f"Action details: {action_response.dict()}")
+    logger.debug(f"Action details: {action_response.model_dump()}")
 
     # --- Validation ---
     # 1. Check if agent exists
@@ -410,6 +396,8 @@ def advance_engine(
     try:
         results = engine_instance.run_ticks(n_ticks)
         return [asdict(r) for r in results]
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         tb = traceback.format_exc()
         logger.error(f"Failed to advance engine: {e}\n{tb}")

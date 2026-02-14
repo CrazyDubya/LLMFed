@@ -77,6 +77,9 @@ class BackstageActionResponse(BaseModel):
 
 
 # Agent CRUD Models
+VALID_ROLES = ("promoter", "participant", "referee", "crowd", "announcer", "backstage")
+
+
 class AgentCreateData(BaseModel):
     """Data required to create a new agent."""
     user_id: str = Field(description="ID of the user creating this agent")
@@ -85,6 +88,9 @@ class AgentCreateData(BaseModel):
     gimmick_description: str = Field(description="Description of the agent's wrestling character")
     llm_config: Dict[str, Any] = Field(description="LLM configuration for this agent")
     federation_id: Optional[str] = Field(default=None, description="Federation this agent belongs to")
+    webhook_url: Optional[str] = Field(default=None, description="Webhook URL for event notifications")
+    current_heat: int = Field(default=0, description="Initial crowd heat level")
+    momentum: int = Field(default=0, description="Initial momentum")
 
 
 class AgentUpdateData(BaseModel):
@@ -120,6 +126,8 @@ class FederationCreateData(BaseModel):
     description: str = Field(description="Federation description")
     tier: str = Field(default="independent", description="Federation tier level")
     owner_user_id: str = Field(description="ID of the user who owns this federation")
+    max_agents: int = Field(default=20, description="Maximum agents allowed in federation")
+    is_active: bool = Field(default=True, description="Whether the federation is active")
 
 
 class FederationUpdateData(BaseModel):

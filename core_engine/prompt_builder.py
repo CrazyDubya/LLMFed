@@ -1,7 +1,8 @@
 from typing import Any, Dict
 
 from models.entities import (
-    EventContext, 
+    VALID_ROLES,
+    EventContext,
     AgentActionResponse,
     RefereeCallResponse,
     CrowdReactionResponse,
@@ -10,26 +11,25 @@ from models.entities import (
     BackstageActionResponse,
 )
 
-from typing import Dict, Any
-
 class PromptBuilder:
     """Builds prompts for LLM interactions based on event context and promoter hints."""
 
+    _SCHEMA_MAP: Dict[str, type] = {
+        "participant": AgentActionResponse,
+        "referee": RefereeCallResponse,
+        "crowd": CrowdReactionResponse,
+        "announcer": AnnouncerCommentaryResponse,
+        "promoter": PromoterHintResponse,
+        "backstage": BackstageActionResponse,
+    }
+
     @staticmethod
     def build_prompt(context: EventContext, hints: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Constructs a combined prompt payload containing event context and promoter-provided hints.
-        """
-        # Select response schema by role
-        schema_map = {
-            "participant": AgentActionResponse,
-            "referee": RefereeCallResponse,
-            "crowd": CrowdReactionResponse,
-            "announcer": AnnouncerCommentaryResponse,
-            "promoter": PromoterHintResponse,
-            "backstage": BackstageActionResponse,
-        }
-        ResponseModel = schema_map.get(context.role, AgentActionResponse)
+        """Constructs a combined prompt payload containing event context and promoter-provided hints."""
+        if context.role not in VALID_ROLES:
+            raise ValueError(f"Unknown role '{context.role}', expected one of {VALID_ROLES}")
+
+        ResponseModel = PromptBuilder._SCHEMA_MAP[context.role]
         schema = ResponseModel.model_json_schema()
         # Optional role-specific instruction
         preamble = f"You are acting as the {context.role}. Respond accordingly."

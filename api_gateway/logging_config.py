@@ -185,32 +185,37 @@ def get_request_id(request: Request) -> str:
 
 
 class PerformanceMonitor:
+    """Simple performance monitoring for API endpoints.
+
+    Caps tracked endpoints at MAX_ENDPOINTS to prevent unbounded growth (Rule 7, Rule 8).
     """
-    Simple performance monitoring for API endpoints.
-    """
-    
+
+    MAX_ENDPOINTS = 10_000
+
     def __init__(self):
         self.metrics: Dict[str, Dict[str, Any]] = {}
-    
+
     def record_request(self, method: str, path: str, duration_ms: float, status_code: int):
         """Record metrics for a request."""
         key = f"{method} {path}"
-        
+
         if key not in self.metrics:
+            if len(self.metrics) >= self.MAX_ENDPOINTS:
+                return  # Refuse to grow past cap
             self.metrics[key] = {
                 "count": 0,
                 "total_duration_ms": 0.0,
                 "min_duration_ms": float('inf'),
                 "max_duration_ms": 0.0,
-                "error_count": 0
+                "error_count": 0,
             }
-        
+
         metrics = self.metrics[key]
         metrics["count"] += 1
         metrics["total_duration_ms"] += duration_ms
         metrics["min_duration_ms"] = min(metrics["min_duration_ms"], duration_ms)
         metrics["max_duration_ms"] = max(metrics["max_duration_ms"], duration_ms)
-        
+
         if status_code >= 400:
             metrics["error_count"] += 1
     
