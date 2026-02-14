@@ -136,7 +136,7 @@ This document provides an overview of the codebase structure, components, and fu
 *   **Key Functions:** sets up environment, runs `run_ticks` with multiple ticks
 *   **Dependencies:** `os`, `core_engine.engine`
 
-### `/Users/pup/LLMFed/codebase.md`
+### `docs/codebase.md`
 
 *   **Purpose:** Project documentation and development roadmap.
 *   **Contents:** Overview, module descriptions, testing guide, deployment instructions.

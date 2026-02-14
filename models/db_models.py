@@ -7,8 +7,12 @@ federation simulator.
 
 from sqlalchemy import Column, String, Integer, DateTime, JSON, ForeignKey, Text
 from sqlalchemy.orm import relationship, declarative_base
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
+
+
+def _utc_now():
+    return datetime.now(timezone.utc)
 
 Base = declarative_base()
 
@@ -26,8 +30,8 @@ class AgentDB(Base):
     federation_id = Column(String, ForeignKey("federations.federation_id"), nullable=True)
     current_heat = Column(Integer, default=0)
     momentum = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
     # Relationship to federation
     federation = relationship("FederationDB", back_populates="agents")
@@ -42,8 +46,8 @@ class FederationDB(Base):
     description = Column(Text, nullable=False)
     tier = Column(String, nullable=False, default="independent")
     owner_user_id = Column(String, nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
     # Relationship to agents
     agents = relationship("AgentDB", back_populates="federation")
@@ -59,8 +63,8 @@ class EngineRequestDB(Base):
     due_tick = Column(Integer, nullable=False)
     context_json = Column(Text, nullable=False)
     status = Column(String, nullable=False, default="pending")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
 
 class NarrativeLogDB(Base):
@@ -73,4 +77,4 @@ class NarrativeLogDB(Base):
     agent_id = Column(String, nullable=False)
     role = Column(String, nullable=False)
     description = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utc_now)

@@ -43,7 +43,6 @@ def create_agent(db: Session, agent_data: AgentCreateData) -> AgentDB | None:
         raise ValueError(f"Invalid role '{agent_data.role}', must be one of {VALID_ROLES}")
 
     agent_id = str(uuid.uuid4())
-
     db_agent = AgentDB(
         agent_id=agent_id,
         user_id=agent_data.user_id,
@@ -154,7 +153,6 @@ def get_federation_by_id(db: Session, federation_id: str) -> FederationDB | None
 def create_federation(db: Session, fed_data: FederationCreateData) -> FederationDB | None:
     """Creates a new federation in the database."""
     federation_id = str(uuid.uuid4())
-
     db_federation = FederationDB(
         federation_id=federation_id,
         name=fed_data.name,

@@ -376,6 +376,7 @@ python -m pytest -m "not slow"
 3. **User Documentation**: README, usage guides, tutorials
 4. **Developer Documentation**: Architecture, contributing guides
 5. **Deployment Documentation**: Installation, configuration
+6. **Dev log**: Update [DEVLOG.md](DEVLOG.md) with notable changes between commits (supplements git history).
 
 ### Docstring Style
 
@@ -508,6 +509,7 @@ Before submitting a pull request, ensure:
 - [ ] Tests pass (`python -m pytest`)
 - [ ] New functionality includes tests
 - [ ] Documentation is updated
+- [ ] DEVLOG.md updated for notable changes (if applicable)
 - [ ] Commit messages are clear and descriptive
 - [ ] PR description explains the changes
 - [ ] No merge conflicts with master branch

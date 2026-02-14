@@ -19,7 +19,6 @@ def test_create_get_update_delete_agent(db):
         role="participant",
         gimmick_description="desc",
         llm_config={},
-        webhook_url="http://example.com",
         federation_id="fed1"
     )
     agent = create_agent(db, agent_data)

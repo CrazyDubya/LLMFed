@@ -1,0 +1,14 @@
+[flake8]
+max-line-length = 120
+extend-ignore = D, I, E261, E501, W291, W293, W292, E302, E305, E701, E402, E401, B008, E111, E117, E114, W391
+# F401/F811: main.py; F401: crud.py
+per-file-ignores =
+    api_gateway/main.py: F401, F811
+    agent_service/crud.py: F401
+    api_gateway/validation.py: F401
+    core_engine/engine.py: F401
+    core_engine/heat.py: B010
+    core_engine/rulebook.py: F821
+    models/entities.py: F401
+    scripts/demo_multi.py: F811
+exclude = .git,__pycache__,venv,.venv,build,dist
