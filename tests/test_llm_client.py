@@ -32,7 +32,7 @@ def test_send_prompt_success(monkeypatch):
     monkeypatch.setattr(httpx, 'post', mock_post)
     client = LLMClient()
     client.force_remote = True
-    result = client.send_prompt({})
+    result = client.send_prompt({"role": "test"})
     assert result == sample
 
 @pytest.mark.parametrize("status_code", [400, 500])
@@ -43,7 +43,7 @@ def test_send_prompt_http_error(monkeypatch, status_code):
     monkeypatch.setattr(httpx, 'post', mock_post)
     client = LLMClient()
     client.force_remote = True
-    result = client.send_prompt({})
+    result = client.send_prompt({"role": "test"})
     # fallback stub
     assert result['action_id'] == 'noop'
     assert result['description'] == 'Stub action'
@@ -55,7 +55,7 @@ def test_send_prompt_non_json(monkeypatch):
     monkeypatch.setattr(httpx, 'post', mock_post)
     client = LLMClient()
     client.force_remote = True
-    result = client.send_prompt({})
+    result = client.send_prompt({"role": "test"})
     # stub on parse failure
     assert result['action_id'] == 'noop'
     assert result['description'] == 'Stub action'

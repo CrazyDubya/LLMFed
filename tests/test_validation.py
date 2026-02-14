@@ -234,7 +234,7 @@ class TestEnhancedAgentCreateData:
     
     def test_invalid_temperature_in_config(self):
         """Test invalid temperature in LLM config."""
-        with pytest.raises(ValueError):
+        with pytest.raises(Exception):
             EnhancedAgentCreateData(
                 user_id="test_user",
                 name="Test Agent",

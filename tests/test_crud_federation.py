@@ -15,7 +15,7 @@ def test_create_get_federation(db):
     fed_data = FederationCreateData(
         name="Fed1",
         description="Desc",
-        tier=1,
+        tier="independent",
         owner_user_id="owner1"
     )
     fed = create_federation(db, fed_data)

@@ -5,8 +5,11 @@ def test_build_prompt_includes_context_and_hints():
     context = EventContext(
         event_id="evt1",
         event_type="TestEvent",
+        role="participant",
         description="Testing",
-        requesting_agent_id="agent1"
+        requesting_agent_id="agent1",
+        available_actions=[],
+        state={},
     )
     hints = {"tip": "increase drama"}
     payload = PromptBuilder.build_prompt(context, hints)

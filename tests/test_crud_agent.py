@@ -16,7 +16,7 @@ def test_create_get_update_delete_agent(db):
     agent_data = AgentCreateData(
         user_id="user1",
         name="Test Agent",
-        role="role1",
+        role="participant",
         gimmick_description="desc",
         llm_config={},
         webhook_url="http://example.com",

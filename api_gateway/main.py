@@ -1,67 +1,41 @@
 import os
+import sys
+import logging
+import traceback
+import uuid
+from typing import Optional, List
+
 # Configure local Ollama before any imports to enforce using long-gemma
 os.environ.setdefault("OPENAI_MODEL", "long-gemma")
 os.environ.setdefault("OPENAI_API_BASE", "http://127.0.0.1:11434/v1")
+
+# Ensure project root is on sys.path for all internal imports
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from dataclasses import asdict
-import logging
-import traceback
-from typing import Optional, List
-import uuid
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-# Import models
-try:
-    from models.entities import Agent, AgentCreateData, AgentUpdateData, Federation, FederationCreateData, FederationUpdateData, EventContext, AgentActionResponse, PrompterHintRequest
-    from models.db_models import AgentDB, FederationDB, EngineRequestDB, NarrativeLogDB
-except ImportError:
-    import sys, os
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.append(project_root)
-    from models.entities import Agent, AgentCreateData, AgentUpdateData, Federation, FederationCreateData, FederationUpdateData, EventContext, AgentActionResponse, PrompterHintRequest
-    from models.db_models import AgentDB, FederationDB, EngineRequestDB, NarrativeLogDB
-
-# Import database stuff and CRUD functions
-try:
-    from agent_service import crud
-    from agent_service.database import get_db, SessionLocal, engine
-except ImportError as e:
-    import sys, os
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
-    from agent_service import crud
-    from agent_service.database import get_db, SessionLocal, engine
-    logging.warning(f"Had to adjust path for agent_service import: {e}")
-
-# Engine import
-try:
-    from core_engine.engine import engine_instance
-    from core_engine.prompt_builder import PromptBuilder
-    from core_engine.llm_client import LLMClient
-except ImportError:
-    # If package path issues, adjust
-    import sys, os
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.append(project_root)
-    from core_engine.engine import engine_instance
-    from core_engine.prompt_builder import PromptBuilder
-    from core_engine.llm_client import LLMClient
-
-# Import error handlers and validation
+from models.entities import Agent, AgentCreateData, AgentUpdateData, Federation, FederationCreateData, FederationUpdateData, EventContext, AgentActionResponse, PrompterHintRequest
+from models.db_models import AgentDB, FederationDB, EngineRequestDB, NarrativeLogDB
+from agent_service import crud
+from agent_service.database import get_db, SessionLocal, engine
+from core_engine.engine import engine_instance
+from core_engine.prompt_builder import PromptBuilder
+from core_engine.llm_client import LLMClient
 from api_gateway.error_handlers import register_error_handlers, ResourceNotFoundError
 from api_gateway.validation import ValidationError
 from api_gateway.logging_config import setup_logging, logging_middleware, performance_monitor
 
 # Configure logging
-import os
 log_level = os.getenv("LOG_LEVEL", "INFO")
 use_json_logging = os.getenv("JSON_LOGGING", "false").lower() == "true"
 setup_logging(log_level=log_level, use_json=use_json_logging)
@@ -210,7 +184,7 @@ def get_agent_endpoint(agent_id: str, db: Session = Depends(get_db)):
 @app.patch("/agents/{agent_id}", summary="Update Agent", response_model=Agent)
 def update_agent_endpoint(agent_id: str, update_data: AgentUpdateData, db: Session = Depends(get_db)):
     """Updates specific fields of an existing agent."""
-    logger.info(f"Received request to update agent ID: {agent_id} with data: {update_data.dict(exclude_unset=True)}")
+    logger.info(f"Received request to update agent ID: {agent_id} with data: {update_data.model_dump(exclude_unset=True)}")
 
     # Validation for llm_config if provided
     if update_data.llm_config is not None:
@@ -315,7 +289,7 @@ def list_agents_in_federation_endpoint(federation_id: str, db: Session = Depends
 @app.patch("/federations/{federation_id}", summary="Update Federation", response_model=Federation)
 def update_federation_endpoint(federation_id: str, update_data: FederationUpdateData, db: Session = Depends(get_db)):
     """Updates specific fields of an existing federation (e.g., name, description)."""
-    logger.info(f"Received request to update federation ID: {federation_id} with data: {update_data.dict(exclude_unset=True)}")
+    logger.info(f"Received request to update federation ID: {federation_id} with data: {update_data.model_dump(exclude_unset=True)}")
 
     # Add ownership check here in a real app
 
@@ -368,7 +342,7 @@ def delete_federation_endpoint(federation_id: str, db: Session = Depends(get_db)
 def submit_agent_action(agent_id: str, action_response: AgentActionResponse, db: Session = Depends(get_db)):
     """Endpoint for an agent to submit its chosen action in response to an event."""
     logger.info(f"Received action from agent {agent_id} for event {action_response.event_id}")
-    logger.debug(f"Action details: {action_response.dict()}")
+    logger.debug(f"Action details: {action_response.model_dump()}")
 
     # --- Validation ---
     # 1. Check if agent exists
