@@ -338,3 +338,71 @@ class WorldTickStatus(BaseModel):
     current_tick: int
     events_today: List[str] = []
     pending_actions: int = 0
+
+
+# ---------------------------------------------------------------------------
+# Show Card / Match Results
+# ---------------------------------------------------------------------------
+
+class ShowSegmentResponse(BaseModel):
+    id: str
+    show_id: str
+    position: int
+    segment_type: str
+    match_id: Optional[str]
+    description: Optional[str]
+    planned_duration_minutes: int
+    actual_duration_minutes: Optional[int]
+    rating: Optional[float]
+    crowd_reaction: Optional[str]
+    is_completed: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MatchResultResponse(BaseModel):
+    id: str
+    match_type: str
+    stipulation: Optional[str]
+    is_title_match: bool
+    winner_id: Optional[str]
+    finish_type: Optional[str]
+    finish_description: Optional[str]
+    match_rating: Optional[float]
+    crowd_heat: int
+    duration_minutes: Optional[int]
+    is_completed: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ShowCardResponse(BaseModel):
+    show: ShowResponse
+    segments: List[ShowSegmentResponse] = []
+
+
+# ---------------------------------------------------------------------------
+# Promo
+# ---------------------------------------------------------------------------
+
+class PromoRequest(BaseModel):
+    wrestler_id: str
+    target_wrestler_id: Optional[str] = None
+    promo_type: str = Field(default="in_ring", pattern=r"^(in_ring|backstage|interview)$")
+    player_direction: Optional[str] = None  # What vibe/angle to go for
+    player_content: Optional[str] = None   # Full player-written promo
+
+
+class PromoResponse(BaseModel):
+    id: str
+    wrestler_id: str
+    target_wrestler_id: Optional[str]
+    content: str
+    promo_type: str
+    crowd_reaction: Optional[str]
+    heat_generated: int
+    quality_rating: Optional[float]
+    game_date: Optional[str]
+    is_player_written: bool
+
+    model_config = ConfigDict(from_attributes=True)

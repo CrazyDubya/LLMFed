@@ -19,14 +19,15 @@ export default function PromoterDashboard() {
   const [championships, setChampionships] = useState<any[]>([]);
   const [narrative, setNarrative] = useState<any[]>([]);
   const [worldData, setWorldData] = useState<any>(null);
-  const [tab, setTab] = useState<'roster' | 'freeagents' | 'shows' | 'titles' | 'news'>('roster');
+  const [storylines, setStorylines] = useState<any[]>([]);
+  const [tab, setTab] = useState<'roster' | 'freeagents' | 'shows' | 'titles' | 'storylines' | 'news'>('roster');
   const [advancing, setAdvancing] = useState(false);
   const [error, setError] = useState('');
 
   const loadData = async () => {
     if (!worldId || !federationId) return;
     try {
-      const [fed, rost, agents, sh, champs, narr, world] = await Promise.all([
+      const [fed, rost, agents, sh, champs, narr, world, sls] = await Promise.all([
         api.getFederation(federationId),
         api.getRoster(federationId),
         api.listFreeAgents(worldId),
@@ -34,6 +35,7 @@ export default function PromoterDashboard() {
         api.getChampionships(federationId),
         api.getNarrative(worldId, 20),
         api.getWorld(worldId),
+        api.listStorylines(worldId),
       ]);
       setFederation(fed);
       setRoster(rost);
@@ -42,6 +44,7 @@ export default function PromoterDashboard() {
       setChampionships(champs);
       setNarrative(narr);
       setWorldData(world);
+      setStorylines(sls);
     } catch (err: any) {
       setError(err.message);
     }
@@ -131,7 +134,7 @@ export default function PromoterDashboard() {
       {/* Tabs */}
       <div className="max-w-7xl mx-auto px-6 mt-6">
         <div className="flex gap-1 mb-6">
-          {(['roster', 'freeagents', 'shows', 'titles', 'news'] as const).map(t => (
+          {(['roster', 'freeagents', 'shows', 'titles', 'storylines', 'news'] as const).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -239,26 +242,58 @@ export default function PromoterDashboard() {
         {/* Shows Tab */}
         {tab === 'shows' && (
           <div className="space-y-3">
+            <div className="flex justify-end mb-2">
+              <button
+                onClick={async () => {
+                  if (!worldId || !federationId) return;
+                  try {
+                    const nextDate = worldData?.current_game_date || '2026-01-01';
+                    await api.createShow(federationId, {
+                      name: `${federation?.short_name || 'My'} Live Event`,
+                      show_type: 'weekly',
+                      venue: `${federation?.home_region || 'Local'} Arena`,
+                      capacity: 5000,
+                      game_date: nextDate,
+                    });
+                    await loadData();
+                  } catch (err: any) { setError(err.message); }
+                }}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded text-sm"
+              >
+                Book New Show
+              </button>
+            </div>
             {shows.map(s => (
               <div key={s.id} className="bg-[#1a1a24] rounded-lg border border-gray-800 p-4 flex items-center justify-between">
                 <div>
                   <h3 className="text-white font-medium">{s.name}</h3>
                   <p className="text-sm text-gray-400">{s.game_date} | {s.venue} | {s.show_type}</p>
                 </div>
-                <div className="text-right">
+                <div className="flex items-center gap-3">
                   {s.is_completed ? (
-                    <>
+                    <div className="text-right">
                       <div className="text-amber-400">Rating: {s.overall_rating}</div>
                       <div className="text-sm text-gray-400">Attendance: {s.attendance?.toLocaleString()}</div>
                       {s.gate_revenue && <div className="text-sm text-green-400">${s.gate_revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                    </>
+                    </div>
                   ) : (
-                    <span className="text-yellow-400 text-sm">Upcoming</span>
+                    <button
+                      onClick={() => navigate(`/show/${s.id}/book`)}
+                      className="px-3 py-1 bg-purple-700 hover:bg-purple-600 text-white rounded text-xs"
+                    >
+                      Build Card
+                    </button>
                   )}
+                  <button
+                    onClick={() => navigate(`/show/${s.id}`)}
+                    className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded text-xs"
+                  >
+                    View
+                  </button>
                 </div>
               </div>
             ))}
-            {shows.length === 0 && <div className="text-center text-gray-500 py-8">No shows yet</div>}
+            {shows.length === 0 && <div className="text-center text-gray-500 py-8">No shows yet. Book your first show!</div>}
           </div>
         )}
 
@@ -275,6 +310,44 @@ export default function PromoterDashboard() {
               </div>
             ))}
             {championships.length === 0 && <div className="text-center text-gray-500 py-8">No championships</div>}
+          </div>
+        )}
+
+        {/* Storylines Tab */}
+        {tab === 'storylines' && (
+          <div className="space-y-3">
+            {storylines.map(sl => (
+              <div key={sl.id} className="bg-[#1a1a24] rounded-lg border border-gray-800 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-white font-medium">{sl.name}</h3>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded text-xs ${
+                      sl.status === 'climax' ? 'bg-red-900/50 text-red-300' :
+                      sl.status === 'active' ? 'bg-green-900/50 text-green-300' :
+                      sl.status === 'brewing' ? 'bg-yellow-900/50 text-yellow-300' :
+                      'bg-gray-800 text-gray-300'
+                    }`}>{sl.status}</span>
+                    <span className="text-sm text-gray-400">Heat: {sl.heat}</span>
+                  </div>
+                </div>
+                <p className="text-sm text-gray-400 mb-2">{sl.storyline_type}</p>
+                {sl.description && <p className="text-sm text-gray-300">{sl.description}</p>}
+                {sl.participants && sl.participants.length > 0 && (
+                  <div className="mt-2 flex gap-2">
+                    {sl.participants.map((p: any, i: number) => (
+                      <span key={i} className={`text-xs px-2 py-0.5 rounded ${
+                        p.role === 'protagonist' ? 'bg-blue-900/50 text-blue-300' :
+                        p.role === 'antagonist' ? 'bg-red-900/50 text-red-300' :
+                        'bg-gray-800 text-gray-300'
+                      }`}>{p.role}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            {storylines.length === 0 && (
+              <div className="text-center text-gray-500 py-8">No storylines yet. Advance time for feuds to develop!</div>
+            )}
           </div>
         )}
 

@@ -107,4 +107,31 @@ export const api = {
   // Storylines
   listStorylines: (worldId: string) =>
     request<any[]>(`/worlds/${worldId}/storylines`),
+
+  // Shows - booking
+  createShow: (fedId: string, data: {
+    name: string; show_type?: string; venue?: string; capacity?: number; game_date: string;
+  }) =>
+    request<any>(`/federations/${fedId}/shows`, { method: 'POST', body: JSON.stringify(data) }),
+
+  getShowCard: (showId: string) =>
+    request<any>(`/shows/${showId}/card`),
+
+  bookMatch: (showId: string, data: {
+    participant_ids: string[]; match_type?: string; stipulation?: string;
+    is_title_match?: boolean; championship_id?: string;
+    planned_winner_id?: string; planned_finish?: string;
+    segment_position?: number;
+  }) =>
+    request<any>(`/shows/${showId}/matches`, { method: 'POST', body: JSON.stringify(data) }),
+
+  getMatch: (matchId: string) =>
+    request<any>(`/matches/${matchId}`),
+
+  // Promos
+  generatePromo: (worldId: string, data: {
+    wrestler_id: string; target_wrestler_id?: string;
+    promo_type?: string; player_direction?: string; player_content?: string;
+  }) =>
+    request<any>(`/worlds/${worldId}/promos`, { method: 'POST', body: JSON.stringify(data) }),
 };

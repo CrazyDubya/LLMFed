@@ -13,12 +13,42 @@ from sqlalchemy.orm import Session
 
 from models.game_models import (
     WorldDB, WorldStateDB, PlayerActionDB, GameFederationDB,
-    GameWrestlerDB, WrestlerStatsDB, ContractDB, ShowDB,
+    GameWrestlerDB, WrestlerStatsDB, ContractDB, ShowDB, ShowSegmentDB,
+    MatchDB, MatchParticipantDB,
     StorylineDB, StorylineParticipantDB, GameNarrativeLogDB,
     WorldNewsDB, WrestlerHistoryDB, ChampionshipDB,
 )
 
 logger = logging.getLogger(__name__)
+
+# Lazy imports to avoid circular dependencies
+_match_engine = None
+_show_service = None
+_storyline_service = None
+
+
+def _get_match_engine():
+    global _match_engine
+    if _match_engine is None:
+        from core_engine import match_engine as _me
+        _match_engine = _me
+    return _match_engine
+
+
+def _get_show_service():
+    global _show_service
+    if _show_service is None:
+        from game_service import show_service as _ss
+        _show_service = _ss
+    return _show_service
+
+
+def _get_storyline_service():
+    global _storyline_service
+    if _storyline_service is None:
+        from game_service import storyline_service as _sls
+        _storyline_service = _sls
+    return _storyline_service
 
 
 def advance_game_date(date_str: str, days: int = 1) -> str:
@@ -243,18 +273,21 @@ class WorldTicker:
                 self._npc_book_weekly_show(fed)
 
     def _npc_book_weekly_show(self, fed: GameFederationDB):
-        """NPC federation auto-books a weekly show."""
-        show = ShowDB(
-            world_id=self.world.id,
-            federation_id=fed.id,
+        """NPC federation auto-books a weekly show with a full match card."""
+        show_svc = _get_show_service()
+        show = show_svc.create_show(
+            self.db, self.world.id, fed.id,
             name=f"{fed.short_name or fed.name} Weekly",
             show_type="weekly",
             venue=f"{fed.home_region} Arena",
             capacity=random.randint(2000, 10000),
             game_date=self.world.current_game_date,
         )
-        self.db.add(show)
-        self.events.append(f"{fed.short_name or fed.name} airs weekly show")
+        # Auto-book a match card
+        segments = show_svc.npc_book_card(self.db, show)
+        self.events.append(
+            f"{fed.short_name or fed.name} airs weekly show ({len(segments)} matches)"
+        )
 
     # ------------------------------------------------------------------
     # Phase 3: Simulate shows
@@ -272,21 +305,62 @@ class WorldTicker:
             self._simulate_show(show)
 
     def _simulate_show(self, show: ShowDB):
-        """Simulate a single show. Full match simulation lives in match_service."""
-        # Basic simulation: generate attendance, rating, revenue
+        """Simulate a single show, running each match through the match engine."""
+        me = _get_match_engine()
+        sl_svc = _get_storyline_service()
+
         fed = self.db.query(GameFederationDB).filter(
             GameFederationDB.id == show.federation_id
         ).first()
 
         prestige_factor = (fed.prestige if fed else 50) / 100
+
+        # Simulate each match segment through the engine
+        segments = self.db.query(ShowSegmentDB).filter(
+            ShowSegmentDB.show_id == show.id,
+        ).order_by(ShowSegmentDB.position).all()
+
+        match_ratings = []
+        for seg in segments:
+            if seg.segment_type == "match" and seg.match_id:
+                match = self.db.query(MatchDB).filter(
+                    MatchDB.id == seg.match_id
+                ).first()
+                if match and not match.is_completed:
+                    try:
+                        result = me.simulate_match_from_db(self.db, match)
+                        seg.is_completed = True
+                        seg.rating = result.match_rating
+                        seg.crowd_reaction = "pop" if result.crowd_heat > 60 else "mixed"
+                        seg.actual_duration_minutes = result.duration_ticks
+                        match_ratings.append(result.match_rating)
+
+                        # Check for storyline triggers from match result
+                        sl_svc.check_match_storyline_triggers(
+                            self.db, match, self.world.current_game_date
+                        )
+                    except Exception as e:
+                        logger.warning(f"Match simulation failed: {e}")
+                        seg.is_completed = True
+                        seg.rating = round(random.uniform(2.0, 4.0), 1)
+                        match_ratings.append(seg.rating)
+            elif seg.segment_type == "promo":
+                seg.is_completed = True
+                seg.rating = round(random.uniform(2.0, 4.5), 1)
+
+        # Calculate show-level stats
         attendance = int(show.capacity * random.uniform(0.3, 1.0) * prestige_factor)
         ticket_price = random.uniform(15, 75) * prestige_factor
         gate = attendance * ticket_price
 
         show.attendance = attendance
         show.gate_revenue = round(gate, 2)
-        show.overall_rating = round(random.uniform(2.0, 5.0) * prestige_factor, 1)
         show.is_completed = True
+
+        if match_ratings:
+            show.overall_rating = round(sum(match_ratings) / len(match_ratings), 1)
+        else:
+            show.overall_rating = round(random.uniform(2.0, 4.0) * prestige_factor, 1)
 
         if show.show_type == "weekly" and fed:
             show.tv_rating = round(random.uniform(0.5, 3.0) * prestige_factor, 2)
@@ -312,7 +386,9 @@ class WorldTicker:
     # ------------------------------------------------------------------
 
     def _advance_storylines(self):
-        """Progress active storylines."""
+        """Progress active storylines and periodically generate new ones."""
+        sl_svc = _get_storyline_service()
+
         active = self.db.query(StorylineDB).filter(
             StorylineDB.world_id == self.world.id,
             StorylineDB.status.in_(["brewing", "active", "climax"]),
@@ -328,6 +404,18 @@ class WorldTicker:
                 storyline.status = "active"
             elif storyline.status == "active" and storyline.heat > 85:
                 storyline.status = "climax"
+
+            # Long-running climax storylines auto-resolve
+            if storyline.status == "climax" and storyline.heat < 30:
+                sl_svc.resolve_storyline(self.db, storyline, "Fizzled out")
+
+        # Weekly storyline generation (on Wednesdays)
+        if get_day_of_week(self.world.current_game_date) == 2:
+            new_sls = sl_svc.auto_generate_storylines(
+                self.db, self.world.id, self.world.current_game_date
+            )
+            for sl in new_sls:
+                self.events.append(f"New storyline: {sl.name}")
 
     # ------------------------------------------------------------------
     # Phase 5: Economy

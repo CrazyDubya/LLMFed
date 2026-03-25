@@ -18,15 +18,18 @@ from models.game_schemas import (
     PlayerCreate, PlayerResponse,
     FederationResponse, FederationUpdate,
     WrestlerResponse, WrestlerStatsResponse, WrestlerDetailResponse,
-    ShowCreate, ShowResponse,
+    ShowCreate, ShowResponse, ShowSegmentResponse, ShowCardResponse,
+    MatchResultResponse,
     PlayerActionSubmit, PlayerActionResponse,
     StorylineResponse, ChampionshipCreate, ChampionshipResponse,
     NarrativeLogResponse, WorldNewsResponse, WorldTickStatus,
     MatchBooking, SegmentBooking,
+    PromoRequest, PromoResponse,
 )
 from models.game_models import (
     PlayerDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    ShowDB, StorylineDB, StorylineParticipantDB, ChampionshipDB,
+    ShowDB, ShowSegmentDB, MatchDB,
+    StorylineDB, StorylineParticipantDB, ChampionshipDB,
     PlayerActionDB, GameNarrativeLogDB, WorldNewsDB, ContractDB,
 )
 from game_service.auth_service import register_user, authenticate_user, create_user_token
@@ -36,6 +39,11 @@ from game_service.world_service import (
     get_world_federations, get_world_wrestlers, get_wrestler_with_stats,
 )
 from game_service.world_ticker import WorldTicker
+from game_service.show_service import (
+    create_show as svc_create_show, book_match as svc_book_match,
+    book_promo_segment as svc_book_promo_segment, get_show_card,
+)
+from game_service.promo_service import generate_promo as svc_generate_promo
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +296,127 @@ def api_list_shows(
         ShowDB.federation_id == federation_id,
     ).order_by(ShowDB.game_date.desc()).limit(limit).all()
     return [ShowResponse.model_validate(s) for s in shows]
+
+
+@router.post("/federations/{federation_id}/shows", response_model=ShowResponse, status_code=201)
+def api_create_show(
+    federation_id: str,
+    data: ShowCreate,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create a new show for a federation (promoter action)."""
+    try:
+        player = get_player_for_user(db, current_user.user_id, None)
+    except ValueError:
+        player = None
+
+    fed = db.query(GameFederationDB).filter(
+        GameFederationDB.id == federation_id
+    ).first()
+    if not fed:
+        raise HTTPException(status_code=404, detail="Federation not found")
+
+    show = svc_create_show(
+        db, fed.world_id, federation_id,
+        data.name, data.show_type, data.venue or "Arena",
+        data.capacity, data.game_date,
+    )
+    db.commit()
+    db.refresh(show)
+    return ShowResponse.model_validate(show)
+
+
+@router.get("/shows/{show_id}/card", response_model=ShowCardResponse)
+def api_get_show_card(
+    show_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get the full card for a show."""
+    show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
+    if not show:
+        raise HTTPException(status_code=404, detail="Show not found")
+
+    segments = get_show_card(db, show_id)
+    return ShowCardResponse(
+        show=ShowResponse.model_validate(show),
+        segments=[ShowSegmentResponse.model_validate(s) for s in segments],
+    )
+
+
+@router.post("/shows/{show_id}/matches", response_model=ShowSegmentResponse, status_code=201)
+def api_book_match(
+    show_id: str,
+    data: MatchBooking,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Book a match on a show."""
+    show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
+    if not show:
+        raise HTTPException(status_code=404, detail="Show not found")
+
+    try:
+        seg = svc_book_match(
+            db, show_id, show.world_id,
+            wrestler_ids=data.participant_ids,
+            match_type=data.match_type,
+            stipulation=data.stipulation,
+            is_title_match=data.is_title_match,
+            championship_id=data.championship_id,
+            planned_winner_id=data.planned_winner_id,
+            planned_finish=data.planned_finish or "pinfall",
+            position=data.segment_position,
+        )
+        db.commit()
+        db.refresh(seg)
+        return ShowSegmentResponse.model_validate(seg)
+    except ValueError as e:
+        _handle_value_error(e)
+
+
+@router.get("/matches/{match_id}", response_model=MatchResultResponse)
+def api_get_match(
+    match_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get match result details."""
+    match = db.query(MatchDB).filter(MatchDB.id == match_id).first()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match not found")
+    return MatchResultResponse.model_validate(match)
+
+
+# ---------------------------------------------------------------------------
+# Promo endpoints
+# ---------------------------------------------------------------------------
+
+@router.post("/worlds/{world_id}/promos", response_model=PromoResponse, status_code=201)
+def api_generate_promo(
+    world_id: str,
+    data: PromoRequest,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Generate or submit a promo for a wrestler."""
+    world = get_world(db, world_id)
+    try:
+        promo = svc_generate_promo(
+            db, world_id, data.wrestler_id,
+            target_wrestler_id=data.target_wrestler_id,
+            promo_type=data.promo_type,
+            player_direction=data.player_direction,
+            game_date=world.current_game_date,
+            is_player_written=bool(data.player_content),
+            player_content=data.player_content,
+        )
+        db.commit()
+        db.refresh(promo)
+        return PromoResponse.model_validate(promo)
+    except ValueError as e:
+        _handle_value_error(e)
 
 
 # ---------------------------------------------------------------------------
