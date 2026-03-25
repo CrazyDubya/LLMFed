@@ -18,6 +18,7 @@ from models.game_models import (
     StorylineDB, StorylineParticipantDB, GameNarrativeLogDB,
     WorldNewsDB, WrestlerHistoryDB, ChampionshipDB,
     WrestlerRelationshipDB, TagTeamDB, TalentOfferDB,
+    PromoDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -373,9 +374,10 @@ class WorldTicker:
                     else:
                         card_position = "midcard"
                     match.card_position = card_position
+                    match.game_date = show.game_date
 
                     try:
-                        result = me.simulate_match_from_db(self.db, match)
+                        result = me.simulate_match_from_db(self.db, match, game_date=show.game_date)
                         seg.is_completed = True
                         seg.rating = result.match_rating
                         seg.crowd_reaction = "pop" if result.crowd_heat > 60 else "mixed"
@@ -398,7 +400,8 @@ class WorldTicker:
                         match_ratings.append(seg.rating)
             elif seg.segment_type == "promo":
                 seg.is_completed = True
-                seg.rating = round(random.uniform(2.0, 4.5), 1)
+                promo_rating = self._evaluate_promo_segment(seg, show)
+                seg.rating = promo_rating
 
         # Calculate show-level stats
         attendance = int(show.capacity * random.uniform(0.3, 1.0) * prestige_factor)
@@ -444,6 +447,32 @@ class WorldTicker:
             importance=6,
         )
         self.events.append(f"Show completed: {show.name} ({attendance} attendance)")
+
+    def _evaluate_promo_segment(self, seg: ShowSegmentDB, show: ShowDB) -> float:
+        """Evaluate a promo segment rating using promo_service when a wrestler is identifiable."""
+        from game_service.promo_service import _evaluate_promo_quality
+
+        wrestler_id = None
+
+        # Try to get wrestler from linked promo
+        if seg.promo_id:
+            promo = self.db.query(PromoDB).filter(PromoDB.id == seg.promo_id).first()
+            if promo:
+                # If the promo already has a quality rating, use it
+                if promo.quality_rating is not None:
+                    return round(promo.quality_rating, 1)
+                wrestler_id = promo.wrestler_id
+
+        if wrestler_id:
+            stats = self.db.query(WrestlerStatsDB).filter(
+                WrestlerStatsDB.wrestler_id == wrestler_id
+            ).first()
+            # Use a placeholder content string for template promos
+            content = seg.description or "Generic promo segment"
+            return _evaluate_promo_quality(stats, content, is_player=False)
+
+        # No identifiable wrestler — fall back to random
+        return round(random.uniform(2.0, 4.5), 1)
 
     def _calculate_card_psychology_bonus(self, ratings: list) -> float:
         """Calculate show rating bonus based on card flow."""
@@ -591,6 +620,9 @@ class WorldTicker:
             importance=7,
         )
         self.events.append(f"INJURY: {victim.name} (out {weeks_out} weeks)")
+        _get_news_service().generate_injury_news(
+            self.db, self.world.id, victim, weeks_out, game_date,
+        )
 
     def _random_retirement(self, game_date: str):
         """Random wrestler retirement (older wrestlers)."""
@@ -1034,6 +1066,9 @@ class WorldTicker:
                     [wrestler.id, offer.federation_id], importance=8,
                 )
                 self.events.append(f"{wrestler.name} signs with {fed_name}!")
+                _get_news_service().generate_signing_news(
+                    self.db, self.world.id, wrestler.name, fed_name, game_date,
+                )
 
                 # Momentum shifts
                 if fed:

@@ -231,6 +231,13 @@ def _update_relationships(db: Session, match: MatchDB,
     wrestler_ids = [p.wrestler_id for p in participants]
     rating = match.match_rating or 3.0
 
+    # Pre-fetch wrestler alignment data for rivalry_heat calculations
+    wrestlers_by_id = {}
+    for wid in wrestler_ids:
+        w = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == wid).first()
+        if w:
+            wrestlers_by_id[wid] = w
+
     for i in range(len(wrestler_ids)):
         for j in range(i + 1, len(wrestler_ids)):
             w1, w2 = sorted([wrestler_ids[i], wrestler_ids[j]])
@@ -246,14 +253,48 @@ def _update_relationships(db: Session, match: MatchDB,
                 rel.chemistry_score = round(rel.total_rating / rel.matches_together, 2)
                 rel.last_match_date = game_date
             else:
-                db.add(WrestlerRelationshipDB(
+                rel = WrestlerRelationshipDB(
                     world_id=match.world_id,
                     wrestler1_id=w1, wrestler2_id=w2,
                     matches_together=1,
                     total_rating=rating,
                     chemistry_score=round(rating, 2),
                     last_match_date=game_date,
-                ))
+                    rivalry_heat=0,
+                )
+                db.add(rel)
+
+            # --- rivalry_heat update ---
+            heat_increase = 0
+
+            # +5 for opposing alignments (face vs heel)
+            wr1 = wrestlers_by_id.get(w1)
+            wr2 = wrestlers_by_id.get(w2)
+            if wr1 and wr2:
+                alignments = {wr1.alignment, wr2.alignment}
+                if alignments == {"face", "heel"}:
+                    heat_increase += 5
+
+            # +3 for title match
+            if match.is_title_match:
+                heat_increase += 3
+
+            # +2 if an active storyline involves both wrestlers
+            if wr1 and wr2:
+                storyline_link = db.query(GameNarrativeLogDB).filter(
+                    GameNarrativeLogDB.world_id == match.world_id,
+                    GameNarrativeLogDB.involved_entities.contains(w1),
+                    GameNarrativeLogDB.involved_entities.contains(w2),
+                ).first()
+                if storyline_link:
+                    heat_increase += 2
+
+            current_heat = rel.rivalry_heat or 0
+            if heat_increase > 0:
+                rel.rivalry_heat = min(100, current_heat + heat_increase)
+            else:
+                # Natural decay: reduce by 1, minimum 0
+                rel.rivalry_heat = max(0, current_heat - 1)
 
 
 def _update_tag_team_records(db: Session, match: MatchDB, participants: list):

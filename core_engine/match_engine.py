@@ -79,6 +79,19 @@ NEAR_FALL_DESCRIPTIONS = [
     "Quick pin attempt! ONE... TWO... power out!",
 ]
 
+TAG_DESCRIPTIONS = [
+    "tags in their partner",
+    "reaches out and makes the tag",
+    "dives and makes the hot tag",
+    "slaps hands with their partner",
+]
+
+DOUBLE_TEAM_MOVES = [
+    ("Double Suplex", 14), ("Double Clothesline", 10),
+    ("Aided Powerbomb", 16), ("Tandem Neckbreaker", 12),
+    ("Double Dropkick", 11), ("Combo Finisher", 18),
+]
+
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -164,54 +177,220 @@ class MatchSimulator:
         if len(participants) < 2:
             return MatchResult(narrative_summary="Match cancelled - not enough participants")
 
+        # Detect tag match: 4+ participants with team assignments
+        teams = set(p.team for p in participants if p.team is not None)
+        if len(teams) >= 2 and len(participants) >= 4:
+            return self._simulate_tag_match(participants)
+
+        return self._simulate_singles(participants)
+
+    def _simulate_singles(self, participants: List[MatchParticipantState]) -> MatchResult:
+        """Run a singles (or non-tag multi-person) match simulation."""
         # Determine target length
         min_len, max_len = self.MATCH_LENGTH.get(self.card_position, (10, 20))
         target_length = random.randint(min_len, max_len)
 
-        # Determine who goes on offense first (higher momentum)
         attacker_idx = 0
         defender_idx = 1
 
-        # Main match loop
-        while self.tick < target_length + 10:  # Safety cap
+        while self.tick < target_length + 10:
             self.tick += 1
             attacker = participants[attacker_idx]
             defender = participants[defender_idx]
 
-            # Generate a spot
             spot = self._generate_spot(attacker, defender)
             self.spots.append(spot)
-
-            # Apply damage and effects
             self._apply_spot(spot, attacker, defender)
 
-            # Check for finisher availability
             if not attacker.finisher_available and attacker.momentum > 75:
                 attacker.finisher_available = True
 
-            # Check for finish
             if self.tick >= target_length - 3:
                 finish_spot = self._attempt_finish(attacker, defender)
                 if finish_spot:
                     self.spots.append(finish_spot)
-                    result = self._build_result(finish_spot, attacker, defender, participants)
-                    return result
+                    return self._build_result(finish_spot, attacker, defender, participants)
 
-            # Near falls in the later portion
             if self.tick > target_length * 0.6 and random.random() < 0.25:
                 near_fall = self._near_fall(attacker, defender)
                 if near_fall:
                     self.spots.append(near_fall)
 
-            # Momentum shifts / control changes
             if self._should_switch_control(attacker, defender):
                 attacker_idx, defender_idx = defender_idx, attacker_idx
 
-        # Time limit draw if we somehow get here
         return MatchResult(
             winner_id=None,
             finish_type="time_limit_draw",
             finish_description="The match ends in a time limit draw!",
+            match_rating=self._calculate_rating(participants),
+            crowd_heat=self._calculate_heat(),
+            duration_ticks=self.tick,
+            spots=self.spots,
+        )
+
+    def _simulate_tag_match(self, participants: List[MatchParticipantState]) -> MatchResult:
+        """Simulate a tag team match with legal man tracking, tags, hot tags, and double-team spots."""
+        team_map: Dict[int, List[MatchParticipantState]] = {}
+        for p in participants:
+            team_id = p.team if p.team is not None else 0
+            team_map.setdefault(team_id, []).append(p)
+
+        team_ids = sorted(team_map.keys())
+        if len(team_ids) < 2:
+            return self._simulate_singles(participants)
+
+        team_a = team_map[team_ids[0]]
+        team_b = team_map[team_ids[1]]
+
+        # Legal men: index 0 from each team starts
+        legal_a_idx = 0
+        legal_b_idx = 0
+
+        # Track how long each legal man has been in (for hot tag mechanic)
+        ticks_in_a = 0
+        ticks_in_b = 0
+
+        # Tag matches run slightly longer
+        min_len, max_len = self.MATCH_LENGTH.get(self.card_position, (10, 20))
+        target_length = random.randint(min_len + 3, max_len + 5)
+
+        # Who's on offense: 0 = team_a attacks, 1 = team_b attacks
+        attacking_team = 0
+
+        while self.tick < target_length + 10:
+            self.tick += 1
+            ticks_in_a += 1
+            ticks_in_b += 1
+
+            attacker = team_a[legal_a_idx] if attacking_team == 0 else team_b[legal_b_idx]
+            defender = team_b[legal_b_idx] if attacking_team == 0 else team_a[legal_a_idx]
+
+            # --- Tag-in opportunity (attacking team tags to bring fresh partner) ---
+            ticks_in = ticks_in_a if attacking_team == 0 else ticks_in_b
+            if ticks_in > 5 and attacker.stamina < 60 and random.random() < 0.35:
+                if attacking_team == 0 and len(team_a) > 1:
+                    legal_a_idx = (legal_a_idx + 1) % len(team_a)
+                    ticks_in_a = 0
+                    new_wrestler = team_a[legal_a_idx]
+                    new_wrestler.momentum = min(100, new_wrestler.momentum + 10)
+                    self.spots.append(MatchSpot(
+                        tick=self.tick, attacker_id=new_wrestler.wrestler_id,
+                        defender_id=defender.wrestler_id, move_name="Tag",
+                        move_type="tag", damage=0,
+                        crowd_reaction="Tag made!", heat_change=1,
+                        description=f"{attacker.name} {random.choice(TAG_DESCRIPTIONS)}! {new_wrestler.name} enters the ring!",
+                    ))
+                    attacker = new_wrestler
+                elif attacking_team == 1 and len(team_b) > 1:
+                    legal_b_idx = (legal_b_idx + 1) % len(team_b)
+                    ticks_in_b = 0
+                    new_wrestler = team_b[legal_b_idx]
+                    new_wrestler.momentum = min(100, new_wrestler.momentum + 10)
+                    self.spots.append(MatchSpot(
+                        tick=self.tick, attacker_id=new_wrestler.wrestler_id,
+                        defender_id=defender.wrestler_id, move_name="Tag",
+                        move_type="tag", damage=0,
+                        crowd_reaction="Tag made!", heat_change=1,
+                        description=f"{attacker.name} {random.choice(TAG_DESCRIPTIONS)}! {new_wrestler.name} enters the ring!",
+                    ))
+                    attacker = new_wrestler
+
+            # --- Hot tag mechanic (defending team, beaten down, makes desperate tag) ---
+            defending_ticks = ticks_in_b if attacking_team == 0 else ticks_in_a
+            if defending_ticks > 6 and defender.health < 50 and random.random() < 0.3:
+                if attacking_team == 0 and len(team_b) > 1:
+                    legal_b_idx = (legal_b_idx + 1) % len(team_b)
+                    ticks_in_b = 0
+                    hot_tag = team_b[legal_b_idx]
+                    hot_tag.momentum = min(100, hot_tag.momentum + 25)
+                    hot_tag.finisher_available = True
+                    self.spots.append(MatchSpot(
+                        tick=self.tick, attacker_id=hot_tag.wrestler_id,
+                        defender_id=attacker.wrestler_id, move_name="Hot Tag",
+                        move_type="tag", damage=0,
+                        crowd_reaction="The crowd erupts for the hot tag!",
+                        heat_change=4,
+                        description=f"{defender.name} desperately reaches out... HOT TAG! {hot_tag.name} storms into the ring on fire!",
+                    ))
+                    attacking_team = 1
+                    defender = attacker
+                    attacker = hot_tag
+                elif attacking_team == 1 and len(team_a) > 1:
+                    legal_a_idx = (legal_a_idx + 1) % len(team_a)
+                    ticks_in_a = 0
+                    hot_tag = team_a[legal_a_idx]
+                    hot_tag.momentum = min(100, hot_tag.momentum + 25)
+                    hot_tag.finisher_available = True
+                    self.spots.append(MatchSpot(
+                        tick=self.tick, attacker_id=hot_tag.wrestler_id,
+                        defender_id=attacker.wrestler_id, move_name="Hot Tag",
+                        move_type="tag", damage=0,
+                        crowd_reaction="The crowd erupts for the hot tag!",
+                        heat_change=4,
+                        description=f"{defender.name} desperately reaches out... HOT TAG! {hot_tag.name} storms into the ring on fire!",
+                    ))
+                    attacking_team = 0
+                    defender = attacker
+                    attacker = hot_tag
+
+            # --- Double-team opportunity (both partners briefly in ring) ---
+            if random.random() < 0.12:
+                if attacking_team == 0 and len(team_a) > 1:
+                    partner = team_a[(legal_a_idx + 1) % len(team_a)]
+                    move_name, dmg = random.choice(DOUBLE_TEAM_MOVES)
+                    dt_spot = MatchSpot(
+                        tick=self.tick, attacker_id=attacker.wrestler_id,
+                        defender_id=defender.wrestler_id, move_name=move_name,
+                        move_type="power", damage=dmg,
+                        crowd_reaction="Incredible double-team!",
+                        heat_change=3,
+                        description=f"{attacker.name} and {partner.name} hit a {move_name} on {defender.name}!",
+                    )
+                    self.spots.append(dt_spot)
+                    self._apply_spot(dt_spot, attacker, defender)
+                    continue
+                elif attacking_team == 1 and len(team_b) > 1:
+                    partner = team_b[(legal_b_idx + 1) % len(team_b)]
+                    move_name, dmg = random.choice(DOUBLE_TEAM_MOVES)
+                    dt_spot = MatchSpot(
+                        tick=self.tick, attacker_id=attacker.wrestler_id,
+                        defender_id=defender.wrestler_id, move_name=move_name,
+                        move_type="power", damage=dmg,
+                        crowd_reaction="Incredible double-team!",
+                        heat_change=3,
+                        description=f"{attacker.name} and {partner.name} hit a {move_name} on {defender.name}!",
+                    )
+                    self.spots.append(dt_spot)
+                    self._apply_spot(dt_spot, attacker, defender)
+                    continue
+
+            # --- Normal spot ---
+            spot = self._generate_spot(attacker, defender)
+            self.spots.append(spot)
+            self._apply_spot(spot, attacker, defender)
+
+            if not attacker.finisher_available and attacker.momentum > 75:
+                attacker.finisher_available = True
+
+            if self.tick >= target_length - 3:
+                finish_spot = self._attempt_finish(attacker, defender)
+                if finish_spot:
+                    self.spots.append(finish_spot)
+                    return self._build_result(finish_spot, attacker, defender, participants)
+
+            if self.tick > target_length * 0.6 and random.random() < 0.25:
+                near_fall = self._near_fall(attacker, defender)
+                if near_fall:
+                    self.spots.append(near_fall)
+
+            if self._should_switch_control(attacker, defender):
+                attacking_team = 1 - attacking_team
+
+        return MatchResult(
+            winner_id=None,
+            finish_type="time_limit_draw",
+            finish_description="The tag team match ends in a time limit draw!",
             match_rating=self._calculate_rating(participants),
             crowd_heat=self._calculate_heat(),
             duration_ticks=self.tick,
@@ -443,7 +622,7 @@ class MatchSimulator:
 # Helper: Run a match from DB models
 # ---------------------------------------------------------------------------
 
-def simulate_match_from_db(db: Session, match: MatchDB) -> MatchResult:
+def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None) -> MatchResult:
     """Load match data from DB, simulate, and persist results."""
     participants_db = db.query(MatchParticipantDB).filter(
         MatchParticipantDB.match_id == match.id,
@@ -587,9 +766,19 @@ def simulate_match_from_db(db: Session, match: MatchDB) -> MatchResult:
                     wrestler.is_injured = True
                     weeks = random.randint(2, 12)
                     from game_service.world_ticker import advance_game_date
-                    # Approximate return date
-                    wrestler.injury_return_date = advance_game_date(
-                        "2026-01-01", weeks * 7  # Placeholder, real date comes from world
-                    )
+                    # Use the match's actual game date for return date calculation
+                    match_date = game_date or getattr(match, "game_date", None)
+                    if not match_date and match.world_id:
+                        from models.game_models import WorldDB
+                        world = db.query(WorldDB).filter(WorldDB.id == match.world_id).first()
+                        if world:
+                            match_date = world.current_game_date
+                    if match_date:
+                        wrestler.injury_return_date = advance_game_date(
+                            match_date, weeks * 7
+                        )
+                    else:
+                        logger.warning("No game_date available for injury return date; skipping return date")
+                        wrestler.injury_return_date = None
 
     return result
