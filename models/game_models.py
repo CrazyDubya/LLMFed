@@ -246,12 +246,15 @@ class GameFederationDB(Base):
     home_region = Column(String(50), default="Northeast")
     style = Column(String(50), default="Sports Entertainment")  # Strong style, lucha, etc.
     founded_date = Column(String(10), nullable=True)  # In-game date
+    market_share = Column(Float, default=0.0)  # Percentage of total viewership
+    momentum = Column(Integer, default=50)  # 0-100, how "hot" the fed is
     is_active = Column(Boolean, default=True)
     ai_personality = Column(JSON, default=dict)  # LLM personality traits for NPC booking
     created_at = Column(DateTime, default=_utc_now)
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
     world = relationship("WorldDB", back_populates="federations")
+    talent_offers = relationship("TalentOfferDB", back_populates="federation")
     owner_player = relationship("PlayerDB", back_populates="federation",
                                 foreign_keys="PlayerDB.federation_id", uselist=False)
     contracts = relationship("ContractDB", back_populates="federation")
@@ -278,9 +281,12 @@ class GameWrestlerDB(Base):
     is_npc = Column(Boolean, default=True)  # AI-controlled unless player owns
     gimmick = Column(Text, nullable=True)
     alignment = Column(String(20), default="face")
+    alignment_momentum = Column(Integer, default=0)  # -100 (heel) to +100 (face)
     popularity = Column(Integer, default=50)  # 0-100
     condition = Column(Integer, default=100)  # Health/stamina 0-100
     morale = Column(Integer, default=75)  # 0-100
+    win_streak = Column(Integer, default=0)  # Current consecutive wins (neg = loss streak)
+    last_booked_date = Column(String(10), nullable=True)  # Last date wrestler was on a show
     age = Column(Integer, default=25)
     experience_years = Column(Integer, default=0)
     gender = Column(String(20), default="male")
@@ -689,3 +695,74 @@ class WrestlerHistoryDB(Base):
     created_at = Column(DateTime, default=_utc_now)
 
     wrestler = relationship("GameWrestlerDB", back_populates="history_entries")
+
+
+# ---------------------------------------------------------------------------
+# Wrestler Relationships & Chemistry
+# ---------------------------------------------------------------------------
+
+class WrestlerRelationshipDB(Base):
+    """Tracks the history and chemistry between two wrestlers."""
+    __tablename__ = "wrestler_relationships"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    world_id = Column(String, ForeignKey("worlds.id"), nullable=False, index=True)
+    wrestler1_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
+    wrestler2_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
+    matches_together = Column(Integer, default=0)
+    total_rating = Column(Float, default=0.0)  # Sum of match ratings for avg calculation
+    chemistry_score = Column(Float, default=0.0)  # Computed: total_rating / matches_together
+    rivalry_heat = Column(Integer, default=0)  # 0-100, intensity of rivalry
+    last_match_date = Column(String(10), nullable=True)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("world_id", "wrestler1_id", "wrestler2_id",
+                         name="uq_wrestler_relationship"),
+        Index("ix_relationship_pair", "wrestler1_id", "wrestler2_id"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tag Teams
+# ---------------------------------------------------------------------------
+
+class TagTeamDB(Base):
+    """A tag team partnership between two wrestlers."""
+    __tablename__ = "tag_teams"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    world_id = Column(String, ForeignKey("worlds.id"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    wrestler1_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
+    wrestler2_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
+    team_chemistry = Column(Integer, default=30)  # 0-100
+    wins = Column(Integer, default=0)
+    losses = Column(Integer, default=0)
+    formed_date = Column(String(10), nullable=True)
+    dissolved_date = Column(String(10), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utc_now)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+
+# ---------------------------------------------------------------------------
+# Talent Offers (Inter-Federation)
+# ---------------------------------------------------------------------------
+
+class TalentOfferDB(Base):
+    """A contract offer from a federation to a wrestler (poaching/signing)."""
+    __tablename__ = "talent_offers"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    world_id = Column(String, ForeignKey("worlds.id"), nullable=False, index=True)
+    federation_id = Column(String, ForeignKey("game_federations.id"), nullable=False, index=True)
+    wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
+    salary_offered = Column(Float, default=2000.0)
+    contract_length_weeks = Column(Integer, default=52)
+    status = Column(String(20), default="pending")  # pending, accepted, rejected, expired
+    offered_date = Column(String(10), nullable=False)
+    expires_date = Column(String(10), nullable=True)
+    created_at = Column(DateTime, default=_utc_now)
+
+    federation = relationship("GameFederationDB", back_populates="talent_offers")

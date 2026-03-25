@@ -9,4 +9,5 @@ from models.game_models import (  # noqa
     PromoDB, ChampionshipDB, ChampionshipHistoryDB,
     StorylineDB, StorylineParticipantDB,
     PlayerActionDB, GameNarrativeLogDB, WorldNewsDB, WrestlerHistoryDB,
+    WrestlerRelationshipDB, TagTeamDB, TalentOfferDB,
 )

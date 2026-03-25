@@ -15,7 +15,8 @@ from sqlalchemy.orm import Session
 
 from models.game_models import (
     ShowDB, ShowSegmentDB, MatchDB, MatchParticipantDB,
-    GameFederationDB, GameWrestlerDB, ContractDB, ChampionshipDB,
+    GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
+    ContractDB, ChampionshipDB, TagTeamDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -150,9 +151,41 @@ def get_show_card(db: Session, show_id: str) -> list:
 
 CARD_POSITIONS = ["opener", "midcard", "midcard", "semifinal", "main_event"]
 
+
+def _sort_roster_by_style(db: Session, wrestlers: list, booking_style: str) -> list:
+    """Sort wrestlers for card placement based on federation booking style."""
+    if booking_style == "workrate":
+        # Prioritize technical skill and psychology
+        def score(w):
+            stats = db.query(WrestlerStatsDB).filter(WrestlerStatsDB.wrestler_id == w.id).first()
+            if not stats:
+                return 50
+            return stats.technical + stats.psychology + stats.selling
+        return sorted(wrestlers, key=score, reverse=True)
+    elif booking_style == "entertainment":
+        # Prioritize charisma and popularity
+        def score(w):
+            stats = db.query(WrestlerStatsDB).filter(WrestlerStatsDB.wrestler_id == w.id).first()
+            charisma = stats.charisma if stats else 50
+            return charisma + w.popularity
+        return sorted(wrestlers, key=score, reverse=True)
+    elif booking_style == "hardcore":
+        # Prioritize brawlers and toughness
+        def score(w):
+            stats = db.query(WrestlerStatsDB).filter(WrestlerStatsDB.wrestler_id == w.id).first()
+            if not stats:
+                return 50
+            return stats.brawling + stats.toughness + stats.power
+        return sorted(wrestlers, key=score, reverse=True)
+    else:
+        # Default/storyline: prioritize popular wrestlers for main event
+        return sorted(wrestlers, key=lambda w: w.popularity, reverse=True)
+
+
 def npc_book_card(db: Session, show: ShowDB) -> list:
     """Auto-generate a match card for an NPC federation show.
 
+    Uses federation's booking style (ai_personality) to influence card composition.
     Returns list of created segments.
     """
     fed = db.query(GameFederationDB).filter(
@@ -160,6 +193,10 @@ def npc_book_card(db: Session, show: ShowDB) -> list:
     ).first()
     if not fed:
         return []
+
+    # Get booking style from federation personality
+    personality = getattr(fed, 'ai_personality', None) or {}
+    booking_style = personality.get("booking_style", "default") if isinstance(personality, dict) else "default"
 
     # Get roster
     contracts = db.query(ContractDB).filter(
@@ -181,7 +218,8 @@ def npc_book_card(db: Session, show: ShowDB) -> list:
     if len(wrestlers) < 2:
         return []
 
-    random.shuffle(wrestlers)
+    # Sort by booking style for card placement (best wrestlers in main event)
+    wrestlers = _sort_roster_by_style(db, wrestlers, booking_style)
 
     # Championships for potential title matches
     championships = db.query(ChampionshipDB).filter(
@@ -191,11 +229,53 @@ def npc_book_card(db: Session, show: ShowDB) -> list:
 
     segments = []
     used = set()
+
+    # Check for tag teams — book a tag match if available (30% chance)
+    tag_teams = db.query(TagTeamDB).filter(
+        TagTeamDB.world_id == show.world_id,
+        TagTeamDB.is_active == True,
+        TagTeamDB.wrestler1_id.in_(wrestler_ids),
+        TagTeamDB.wrestler2_id.in_(wrestler_ids),
+    ).all()
+
+    booked_tag = False
+    if len(tag_teams) >= 2 and random.random() < 0.30:
+        t1, t2 = random.sample(tag_teams, 2)
+        tag_wrestlers = [t1.wrestler1_id, t1.wrestler2_id, t2.wrestler1_id, t2.wrestler2_id]
+        # Ensure no overlap
+        if len(set(tag_wrestlers)) == 4:
+            # Winner is the team with higher combined chemistry + popularity
+            t1_score = t1.team_chemistry + random.randint(-10, 10)
+            t2_score = t2.team_chemistry + random.randint(-10, 10)
+            if t1_score >= t2_score:
+                planned_winner = t1.wrestler1_id  # One of the winning team
+            else:
+                planned_winner = t2.wrestler1_id
+
+            seg = book_match(
+                db, show.id, show.world_id,
+                wrestler_ids=tag_wrestlers,
+                match_type="tag_team",
+                planned_winner_id=planned_winner,
+                planned_finish="pinfall",
+                position=2,  # Midcard
+            )
+            segments.append(seg)
+            for wid in tag_wrestlers:
+                used.add(wid)
+            booked_tag = True
+
     num_matches = min(len(wrestlers) // 2, len(CARD_POSITIONS))
+    if booked_tag:
+        num_matches = max(1, num_matches - 1)  # Already booked one
+
+    # Book singles matches — reverse order so best wrestlers get main event
+    match_wrestlers = [w for w in wrestlers if w.id not in used]
+    # Put lower-ranked first (they'll be openers), higher-ranked last (main event)
+    match_wrestlers.reverse()
 
     for i in range(num_matches):
-        # Pick two unused wrestlers
-        available = [w for w in wrestlers if w.id not in used]
+        available = [w for w in match_wrestlers if w.id not in used]
         if len(available) < 2:
             break
 
@@ -203,7 +283,7 @@ def npc_book_card(db: Session, show: ShowDB) -> list:
         used.add(w1.id)
         used.add(w2.id)
 
-        # Determine winner based on popularity/stats
+        # Determine winner
         w1_score = w1.popularity + random.randint(-20, 20)
         w2_score = w2.popularity + random.randint(-20, 20)
         planned_winner = w1 if w1_score >= w2_score else w2
@@ -211,30 +291,40 @@ def npc_book_card(db: Session, show: ShowDB) -> list:
         # Title match for main event if champion is available
         is_title = False
         champ_id = None
-        if i == num_matches - 1 and championships:
+        actual_pos = i + (1 if booked_tag else 0)
+        if actual_pos == num_matches + (1 if booked_tag else 0) - 1 and championships:
             champ = championships[0]
             if champ.current_holder_id in (w1.id, w2.id):
                 is_title = True
                 champ_id = champ.id
 
-        card_pos = CARD_POSITIONS[i] if i < len(CARD_POSITIONS) else "midcard"
+        # Hardcore booking style adds stipulations
+        stipulation = None
+        if booking_style == "hardcore" and random.random() < 0.4:
+            stipulation = random.choice([
+                "No DQ", "Falls Count Anywhere", "Street Fight", "Extreme Rules"
+            ])
+
         finish = random.choice(["pinfall", "pinfall", "pinfall", "submission"])
+        position = actual_pos + 1
 
         seg = book_match(
             db, show.id, show.world_id,
             wrestler_ids=[w1.id, w2.id],
             match_type="singles",
+            stipulation=stipulation,
             is_title_match=is_title,
             championship_id=champ_id,
             planned_winner_id=planned_winner.id,
             planned_finish=finish,
-            position=i + 1,
+            position=position,
         )
         segments.append(seg)
 
     # Add a promo segment between matches
-    if num_matches >= 3:
-        promo_pos = num_matches // 2 + 1
+    total_segs = len(segments)
+    if total_segs >= 3:
+        promo_pos = total_segs // 2 + 1
         available = [w for w in wrestlers if w.id not in used]
         promo_wrestler = available[0].name if available else "a mystery guest"
         book_promo_segment(

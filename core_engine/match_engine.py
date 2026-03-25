@@ -453,7 +453,7 @@ def simulate_match_from_db(db: Session, match: MatchDB) -> MatchResult:
     if len(participants_db) < 2:
         return MatchResult(narrative_summary="Not enough competitors")
 
-    # Build participant states
+    # Build participant states with morale modifier
     participant_states = []
     for p in participants_db:
         wrestler = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == p.wrestler_id).first()
@@ -462,17 +462,26 @@ def simulate_match_from_db(db: Session, match: MatchDB) -> MatchResult:
         if not wrestler or not stats:
             continue
 
+        # Morale affects performance: range 0.85 to 1.15
+        morale = wrestler.morale if wrestler.morale is not None else 50
+        stat_modifier = 0.85 + (morale / 100) * 0.3
+
         state = MatchParticipantState(
             wrestler_id=wrestler.id,
             name=wrestler.name,
             health=wrestler.condition,  # Current condition affects match health
             stats={
-                "power": stats.power, "technical": stats.technical,
-                "aerial": stats.aerial, "brawling": stats.brawling,
-                "submission": stats.submission, "stamina": stats.stamina,
-                "toughness": stats.toughness, "speed": stats.speed,
-                "charisma": stats.charisma, "psychology": stats.psychology,
-                "selling": stats.selling,
+                "power": int(stats.power * stat_modifier),
+                "technical": int(stats.technical * stat_modifier),
+                "aerial": int(stats.aerial * stat_modifier),
+                "brawling": int(stats.brawling * stat_modifier),
+                "submission": int(stats.submission * stat_modifier),
+                "stamina": int(stats.stamina * stat_modifier),
+                "toughness": int(stats.toughness * stat_modifier),
+                "speed": int(stats.speed * stat_modifier),
+                "charisma": int(stats.charisma * stat_modifier),
+                "psychology": int(stats.psychology * stat_modifier),
+                "selling": int(stats.selling * stat_modifier),
             },
             finisher_name=wrestler.finisher_name or "Finisher",
             alignment=wrestler.alignment or "face",
@@ -483,10 +492,9 @@ def simulate_match_from_db(db: Session, match: MatchDB) -> MatchResult:
     if len(participant_states) < 2:
         return MatchResult(narrative_summary="Not enough competitors with stats")
 
-    # Determine card position
-    card_position = "midcard"
-    # Check if this is main event by position or title match
-    if match.is_title_match:
+    # Determine card position (may be set by world ticker, fallback to heuristic)
+    card_position = getattr(match, "card_position", None) or "midcard"
+    if match.is_title_match and card_position == "midcard":
         card_position = "main_event"
 
     # Simulate
@@ -499,6 +507,22 @@ def simulate_match_from_db(db: Session, match: MatchDB) -> MatchResult:
     )
     result = simulator.simulate(participant_states)
 
+    # Apply chemistry bonus from wrestler relationships
+    try:
+        from core_engine.match_aftermath import get_chemistry_bonus
+        if len(participant_states) >= 2 and match.world_id:
+            chem_bonus = get_chemistry_bonus(
+                db, match.world_id,
+                participant_states[0].wrestler_id,
+                participant_states[1].wrestler_id,
+            )
+            if chem_bonus > 0:
+                result.match_rating = round(
+                    min(5.0, result.match_rating + chem_bonus), 1
+                )
+    except Exception:
+        pass  # Chemistry bonus is optional enhancement
+
     # Persist results back to DB
     match.winner_id = result.winner_id
     match.finish_type = result.finish_type
@@ -510,7 +534,12 @@ def simulate_match_from_db(db: Session, match: MatchDB) -> MatchResult:
     match.simulation_log = [
         {
             "tick": s.tick, "attacker": s.attacker_id, "defender": s.defender_id,
-            "move": s.move_name, "damage": s.damage, "reversed": s.was_reversed,
+            "move": s.move_name, "move_type": s.move_type, "damage": s.damage,
+            "reversed": s.was_reversed, "is_near_fall": s.is_near_fall,
+            "is_finisher": s.is_finisher, "is_finish": s.is_finish,
+            "crowd_reaction": s.crowd_reaction,
+            "highlight_tier": (3 if s.is_finisher or s.is_finish else
+                               2 if s.is_near_fall or s.was_reversed or s.damage >= 10 else 1),
             "description": s.description,
         }
         for s in result.spots

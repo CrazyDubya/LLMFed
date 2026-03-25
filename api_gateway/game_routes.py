@@ -269,12 +269,17 @@ def api_get_wrestler(
             StorylineParticipantDB.left_date == None,
         ).all()
 
+        # Compute win/loss record
+        from core_engine.match_aftermath import compute_win_loss
+        win_loss = compute_win_loss(db, wrestler_id)
+
         return WrestlerDetailResponse(
             wrestler=WrestlerResponse.model_validate(wrestler),
             stats=WrestlerStatsResponse.model_validate(stats) if stats else None,
             current_federation=contract.federation_id if contract else None,
             current_championships=[c.name for c in champs],
             active_storylines=[sp.storyline_id for sp in storyline_parts],
+            win_loss=win_loss,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -387,6 +392,40 @@ def api_get_match(
     if not match:
         raise HTTPException(status_code=404, detail="Match not found")
     return MatchResultResponse.model_validate(match)
+
+
+# ---------------------------------------------------------------------------
+# Match play-by-play
+# ---------------------------------------------------------------------------
+
+@router.get("/matches/{match_id}/play-by-play")
+def api_get_play_by_play(
+    match_id: str,
+    highlights_only: bool = False,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get match play-by-play from simulation log."""
+    match = db.query(MatchDB).filter(MatchDB.id == match_id).first()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match not found")
+    if not match.is_completed:
+        raise HTTPException(status_code=400, detail="Match not yet completed")
+
+    log = match.simulation_log or []
+    if highlights_only:
+        log = [entry for entry in log if entry.get("highlight_tier", 1) >= 2]
+
+    return {
+        "match_id": match.id,
+        "winner_id": match.winner_id,
+        "finish_type": match.finish_type,
+        "finish_description": match.finish_description,
+        "match_rating": match.match_rating,
+        "crowd_heat": match.crowd_heat,
+        "duration_minutes": match.duration_minutes,
+        "spots": log,
+    }
 
 
 # ---------------------------------------------------------------------------

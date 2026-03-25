@@ -128,6 +128,9 @@ export const api = {
   getMatch: (matchId: string) =>
     request<any>(`/matches/${matchId}`),
 
+  getPlayByPlay: (matchId: string, highlightsOnly = false) =>
+    request<any>(`/matches/${matchId}/play-by-play?highlights_only=${highlightsOnly}`),
+
   // Promos
   generatePromo: (worldId: string, data: {
     wrestler_id: string; target_wrestler_id?: string;

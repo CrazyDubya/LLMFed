@@ -29,12 +29,28 @@ interface MatchResult {
   is_completed: boolean;
 }
 
+interface PlayByPlaySpot {
+  tick: number;
+  move: string;
+  move_type: string;
+  damage: number;
+  reversed: boolean;
+  is_near_fall: boolean;
+  is_finisher: boolean;
+  is_finish: boolean;
+  crowd_reaction: string;
+  highlight_tier: number;
+  description: string;
+}
+
 export default function ShowViewerPage() {
   const { showId } = useParams<{ showId: string }>();
   const navigate = useNavigate();
   const [showData, setShowData] = useState<any>(null);
   const [segments, setSegments] = useState<Segment[]>([]);
   const [matchResults, setMatchResults] = useState<Record<string, MatchResult>>({});
+  const [playByPlay, setPlayByPlay] = useState<Record<string, PlayByPlaySpot[]>>({});
+  const [expandedMatches, setExpandedMatches] = useState<Record<string, 'highlights' | 'full' | null>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -65,6 +81,31 @@ export default function ShowViewerPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const togglePlayByPlay = async (matchId: string, mode: 'highlights' | 'full') => {
+    const current = expandedMatches[matchId];
+    if (current === mode) {
+      setExpandedMatches(prev => ({ ...prev, [matchId]: null }));
+      return;
+    }
+    setExpandedMatches(prev => ({ ...prev, [matchId]: mode }));
+
+    // Load play-by-play if not cached
+    if (!playByPlay[matchId]) {
+      try {
+        const data = await api.getPlayByPlay(matchId, false);
+        setPlayByPlay(prev => ({ ...prev, [matchId]: data.spots || [] }));
+      } catch { /* silently fail */ }
+    }
+  };
+
+  const getSpotStyle = (spot: PlayByPlaySpot) => {
+    if (spot.is_finisher || spot.is_finish) return 'border-l-red-500 bg-red-900/10';
+    if (spot.is_near_fall) return 'border-l-amber-500 bg-amber-900/10';
+    if (spot.reversed) return 'border-l-blue-500 bg-blue-900/10';
+    if (spot.damage >= 10) return 'border-l-orange-500 bg-orange-900/10';
+    return 'border-l-gray-700 bg-transparent';
   };
 
   const ratingStars = (rating: number | null) => {
@@ -194,6 +235,64 @@ export default function ShowViewerPage() {
                             </span>
                           )}
                         </div>
+
+                        {/* Play-by-play controls */}
+                        <div className="flex gap-2 mt-3">
+                          <button
+                            onClick={() => togglePlayByPlay(match.id, 'highlights')}
+                            className={`px-3 py-1 text-xs rounded border transition ${
+                              expandedMatches[match.id] === 'highlights'
+                                ? 'bg-amber-700 border-amber-600 text-white'
+                                : 'border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-500'
+                            }`}
+                          >
+                            Highlights
+                          </button>
+                          <button
+                            onClick={() => togglePlayByPlay(match.id, 'full')}
+                            className={`px-3 py-1 text-xs rounded border transition ${
+                              expandedMatches[match.id] === 'full'
+                                ? 'bg-amber-700 border-amber-600 text-white'
+                                : 'border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-500'
+                            }`}
+                          >
+                            Full Play-by-Play
+                          </button>
+                        </div>
+
+                        {/* Play-by-play content */}
+                        {expandedMatches[match.id] && playByPlay[match.id] && (
+                          <div className="mt-3 space-y-1 max-h-96 overflow-y-auto">
+                            {(playByPlay[match.id] || [])
+                              .filter(spot =>
+                                expandedMatches[match.id] === 'full' || spot.highlight_tier >= 2
+                              )
+                              .map((spot, i) => (
+                                <div
+                                  key={i}
+                                  className={`border-l-2 pl-3 py-1 text-sm ${getSpotStyle(spot)}`}
+                                >
+                                  <span className="text-gray-500 text-xs mr-2">
+                                    {spot.tick}:00
+                                  </span>
+                                  <span className={
+                                    spot.is_finisher || spot.is_finish ? 'text-red-300 font-bold' :
+                                    spot.is_near_fall ? 'text-amber-300' :
+                                    spot.reversed ? 'text-blue-300' :
+                                    'text-gray-300'
+                                  }>
+                                    {spot.description}
+                                  </span>
+                                  {spot.crowd_reaction && (
+                                    <span className="text-green-500 text-xs ml-2">
+                                      {spot.crowd_reaction}
+                                    </span>
+                                  )}
+                                </div>
+                              ))
+                            }
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <p className="text-yellow-400">Awaiting simulation...</p>
