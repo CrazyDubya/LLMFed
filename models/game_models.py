@@ -248,6 +248,8 @@ class GameFederationDB(Base):
     founded_date = Column(String(10), nullable=True)  # In-game date
     market_share = Column(Float, default=0.0)  # Percentage of total viewership
     momentum = Column(Integer, default=50)  # 0-100, how "hot" the fed is
+    fanbase_loyalty = Column(Integer, default=50)  # 0-100, how loyal the audience is (affects floor)
+    regional_strength = Column(JSON, default=dict)  # {region: 0-100} strength per market
     is_active = Column(Boolean, default=True)
     ai_personality = Column(JSON, default=dict)  # LLM personality traits for NPC booking
     created_at = Column(DateTime, default=_utc_now)
@@ -283,6 +285,7 @@ class GameWrestlerDB(Base):
     alignment = Column(String(20), default="face")
     alignment_momentum = Column(Integer, default=0)  # -100 (heel) to +100 (face)
     popularity = Column(Integer, default=50)  # 0-100
+    draw_rating = Column(Float, default=50.0)  # 0-100, computed from popularity + titles + streaks + rivalries
     condition = Column(Integer, default=100)  # Health/stamina 0-100
     morale = Column(Integer, default=75)  # 0-100
     win_streak = Column(Integer, default=0)  # Current consecutive wins (neg = loss streak)

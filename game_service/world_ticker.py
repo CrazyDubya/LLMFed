@@ -29,6 +29,7 @@ _show_service = None
 _storyline_service = None
 _match_aftermath = None
 _news_service = None
+_viewership_service = None
 
 
 def _get_match_engine():
@@ -69,6 +70,14 @@ def _get_news_service():
         from game_service import news_service as _ns
         _news_service = _ns
     return _news_service
+
+
+def _get_viewership_service():
+    global _viewership_service
+    if _viewership_service is None:
+        from game_service import viewership_service as _vs
+        _viewership_service = _vs
+    return _viewership_service
 
 
 def advance_game_date(date_str: str, days: int = 1) -> str:
@@ -403,16 +412,8 @@ class WorldTicker:
                 promo_rating = self._evaluate_promo_segment(seg, show)
                 seg.rating = promo_rating
 
-        # Calculate show-level stats
-        attendance = int(show.capacity * random.uniform(0.3, 1.0) * prestige_factor)
-        ticket_price = random.uniform(15, 75) * prestige_factor
-        gate = attendance * ticket_price
-
-        show.attendance = attendance
-        show.gate_revenue = round(gate, 2)
+        # Calculate show overall rating
         show.is_completed = True
-
-        # Card psychology bonus
         card_bonus = self._calculate_card_psychology_bonus(match_ratings)
 
         if match_ratings:
@@ -420,18 +421,48 @@ class WorldTicker:
                 sum(match_ratings) / len(match_ratings) + card_bonus, 1
             )
         else:
-            show.overall_rating = round(random.uniform(2.0, 4.0) * prestige_factor, 1)
+            show.overall_rating = round(2.5 * prestige_factor, 1)
 
+        # --- Viewership model ---
+        vs = _get_viewership_service()
+        card_draw = vs.calculate_card_draw(self.db, show)
+
+        # Attendance & gate revenue
+        attendance, ticket_price, gate = vs.calculate_attendance(
+            self.db, show, fed, card_draw,
+        )
+        show.attendance = attendance
+        show.gate_revenue = gate
+
+        # TV rating (weekly shows only)
         if show.show_type == "weekly" and fed:
-            show.tv_rating = round(random.uniform(0.5, 3.0) * prestige_factor, 2)
+            show.tv_rating = vs.calculate_tv_rating(self.db, show, fed)
 
-        # Update federation finances
+        # PPV buys
         if fed:
             fed.weekly_revenue += gate
             if show.show_type == "ppv":
-                ppv_buys = int(random.uniform(50000, 500000) * prestige_factor)
+                ppv_buys = vs.calculate_ppv_buys(self.db, show, fed, card_draw)
                 show.ppv_buys = ppv_buys
                 fed.weekly_revenue += ppv_buys * 49.99
+
+        # Dynamic prestige adjustment based on show performance
+        if fed:
+            vs.update_federation_fanbase(self.db, fed, show)
+
+        # Update wrestler draw ratings for everyone on the card
+        for seg in segments:
+            if seg.segment_type == "match" and seg.match_id:
+                participants = self.db.query(MatchParticipantDB).filter(
+                    MatchParticipantDB.match_id == seg.match_id
+                ).all()
+                for p in participants:
+                    new_draw = vs.calculate_wrestler_draw(self.db, p.wrestler_id)
+                    wrestler = self.db.query(GameWrestlerDB).filter(
+                        GameWrestlerDB.id == p.wrestler_id
+                    ).first()
+                    if wrestler:
+                        wrestler.draw_rating = round(new_draw, 1)
 
         # Generate news from show results
         try:
@@ -442,11 +473,11 @@ class WorldTicker:
 
         self._log_event(
             "show",
-            f"{show.name} drew {attendance} fans (Rating: {show.overall_rating})",
+            f"{show.name} drew {attendance} fans, TV: {show.tv_rating} (Rating: {show.overall_rating})",
             [show.federation_id],
             importance=6,
         )
-        self.events.append(f"Show completed: {show.name} ({attendance} attendance)")
+        self.events.append(f"Show completed: {show.name} ({attendance} attendance, TV: {show.tv_rating})")
 
     def _evaluate_promo_segment(self, seg: ShowSegmentDB, show: ShowDB) -> float:
         """Evaluate a promo segment rating using promo_service when a wrestler is identifiable."""

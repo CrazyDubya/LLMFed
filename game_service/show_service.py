@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from models.game_models import (
     ShowDB, ShowSegmentDB, MatchDB, MatchParticipantDB,
     GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    ContractDB, ChampionshipDB, TagTeamDB,
+    ContractDB, ChampionshipDB, TagTeamDB, PromoDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -104,18 +104,42 @@ def book_match(db: Session, show_id: str, world_id: str,
 
 def book_promo_segment(db: Session, show_id: str,
                        description: str = "Promo segment",
-                       position: int = None) -> ShowSegmentDB:
-    """Book a non-match segment (promo, backstage, angle)."""
+                       position: int = None,
+                       wrestler_id: str = None,
+                       target_wrestler_id: str = None,
+                       world_id: str = None,
+                       game_date: str = None) -> ShowSegmentDB:
+    """Book a promo segment, creating a PromoDB record when a wrestler is identified."""
     if position is None:
         existing = db.query(ShowSegmentDB).filter(
             ShowSegmentDB.show_id == show_id
         ).count()
         position = existing + 1
 
+    promo_id = None
+    if wrestler_id:
+        # Resolve world_id from show if not provided
+        if not world_id:
+            show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
+            if show:
+                world_id = show.world_id
+        promo = PromoDB(
+            world_id=world_id,
+            wrestler_id=wrestler_id,
+            target_wrestler_id=target_wrestler_id,
+            content=description,
+            promo_type="in_ring",
+            game_date=game_date,
+        )
+        db.add(promo)
+        db.flush()
+        promo_id = promo.id
+
     segment = ShowSegmentDB(
         show_id=show_id,
         position=position,
         segment_type="promo",
+        promo_id=promo_id,
         description=description,
         planned_duration_minutes=10,
     )
@@ -326,12 +350,29 @@ def npc_book_card(db: Session, show: ShowDB) -> list:
     if total_segs >= 3:
         promo_pos = total_segs // 2 + 1
         available = [w for w in wrestlers if w.id not in used]
-        promo_wrestler = available[0].name if available else "a mystery guest"
-        book_promo_segment(
-            db, show.id,
-            description=f"{promo_wrestler} addresses the crowd",
-            position=promo_pos,
-        )
+        if available:
+            promo_wrestler = available[0]
+            book_promo_segment(
+                db, show.id,
+                description=f"{promo_wrestler.name} addresses the crowd",
+                position=promo_pos,
+                wrestler_id=promo_wrestler.id,
+                world_id=show.world_id,
+                game_date=show.game_date,
+            )
+        else:
+            # Fallback: pick the most popular wrestler on the card
+            card_wrestlers = sorted(wrestlers, key=lambda w: w.popularity, reverse=True)
+            if card_wrestlers:
+                promo_wrestler = card_wrestlers[0]
+                book_promo_segment(
+                    db, show.id,
+                    description=f"{promo_wrestler.name} addresses the crowd",
+                    position=promo_pos,
+                    wrestler_id=promo_wrestler.id,
+                    world_id=show.world_id,
+                    game_date=show.game_date,
+                )
 
     db.flush()
     return segments
