@@ -297,10 +297,17 @@ class WorldTicker:
     # ------------------------------------------------------------------
 
     def _npc_decisions(self):
-        """AI-controlled federations and wrestlers make decisions."""
-        day_of_week = get_day_of_week(self.world.current_game_date)
+        """AI-controlled federations and wrestlers make decisions.
 
-        # NPC federations book weekly shows on specific days
+        Uses the booking vision system to:
+        - Book PPV shows when the calendar says so
+        - Book weekly TV that builds toward the next PPV
+        - Plan PPV cards when entering the build window
+        - Adapt vision when circumstances change (hot/cold acts)
+        """
+        day_of_week = get_day_of_week(self.world.current_game_date)
+        game_date = self.world.current_game_date
+
         npc_feds = self.db.query(GameFederationDB).filter(
             GameFederationDB.world_id == self.world.id,
             GameFederationDB.is_npc == True,
@@ -308,27 +315,126 @@ class WorldTicker:
         ).all()
 
         for fed in npc_feds:
-            # Each fed has a weekly show day (based on name hash)
-            show_day = hash(fed.name) % 7
-            if day_of_week == show_day:
-                self._npc_book_weekly_show(fed)
+            # Check if today is a PPV day
+            ppv = self._check_ppv_today(fed, game_date)
+            if ppv:
+                self._npc_book_ppv_show(fed, ppv)
+            else:
+                # Regular weekly show on the fed's designated day
+                show_day = hash(fed.name) % 7
+                if day_of_week == show_day:
+                    self._npc_book_weekly_show(fed)
 
-    def _npc_book_weekly_show(self, fed: GameFederationDB):
-        """NPC federation auto-books a weekly show with a full match card."""
+            # Weekly vision check: plan upcoming PPV cards, adapt to hot/cold acts
+            if day_of_week == 0:  # Mondays = planning day
+                self._npc_vision_check(fed, game_date)
+
+    def _check_ppv_today(self, fed: GameFederationDB, game_date: str):
+        """Check if a PPV is scheduled for today."""
+        from models.game_models import PPVEventDB
+        return self.db.query(PPVEventDB).filter(
+            PPVEventDB.federation_id == fed.id,
+            PPVEventDB.scheduled_date == game_date,
+            PPVEventDB.is_completed == False,
+        ).first()
+
+    def _npc_book_ppv_show(self, fed: GameFederationDB, ppv):
+        """Book and create a PPV show from the PPV calendar."""
         show_svc = _get_show_service()
         show = show_svc.create_show(
             self.db, self.world.id, fed.id,
-            name=f"{fed.short_name or fed.name} Weekly",
+            name=ppv.name,
+            show_type="ppv",
+            venue=ppv.venue or f"{fed.home_region} Arena",
+            capacity=ppv.capacity or 15000,
+            game_date=self.world.current_game_date,
+        )
+        ppv.show_id = show.id
+
+        # Book the card using planned matches from PPV + vision
+        segments = show_svc.npc_book_card(self.db, show, ppv_event=ppv)
+        ppv.is_completed = True
+        self.db.add(ppv)
+
+        self.events.append(
+            f"PPV: {ppv.name} ({len(segments)} matches, capacity {ppv.capacity})"
+        )
+
+    def _npc_book_weekly_show(self, fed: GameFederationDB):
+        """NPC federation auto-books a weekly show, building toward next PPV."""
+        show_svc = _get_show_service()
+
+        # Check if we're in a PPV build window
+        from game_service.ppv_calendar_service import get_next_ppv, is_build_window, is_go_home_week
+        next_ppv = get_next_ppv(self.db, fed.id, self.world.current_game_date)
+
+        show_name = f"{fed.short_name or fed.name} Weekly"
+        if next_ppv and is_go_home_week(self.world.current_game_date, next_ppv.scheduled_date):
+            show_name = f"{fed.short_name or fed.name} Go-Home Show"
+        elif next_ppv and is_build_window(self.world.current_game_date, next_ppv.scheduled_date):
+            show_name = f"{fed.short_name or fed.name} Weekly (Building to {next_ppv.name})"
+
+        show = show_svc.create_show(
+            self.db, self.world.id, fed.id,
+            name=show_name,
             show_type="weekly",
             venue=f"{fed.home_region} Arena",
             capacity=random.randint(2000, 10000),
             game_date=self.world.current_game_date,
         )
-        # Auto-book a match card
-        segments = show_svc.npc_book_card(self.db, show)
+        segments = show_svc.npc_book_card(self.db, show, next_ppv=next_ppv)
         self.events.append(
             f"{fed.short_name or fed.name} airs weekly show ({len(segments)} matches)"
         )
+
+    def _npc_vision_check(self, fed: GameFederationDB, game_date: str):
+        """Weekly strategic check — plan PPV cards and adapt to hot/cold acts."""
+        from models.game_models import BookingVisionDB, PPVEventDB
+        from game_service.ppv_calendar_service import (
+            get_next_ppv, is_build_window, plan_ppv_card_from_vision,
+        )
+        from game_service.booking_vision_service import (
+            adapt_vision_for_hot_act, adapt_vision_for_cold_act,
+        )
+
+        vision = self.db.query(BookingVisionDB).filter(
+            BookingVisionDB.federation_id == fed.id,
+        ).first()
+        if not vision:
+            return
+
+        # Plan upcoming PPV card if entering build window
+        next_ppv = get_next_ppv(self.db, fed.id, game_date)
+        if next_ppv and is_build_window(game_date, next_ppv.scheduled_date):
+            # Only plan once (check if matches already penciled)
+            if not next_ppv.planned_main_event and not next_ppv.planned_matches:
+                plan_ppv_card_from_vision(self.db, next_ppv, vision)
+                self.events.append(f"{fed.short_name}: PPV card planned for {next_ppv.name}")
+
+        # Check for hot/cold acts — wrestlers whose popularity diverges from push tier
+        from models.game_models import WrestlerPushDB
+        pushes = self.db.query(WrestlerPushDB).filter(
+            WrestlerPushDB.federation_id == fed.id,
+        ).all()
+
+        for push in pushes:
+            wrestler = self.db.query(GameWrestlerDB).filter(
+                GameWrestlerDB.id == push.wrestler_id,
+            ).first()
+            if not wrestler:
+                continue
+
+            # Hot act: popularity way above their tier
+            tier_expectations = {
+                "main_event": 70, "upper_midcard": 55,
+                "midcard": 40, "lower_card": 25, "jobber": 15,
+            }
+            expected = tier_expectations.get(push.push_tier, 40)
+
+            if wrestler.popularity > expected + 20 and push.direction != "rising":
+                adapt_vision_for_hot_act(self.db, vision, wrestler.id, game_date)
+            elif wrestler.popularity < expected - 15 and push.push_tier in ("main_event", "upper_midcard"):
+                adapt_vision_for_cold_act(self.db, vision, wrestler.id, game_date)
 
     # ------------------------------------------------------------------
     # Phase 3: Simulate shows

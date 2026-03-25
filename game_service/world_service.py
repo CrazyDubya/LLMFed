@@ -70,6 +70,34 @@ def _random_stat(base: int = 50, variance: int = 25) -> int:
     return max(1, min(100, base + random.randint(-variance, variance)))
 
 
+def _generate_career_goals(age: int) -> list:
+    """Generate career goals for a wrestler based on age."""
+    goals = []
+
+    if age < 25:
+        goals.append(random.choice([
+            "win_first_title", "prove_myself", "make_it_to_main_event",
+        ]))
+    elif age < 32:
+        goals.append(random.choice([
+            "become_champion", "main_event_ppv", "build_legacy",
+            "become_top_draw", "win_title_at_crown_jewel",
+        ]))
+    else:
+        goals.append(random.choice([
+            "one_more_title_run", "mentor_next_generation", "retirement_match",
+            "cement_legacy", "prove_doubters_wrong",
+        ]))
+
+    # Secondary goal
+    goals.append(random.choice([
+        "earn_respect", "get_rich", "have_5_star_match",
+        "defeat_rival", "headline_biggest_show",
+    ]))
+
+    return goals
+
+
 def _generate_npc_wrestler(world_id: str) -> tuple:
     """Generate a random NPC wrestler with stats."""
     name = f"{random.choice(WRESTLER_FIRST_NAMES)} {random.choice(WRESTLER_LAST_NAMES)}"
@@ -95,6 +123,7 @@ def _generate_npc_wrestler(world_id: str) -> tuple:
             "charisma_style": random.choice(["cocky", "humble", "intense", "funny", "mysterious"]),
             "risk_tolerance": random.randint(20, 90),
         },
+        career_goals=_generate_career_goals(age),
     )
 
     # Scale stats by experience
@@ -206,6 +235,30 @@ def create_world(db: Session, name: str, description: str = None,
             ))
         else:
             free_agents.append(wrestler)
+
+    # Generate booking visions and PPV calendars for each federation
+    from game_service.booking_vision_service import generate_federation_vision
+    from game_service.ppv_calendar_service import generate_ppv_calendar
+
+    db.flush()  # Ensure all contracts are persisted
+
+    for fed in federations:
+        # Get the fed's roster
+        fed_contracts = db.query(ContractDB).filter(
+            ContractDB.federation_id == fed.id,
+            ContractDB.status == "active",
+        ).all()
+        fed_roster = []
+        for c in fed_contracts:
+            w = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == c.wrestler_id).first()
+            if w:
+                fed_roster.append(w)
+
+        if fed_roster:
+            # Generate booking vision (push tiers, title pipeline, planned feuds)
+            generate_federation_vision(db, fed, fed_roster)
+            # Generate PPV calendar for the year
+            generate_ppv_calendar(db, fed, world.current_game_date)
 
     db.commit()
     db.refresh(world)

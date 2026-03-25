@@ -174,6 +174,7 @@ def get_show_card(db: Session, show_id: str) -> list:
 # ---------------------------------------------------------------------------
 
 CARD_POSITIONS = ["opener", "midcard", "midcard", "semifinal", "main_event"]
+PUSH_TIERS = ["main_event", "upper_midcard", "midcard", "lower_card", "jobber"]
 
 
 def _sort_roster_by_style(db: Session, wrestlers: list, booking_style: str) -> list:
@@ -206,10 +207,12 @@ def _sort_roster_by_style(db: Session, wrestlers: list, booking_style: str) -> l
         return sorted(wrestlers, key=lambda w: w.popularity, reverse=True)
 
 
-def npc_book_card(db: Session, show: ShowDB) -> list:
+def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> list:
     """Auto-generate a match card for an NPC federation show.
 
     Uses federation's booking style (ai_personality) to influence card composition.
+    When ppv_event is provided, books the PPV's planned card.
+    When next_ppv is provided, weekly TV builds toward it.
     Returns list of created segments.
     """
     fed = db.query(GameFederationDB).filter(
@@ -250,6 +253,19 @@ def npc_book_card(db: Session, show: ShowDB) -> list:
         ChampionshipDB.federation_id == fed.id,
         ChampionshipDB.is_active == True,
     ).all()
+
+    # Load push tiers for vision-aware booking
+    from models.game_models import WrestlerPushDB
+    push_map = {}
+    pushes = db.query(WrestlerPushDB).filter(
+        WrestlerPushDB.federation_id == fed.id,
+    ).all()
+    for p in pushes:
+        push_map[p.wrestler_id] = p
+
+    # If this is a PPV with planned matches, book those first
+    if ppv_event and (ppv_event.planned_main_event or ppv_event.planned_matches):
+        return _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map, booking_style)
 
     segments = []
     used = set()
@@ -307,9 +323,19 @@ def npc_book_card(db: Session, show: ShowDB) -> list:
         used.add(w1.id)
         used.add(w2.id)
 
-        # Determine winner
-        w1_score = w1.popularity + random.randint(-20, 20)
-        w2_score = w2.popularity + random.randint(-20, 20)
+        # Determine winner (push-tier aware)
+        w1_push = push_map.get(w1.id)
+        w2_push = push_map.get(w2.id)
+        w1_tier_rank = PUSH_TIERS.index(w1_push.push_tier) if w1_push and w1_push.push_tier in PUSH_TIERS else 2
+        w2_tier_rank = PUSH_TIERS.index(w2_push.push_tier) if w2_push and w2_push.push_tier in PUSH_TIERS else 2
+        # Lower index = higher tier. Higher-tier wrestlers should usually win.
+        w1_score = (5 - w1_tier_rank) * 20 + w1.popularity + random.randint(-15, 15)
+        w2_score = (5 - w2_tier_rank) * 20 + w2.popularity + random.randint(-15, 15)
+        # Protected wrestlers get a big boost
+        if w1_push and w1_push.protected:
+            w1_score += 30
+        if w2_push and w2_push.protected:
+            w2_score += 30
         planned_winner = w1 if w1_score >= w2_score else w2
 
         # Title match for main event if champion is available
@@ -373,6 +399,131 @@ def npc_book_card(db: Session, show: ShowDB) -> list:
                     world_id=show.world_id,
                     game_date=show.game_date,
                 )
+
+    db.flush()
+    return segments
+
+
+def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map, booking_style):
+    """Book a PPV card from the PPV event's planned matches.
+
+    Uses planned_main_event and planned_matches from the PPV calendar,
+    falling back to the regular booking logic for unplanned slots.
+    """
+    segments = []
+    used = set()
+    wrestler_map = {w.id: w for w in wrestlers}
+    position = 1
+
+    # Book planned undercard matches first
+    for planned in (ppv_event.planned_matches or []):
+        wids = planned.get("wrestler_ids", [])
+        available = [wid for wid in wids if wid in wrestler_map and wid not in used
+                     and not wrestler_map[wid].is_injured]
+        if len(available) < 2:
+            continue
+
+        w1, w2 = wrestler_map[available[0]], wrestler_map[available[1]]
+        used.update(available[:2])
+
+        # Winner: higher push tier wins (PPV wins matter more)
+        w1_push = push_map.get(w1.id)
+        w2_push = push_map.get(w2.id)
+        w1_rank = PUSH_TIERS.index(w1_push.push_tier) if w1_push and w1_push.push_tier in PUSH_TIERS else 2
+        w2_rank = PUSH_TIERS.index(w2_push.push_tier) if w2_push and w2_push.push_tier in PUSH_TIERS else 2
+        planned_winner = w1 if w1_rank <= w2_rank else w2
+
+        seg = book_match(
+            db, show.id, show.world_id,
+            wrestler_ids=[w1.id, w2.id],
+            match_type=planned.get("match_type", "singles"),
+            is_title_match=bool(planned.get("title_id")),
+            championship_id=planned.get("title_id"),
+            planned_winner_id=planned_winner.id,
+            planned_finish="pinfall",
+            position=position,
+        )
+        segments.append(seg)
+        position += 1
+
+    # Book the main event last (highest position)
+    main_event = ppv_event.planned_main_event or {}
+    me_wids = main_event.get("wrestler_ids", [])
+    me_available = [wid for wid in me_wids if wid in wrestler_map and wid not in used
+                    and not wrestler_map[wid].is_injured]
+
+    if len(me_available) >= 2:
+        w1, w2 = wrestler_map[me_available[0]], wrestler_map[me_available[1]]
+        used.update(me_available[:2])
+
+        # Main event: champion usually retains at non-crown-jewel, 40% title change at crown jewel
+        title_id = main_event.get("title_id")
+        champ = None
+        if title_id:
+            champ = db.query(ChampionshipDB).filter(ChampionshipDB.id == title_id).first()
+
+        if champ and champ.current_holder_id in (w1.id, w2.id):
+            holder = w1 if w1.id == champ.current_holder_id else w2
+            challenger = w2 if holder == w1 else w1
+            if ppv_event.is_crown_jewel and random.random() < 0.40:
+                planned_winner = challenger  # Crown jewel title change!
+            elif random.random() < 0.25:
+                planned_winner = challenger  # Regular PPV title change
+            else:
+                planned_winner = holder  # Champion retains
+        else:
+            # Non-title main event
+            w1_push = push_map.get(w1.id)
+            w2_push = push_map.get(w2.id)
+            w1_rank = PUSH_TIERS.index(w1_push.push_tier) if w1_push and w1_push.push_tier in PUSH_TIERS else 2
+            w2_rank = PUSH_TIERS.index(w2_push.push_tier) if w2_push and w2_push.push_tier in PUSH_TIERS else 2
+            planned_winner = w1 if w1_rank <= w2_rank else w2
+
+        seg = book_match(
+            db, show.id, show.world_id,
+            wrestler_ids=[w1.id, w2.id],
+            match_type="singles",
+            is_title_match=bool(title_id),
+            championship_id=title_id,
+            planned_winner_id=planned_winner.id,
+            planned_finish="pinfall",
+            position=position,
+        )
+        segments.append(seg)
+        position += 1
+
+    # Fill remaining slots with available wrestlers
+    remaining = [w for w in wrestlers if w.id not in used]
+    for i in range(0, min(len(remaining) - 1, 4), 2):
+        w1, w2 = remaining[i], remaining[i + 1]
+        used.add(w1.id)
+        used.add(w2.id)
+        w1_score = w1.popularity + random.randint(-20, 20)
+        w2_score = w2.popularity + random.randint(-20, 20)
+        planned_winner = w1 if w1_score >= w2_score else w2
+
+        seg = book_match(
+            db, show.id, show.world_id,
+            wrestler_ids=[w1.id, w2.id],
+            match_type="singles",
+            planned_winner_id=planned_winner.id,
+            planned_finish="pinfall",
+            position=position,
+        )
+        segments.append(seg)
+        position += 1
+
+    # Opening promo for PPV
+    if wrestlers:
+        top = sorted(wrestlers, key=lambda w: w.popularity, reverse=True)[0]
+        book_promo_segment(
+            db, show.id,
+            description=f"{top.name} opens {ppv_event.name} with a championship address",
+            position=0,
+            wrestler_id=top.id,
+            world_id=show.world_id,
+            game_date=show.game_date,
+        )
 
     db.flush()
     return segments
