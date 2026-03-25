@@ -104,6 +104,12 @@ def _generate_npc_wrestler(world_id: str) -> tuple:
     age = random.randint(20, 42)
     exp = max(0, age - 18 - random.randint(0, 5))
 
+    from game_service.wrestler_lifecycle_service import (
+        generate_physical_attributes, update_career_phase,
+    )
+    phys = generate_physical_attributes()
+    peak_age = random.randint(26, 32)
+
     wrestler = GameWrestlerDB(
         world_id=world_id,
         name=name,
@@ -124,7 +130,15 @@ def _generate_npc_wrestler(world_id: str) -> tuple:
             "risk_tolerance": random.randint(20, 90),
         },
         career_goals=_generate_career_goals(age),
+        # Group 1: Aging
+        birth_date=f"{2026 - age}-{random.randint(1,12):02d}-{random.randint(1,28):02d}",
+        peak_age=peak_age,
+        # Group 6: Physical Identity
+        height_cm=phys["height_cm"],
+        weight_kg=phys["weight_kg"],
+        body_type=phys["body_type"],
     )
+    update_career_phase(wrestler)
 
     # Scale stats by experience
     exp_bonus = min(exp * 2, 30)
@@ -235,6 +249,14 @@ def create_world(db: Session, name: str, description: str = None,
             ))
         else:
             free_agents.append(wrestler)
+
+    # Create structured goal records for each wrestler (Group 2)
+    from game_service.wrestler_lifecycle_service import create_wrestler_goals
+    all_wrestlers = db.query(GameWrestlerDB).filter(
+        GameWrestlerDB.world_id == world.id,
+    ).all()
+    for w in all_wrestlers:
+        create_wrestler_goals(db, w, world.current_game_date)
 
     # Generate booking visions and PPV calendars for each federation
     from game_service.booking_vision_service import generate_federation_vision

@@ -414,7 +414,11 @@ class MatchSimulator:
         # Check for reversal
         was_reversed = False
         reversal_move = None
-        reversal_chance = (defender.stats.get("technical", 50) + defender.stats.get("psychology", 50)) / 400
+        reversal_chance = (
+            defender.stats.get("technical", 50)
+            + defender.stats.get("psychology", 50)
+            + defender.stats.get("speed", 50) * 0.5
+        ) / 500
         reversal_chance *= (defender.momentum / 100)
 
         if random.random() < reversal_chance:
@@ -486,6 +490,7 @@ class MatchSimulator:
         # Psychology stat helps maintain control
         hold_chance = attacker.stats.get("psychology", 50) / 100
         comeback_chance = defender.stats.get("stamina", 50) / 200
+        comeback_chance += defender.stats.get("speed", 50) / 400  # Fast wrestlers escape faster
 
         # Lower health = more likely to mount comeback (fighting spirit)
         if defender.health < 40:
@@ -644,6 +649,16 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None) -
         # Morale affects performance: range 0.85 to 1.15
         morale = wrestler.morale if wrestler.morale is not None else 50
         stat_modifier = 0.85 + (morale / 100) * 0.3
+
+        # Ring rust modifier (Group 1)
+        ring_rust = getattr(wrestler, "ring_rust_days", 0) or 0
+        if ring_rust > 14:
+            stat_modifier *= max(0.85, 1.0 - (ring_rust / 500))
+
+        # Conditioning modifier (Group 6)
+        conditioning = getattr(stats, "conditioning_level", 70) or 70
+        cond_modifier = 0.85 + (conditioning / 100) * 0.15  # 0.85-1.0
+        stat_modifier *= cond_modifier
 
         state = MatchParticipantState(
             wrestler_id=wrestler.id,

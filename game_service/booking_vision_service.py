@@ -161,6 +161,10 @@ def _score_roster_for_tiers(
             psych_score = (stats.psychology + stats.charisma + stats.mic_skill) / 3
             score = psych_score * 0.5 + w.popularity * 0.5
 
+        # Group 3: Backstage politics modifier
+        politics_bonus = (stats.backstage_politics or 50) / 200  # 0 to 0.5
+        score *= (1.0 + politics_bonus)
+
         scored.append({"wrestler": w, "score": score, "stats": stats})
 
     scored.sort(key=lambda x: x["score"], reverse=True)

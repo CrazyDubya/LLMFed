@@ -62,6 +62,9 @@ def process_match_aftermath(db: Session, match: MatchDB, game_date: str):
     # 8. Alignment momentum shifts
     _update_alignment_momentum(db, match, winners, losers, game_date)
 
+    # 9. Career highlights (Group 5) and specialization growth (Group 6)
+    _post_match_lifecycle(db, match, participants, game_date)
+
 
 def _handle_title_result(db: Session, match: MatchDB,
                          winners: list, losers: list, game_date: str):
@@ -408,6 +411,28 @@ def get_chemistry_bonus(db: Session, world_id: str,
 
     # Chemistry bonus scales with match count and quality
     return min(1.0, rel.chemistry_score * 0.2)
+
+
+def _post_match_lifecycle(db: Session, match: MatchDB,
+                         participants: list, game_date: str):
+    """Post-match lifecycle hooks: career highlights and specialization growth."""
+    try:
+        from game_service.wrestler_lifecycle_service import (
+            check_match_highlights, grow_specialization,
+        )
+
+        for p in participants:
+            check_match_highlights(db, match, p.wrestler_id, game_date)
+
+            # Grow specialization from stipulation matches
+            if match.stipulation:
+                stats = db.query(WrestlerStatsDB).filter(
+                    WrestlerStatsDB.wrestler_id == p.wrestler_id
+                ).first()
+                if stats:
+                    grow_specialization(stats, match.stipulation)
+    except Exception as e:
+        logger.warning(f"Lifecycle post-match hook failed: {e}")
 
 
 def compute_win_loss(db: Session, wrestler_id: str) -> dict:

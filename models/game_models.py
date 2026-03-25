@@ -302,6 +302,23 @@ class GameWrestlerDB(Base):
     catchphrase = Column(String(200), nullable=True)
     personality_traits = Column(JSON, default=dict)  # For LLM personality
     career_goals = Column(JSON, default=list)  # AI goal system
+    # --- Group 1: Aging & Decline ---
+    birth_date = Column(String(10), nullable=True)  # YYYY-MM-DD, age derived from game_date
+    peak_age = Column(Integer, default=28)  # Randomized 26-32 at creation
+    career_phase = Column(String(20), default="prime")  # rookie/rising/prime/veteran/declining
+    ring_rust_days = Column(Integer, default=0)  # Days since last match
+    # --- Group 2: Career Goals ---
+    satisfaction = Column(Integer, default=50)  # 0-100, aggregate of goal fulfillment
+    # --- Group 3: Backstage Politics ---
+    locker_room_standing = Column(String(20), default="neutral")  # leader/respected/neutral/disliked/toxic
+    creative_influence = Column(Integer, default=0)  # 0-100
+    # --- Group 5: Legacy ---
+    legacy_score = Column(Integer, default=0)  # Computed: titles + highlights + years + match_avg
+    is_hall_of_famer = Column(Boolean, default=False)
+    # --- Group 6: Physical Identity ---
+    height_cm = Column(Integer, nullable=True)  # 160-210
+    weight_kg = Column(Integer, nullable=True)  # 70-160
+    body_type = Column(String(20), nullable=True)  # cruiserweight/average/big_man/super_heavyweight
     is_active = Column(Boolean, default=True)
     is_injured = Column(Boolean, default=False)
     injury_return_date = Column(String(10), nullable=True)
@@ -349,6 +366,11 @@ class WrestlerStatsDB(Base):
     loyalty = Column(Integer, default=50)
     work_ethic = Column(Integer, default=50)
     injury_prone = Column(Integer, default=30)  # Higher = more injury risk
+    # --- Group 6: Match Specialization & Conditioning ---
+    cage_specialist = Column(Integer, default=0)  # 0-100 bonus in cage/cell matches
+    ladder_specialist = Column(Integer, default=0)  # 0-100 bonus in ladder matches
+    hardcore_specialist = Column(Integer, default=0)  # 0-100 bonus in tables/extreme matches
+    conditioning_level = Column(Integer, default=70)  # Current physical conditioning 0-100
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
     wrestler = relationship("GameWrestlerDB", back_populates="stats")
@@ -886,4 +908,79 @@ class WrestlerPushDB(Base):
 
     __table_args__ = (
         UniqueConstraint("federation_id", "wrestler_id", name="uq_push_fed_wrestler"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Group 2: Career Goals
+# ---------------------------------------------------------------------------
+
+class WrestlerGoalDB(Base):
+    """Tracks a wrestler's active career goals and progress toward them."""
+    __tablename__ = "wrestler_goals"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
+    goal_type = Column(String(30), nullable=False)  # win_title, main_event_ppv, 5_star_match, etc.
+    target_entity_id = Column(String, nullable=True)  # Optional: specific title/rival ID
+    status = Column(String(20), default="active")  # active, completed, failed, abandoned
+    progress = Column(Integer, default=0)  # 0-100 percentage
+    frustration = Column(Integer, default=0)  # 0-100, grows when blocked
+    set_date = Column(String(10), nullable=True)
+    completed_date = Column(String(10), nullable=True)
+    created_at = Column(DateTime, default=_utc_now)
+
+
+# ---------------------------------------------------------------------------
+# Group 4: Developmental Pipeline — Mentorship
+# ---------------------------------------------------------------------------
+
+class MentorshipDB(Base):
+    """A mentor/protege relationship between two wrestlers in a federation."""
+    __tablename__ = "mentorships"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    world_id = Column(String, ForeignKey("worlds.id"), nullable=False, index=True)
+    mentor_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
+    protege_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
+    federation_id = Column(String, ForeignKey("game_federations.id"), nullable=False, index=True)
+    started_date = Column(String(10), nullable=True)
+    ended_date = Column(String(10), nullable=True)
+    skill_focus = Column(String(30), nullable=True)  # power, technical, aerial, etc.
+    mentor_bonus = Column(Float, default=0.5)  # Effectiveness multiplier
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utc_now)
+
+
+# ---------------------------------------------------------------------------
+# Group 5: Legacy & Hall of Fame
+# ---------------------------------------------------------------------------
+
+class CareerHighlightDB(Base):
+    """A notable career moment for a wrestler."""
+    __tablename__ = "career_highlights"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
+    highlight_type = Column(String(30), nullable=False)  # 5_star_classic, title_win, ppv_main_event, iron_man_defense
+    description = Column(Text, nullable=False)
+    game_date = Column(String(10), nullable=False)
+    significance = Column(Integer, default=5)  # 1-10
+    match_id = Column(String, ForeignKey("matches.id"), nullable=True)
+    created_at = Column(DateTime, default=_utc_now)
+
+
+class HallOfFameDB(Base):
+    """Hall of Fame induction record."""
+    __tablename__ = "hall_of_fame"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    world_id = Column(String, ForeignKey("worlds.id"), nullable=False, index=True)
+    wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
+    inducted_date = Column(String(10), nullable=False)
+    legacy_score = Column(Integer, default=0)
+    created_at = Column(DateTime, default=_utc_now)
+
+    __table_args__ = (
+        UniqueConstraint("world_id", "wrestler_id", name="uq_hof_wrestler"),
     )

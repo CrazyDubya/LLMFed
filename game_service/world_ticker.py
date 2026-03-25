@@ -162,6 +162,9 @@ class WorldTicker:
         # 12. Weekly news generation (Sundays)
         self._generate_weekly_news(new_date)
 
+        # 13. Wrestler lifecycle (Groups 1-6)
+        self._wrestler_lifecycle(new_date)
+
         self.db.commit()
 
         return {
@@ -274,6 +277,14 @@ class WorldTicker:
         current = getattr(stats, stat_name)
         # Training gain decreases as stat gets higher
         gain = max(1, random.randint(1, 3) - (current // 40))
+
+        # Mentor bonus (Group 4)
+        try:
+            from game_service.wrestler_lifecycle_service import training_with_mentor
+            gain += training_with_mentor(self.db, wrestler_id, stat_name)
+        except Exception:
+            pass
+
         new_val = min(100, current + gain)
         setattr(stats, stat_name, new_val)
 
@@ -762,27 +773,28 @@ class WorldTicker:
         )
 
     def _random_retirement(self, game_date: str):
-        """Random wrestler retirement (older wrestlers)."""
-        old_wrestlers = self.db.query(GameWrestlerDB).filter(
+        """Pressure-based retirement (replaces flat random)."""
+        from game_service.wrestler_lifecycle_service import calculate_retirement_pressure
+
+        wrestlers = self.db.query(GameWrestlerDB).filter(
             GameWrestlerDB.world_id == self.world.id,
             GameWrestlerDB.is_active == True,
-            GameWrestlerDB.age >= 38,
+            GameWrestlerDB.age >= 34,
         ).all()
 
-        if not old_wrestlers:
-            return
-
-        retiree = random.choice(old_wrestlers)
-        if random.random() < 0.3:  # 30% of selected old wrestlers
-            retiree.is_active = False
-            retiree.retirement_date = game_date
-            self._log_event(
-                "retirement",
-                f"{retiree.name} announces retirement after {retiree.experience_years} years",
-                [retiree.id],
-                importance=8,
-            )
-            self.events.append(f"RETIREMENT: {retiree.name}")
+        for w in wrestlers:
+            pressure = calculate_retirement_pressure(w)
+            if pressure > 0 and random.random() < pressure / 1000:
+                w.is_active = False
+                w.retirement_date = game_date
+                self._log_event(
+                    "retirement",
+                    f"{w.name} announces retirement after {w.experience_years} years",
+                    [w.id],
+                    importance=8,
+                )
+                self.events.append(f"RETIREMENT: {w.name}")
+                break  # One retirement per day max
 
     # ------------------------------------------------------------------
     # Phase 7: Contract management
@@ -1248,6 +1260,83 @@ class WorldTicker:
             news_svc.generate_weekly_dirt_sheet(self.db, self.world.id, game_date)
         except Exception as e:
             logger.warning(f"Weekly news generation failed: {e}")
+
+    # ------------------------------------------------------------------
+    # Phase 13: Wrestler lifecycle (Groups 1-6)
+    # ------------------------------------------------------------------
+
+    def _wrestler_lifecycle(self, game_date: str):
+        """All wrestler lifecycle processing — aging, goals, politics, etc."""
+        from game_service.wrestler_lifecycle_service import (
+            age_wrestlers, evaluate_goals, create_wrestler_goals,
+            update_locker_room_dynamics, auto_assign_mentors,
+            hall_of_fame_ceremony, update_conditioning,
+            apply_nostalgia_pop,
+        )
+
+        # --- Annual events ---
+        # Jan 1: Age all wrestlers (Group 1)
+        if game_date.endswith("-01-01"):
+            age_wrestlers(self.db, self.world.id, game_date)
+            self.events.append("Annual aging applied to all wrestlers")
+
+        # April 1: Hall of Fame ceremony (Group 5)
+        if game_date.endswith("-04-01"):
+            inductee = hall_of_fame_ceremony(self.db, self.world.id, game_date)
+            if inductee:
+                self.events.append(f"HALL OF FAME: {inductee.name} inducted!")
+
+        # --- Weekly events (Thursdays) ---
+        if get_day_of_week(game_date) == 3:
+            # Goal evaluation (Group 2)
+            wrestlers = self.db.query(GameWrestlerDB).filter(
+                GameWrestlerDB.world_id == self.world.id,
+                GameWrestlerDB.is_active == True,
+            ).all()
+            for w in wrestlers:
+                # Ensure goals are created
+                create_wrestler_goals(self.db, w, game_date)
+                completed = evaluate_goals(self.db, w, game_date)
+                for g in completed:
+                    self.events.append(f"{w.name} achieved: {g}")
+
+            # Locker room dynamics (Group 3)
+            npc_feds = self.db.query(GameFederationDB).filter(
+                GameFederationDB.world_id == self.world.id,
+                GameFederationDB.is_active == True,
+            ).all()
+            for fed in npc_feds:
+                update_locker_room_dynamics(self.db, fed, game_date)
+
+            # Auto-assign mentors (Group 4)
+            for fed in npc_feds:
+                if fed.is_npc:
+                    auto_assign_mentors(self.db, fed, game_date)
+
+            # Conditioning cycle (Group 6)
+            for w in wrestlers:
+                update_conditioning(self.db, w, game_date)
+
+        # --- Daily: ring rust tracking (Group 1) ---
+        active = self.db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.world_id == self.world.id,
+            GameWrestlerDB.is_active == True,
+        ).all()
+        for w in active:
+            if w.last_booked_date:
+                try:
+                    days = self._days_between(w.last_booked_date, game_date)
+                    w.ring_rust_days = days
+                except (ValueError, TypeError):
+                    pass
+
+        # --- Daily: nostalgia pop on return from long absence (Group 5) ---
+        for w in active:
+            if w.last_booked_date and w.ring_rust_days and w.ring_rust_days > 90:
+                if (w.legacy_score or 0) >= 30:
+                    # Only apply once per return (when they get booked again,
+                    # ring_rust_days resets)
+                    pass  # Pop applied in match_aftermath when booked
 
     # ------------------------------------------------------------------
     # Helpers
