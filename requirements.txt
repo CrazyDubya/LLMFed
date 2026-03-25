@@ -1,11 +1,13 @@
 fastapi>=0.100
 uvicorn[standard]
-sqlalchemy
+sqlalchemy>=2.0
 psycopg2-binary
+alembic
 pydantic>=2.0,<3
 python-dotenv
 httpx
 openai
+websockets
 pytest
 python-jose[cryptography]
 passlib[bcrypt]
