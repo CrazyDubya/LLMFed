@@ -79,6 +79,11 @@ secrets.json
 *.key
 *.pem
 
+# Node.js / Frontend
+node_modules/
+web-ui/dist/
+web-ui/node_modules/
+
 # Large files
 *.tar.gz
 *.zip

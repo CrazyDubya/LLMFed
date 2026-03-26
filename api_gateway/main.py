@@ -34,6 +34,7 @@ from core_engine.llm_client import LLMClient
 from api_gateway.error_handlers import register_error_handlers, ResourceNotFoundError
 from api_gateway.validation import ValidationError
 from api_gateway.logging_config import setup_logging, logging_middleware, performance_monitor
+from api_gateway.game_routes import router as game_router
 
 # Configure logging
 log_level = os.getenv("LOG_LEVEL", "INFO")
@@ -128,6 +129,16 @@ async def add_security_headers(request: Request, call_next):
 
 # Register error handlers
 register_error_handlers(app)
+
+# Include game routes
+app.include_router(game_router)
+
+# WebSocket endpoint for real-time world updates
+from api_gateway.websocket_hub import websocket_endpoint  # noqa: E402
+
+@app.websocket("/ws/{world_id}")
+async def ws_world_feed(websocket, world_id: str):
+    await websocket_endpoint(websocket, world_id)
 
 @app.get("/", summary="Root endpoint", description="Provides a simple welcome message.", tags=["health"])
 @limiter.limit("100/minute")

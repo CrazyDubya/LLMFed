@@ -1,1 +1,13 @@
 # Models package for LLMFed
+# Import all model modules so Base.metadata captures all tables
+from models.db_models import Base, AgentDB, FederationDB, EngineRequestDB, NarrativeLogDB  # noqa
+from models.game_models import (  # noqa
+    UserDB, PlayerDB, WorldDB, WorldStateDB,
+    GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
+    ContractDB, ShowDB, ShowSegmentDB,
+    MatchDB, MatchParticipantDB, MatchEventDB,
+    PromoDB, ChampionshipDB, ChampionshipHistoryDB,
+    StorylineDB, StorylineParticipantDB,
+    PlayerActionDB, GameNarrativeLogDB, WorldNewsDB, WrestlerHistoryDB,
+    WrestlerRelationshipDB, TagTeamDB, TalentOfferDB,
+)
