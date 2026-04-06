@@ -261,6 +261,19 @@ class PlayerActionResponse(BaseModel):
 # Storylines
 # ---------------------------------------------------------------------------
 
+class StorylineCreate(BaseModel):
+    wrestler_ids: List[str] = Field(min_length=2)
+    storyline_type: str = "feud"
+    name: Optional[str] = None
+    description: Optional[str] = None
+    federation_id: Optional[str] = None
+
+
+class StorylineAdvance(BaseModel):
+    status: Optional[str] = None
+    heat_boost: int = 0
+
+
 class StorylineResponse(BaseModel):
     id: str
     world_id: str

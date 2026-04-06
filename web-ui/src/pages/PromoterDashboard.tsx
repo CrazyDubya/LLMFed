@@ -8,9 +8,10 @@ interface Wrestler {
   condition: number; is_injured: boolean; is_npc: boolean;
 }
 
-type TabKey = 'roster' | 'freeagents' | 'shows' | 'titles' | 'storylines' | 'factions' | 'relationships' | 'news';
+type TabKey = 'warroom' | 'roster' | 'freeagents' | 'shows' | 'titles' | 'storylines' | 'factions' | 'relationships' | 'news';
 
 const TAB_LABELS: Record<TabKey, string> = {
+  warroom: 'War Room',
   roster: 'Roster',
   freeagents: 'Free Agents',
   shows: 'Shows',
@@ -71,10 +72,16 @@ export default function PromoterDashboard() {
   const [stables, setStables] = useState<any[]>([]);
   const [managerBonds, setManagerBonds] = useState<any[]>([]);
   const [managers, setManagers] = useState<any[]>([]);
-  const [tab, setTab] = useState<TabKey>('roster');
+  const [tab, setTab] = useState<TabKey>('warroom');
   const [advancing, setAdvancing] = useState(false);
   const [error, setError] = useState('');
   const [expandedStable, setExpandedStable] = useState<string | null>(null);
+  // Form states for management actions
+  const [showStableForm, setShowStableForm] = useState(false);
+  const [showManagerForm, setShowManagerForm] = useState(false);
+  const [showAssignForm, setShowAssignForm] = useState(false);
+  const [showStorylineForm, setShowStorylineForm] = useState(false);
+  const [formData, setFormData] = useState<any>({});
 
   const loadData = async () => {
     if (!worldId || !federationId) return;
@@ -216,6 +223,192 @@ export default function PromoterDashboard() {
             </button>
           ))}
         </div>
+
+        {/* ========== WAR ROOM TAB ========== */}
+        {tab === 'warroom' && (
+          <div className="space-y-6">
+            {/* Quick Stats Row */}
+            <div className="grid grid-cols-5 gap-4">
+              <div className="bg-[#1a1a24] rounded-lg border border-gray-800 p-4 text-center">
+                <div className="text-2xl text-amber-400 font-bold">{roster.length}</div>
+                <div className="text-xs text-gray-400">Roster Size</div>
+              </div>
+              <div className="bg-[#1a1a24] rounded-lg border border-gray-800 p-4 text-center">
+                <div className="text-2xl text-purple-400 font-bold">{stables.length}</div>
+                <div className="text-xs text-gray-400">Active Factions</div>
+              </div>
+              <div className="bg-[#1a1a24] rounded-lg border border-gray-800 p-4 text-center">
+                <div className="text-2xl text-cyan-400 font-bold">{managerBonds.length}</div>
+                <div className="text-xs text-gray-400">Manager Bonds</div>
+              </div>
+              <div className="bg-[#1a1a24] rounded-lg border border-gray-800 p-4 text-center">
+                <div className="text-2xl text-red-400 font-bold">{storylines.filter(s => s.status !== 'resolved').length}</div>
+                <div className="text-xs text-gray-400">Active Storylines</div>
+              </div>
+              <div className="bg-[#1a1a24] rounded-lg border border-gray-800 p-4 text-center">
+                <div className="text-2xl text-green-400 font-bold">{roster.filter(w => w.is_injured).length}</div>
+                <div className="text-xs text-gray-400">Injured</div>
+              </div>
+            </div>
+
+            {/* Faction Health Monitor */}
+            {stables.length > 0 && (
+              <div className="bg-[#1a1a24] rounded-lg border border-gray-800 p-5">
+                <h3 className="text-white font-semibold mb-4">Faction Health Monitor</h3>
+                <div className="space-y-3">
+                  {stables.map((s: any) => {
+                    const isFragile = s.cohesion < 40;
+                    const isCritical = s.cohesion < 20;
+                    return (
+                      <div key={s.id} className={`p-3 rounded border ${isCritical ? 'border-red-700 bg-red-900/10' : isFragile ? 'border-yellow-700 bg-yellow-900/10' : 'border-gray-700'}`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-3">
+                            <span className="text-white font-medium">{s.name}</span>
+                            <AlignmentBadge alignment={s.alignment} />
+                            <span className="text-xs text-gray-500">{(s.members || []).length} members</span>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            {isCritical && <span className="text-xs text-red-400 font-bold animate-pulse">CRITICAL - BETRAYAL IMMINENT</span>}
+                            {isFragile && !isCritical && <span className="text-xs text-yellow-400 font-semibold">FRACTURING</span>}
+                            <HeatBar value={s.heat} label={`Heat ${s.heat}`} />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500 w-16">Cohesion</span>
+                          <div className="flex-1 bg-gray-800 rounded-full h-2">
+                            <div className={`h-2 rounded-full ${isCritical ? 'bg-red-500' : isFragile ? 'bg-yellow-500' : 'bg-green-500'}`} style={{ width: `${s.cohesion}%` }} />
+                          </div>
+                          <span className="text-xs text-gray-400 w-8">{s.cohesion}%</span>
+                        </div>
+                        {/* Members with low loyalty */}
+                        {(s.members || []).filter((m: any) => m.loyalty < 40).length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {(s.members || []).filter((m: any) => m.loyalty < 40).map((m: any) => (
+                              <span key={m.wrestler_id} className="text-xs px-2 py-0.5 bg-red-900/30 border border-red-800/50 rounded text-red-300">
+                                {m.wrestler_name}: loyalty {m.loyalty}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Storyline Heat Tracker */}
+            {storylines.filter(s => s.status !== 'resolved').length > 0 && (
+              <div className="bg-[#1a1a24] rounded-lg border border-gray-800 p-5">
+                <h3 className="text-white font-semibold mb-4">Storyline Heat Tracker</h3>
+                <div className="space-y-2">
+                  {storylines.filter(s => s.status !== 'resolved').sort((a: any, b: any) => b.heat - a.heat).map((sl: any) => (
+                    <div key={sl.id} className="flex items-center gap-3 p-2 rounded hover:bg-[#0f0f14]/50">
+                      <span className={`px-2 py-0.5 rounded text-xs ${
+                        sl.status === 'climax' ? 'bg-red-900/50 text-red-300' :
+                        sl.status === 'active' ? 'bg-green-900/50 text-green-300' :
+                        'bg-yellow-900/50 text-yellow-300'
+                      }`}>{sl.status}</span>
+                      <span className="text-white text-sm flex-1">{sl.name}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded ${
+                        sl.storyline_type === 'faction_war' ? 'bg-purple-900/50 text-purple-300' :
+                        sl.storyline_type === 'power_struggle' ? 'bg-orange-900/50 text-orange-300' :
+                        'bg-gray-700 text-gray-300'
+                      }`}>{sl.storyline_type.replace(/_/g, ' ')}</span>
+                      <div className="w-24">
+                        <div className="bg-gray-800 rounded-full h-2">
+                          <div className={`h-2 rounded-full ${sl.heat >= 70 ? 'bg-red-500' : sl.heat >= 40 ? 'bg-amber-500' : 'bg-gray-500'}`}
+                            style={{ width: `${sl.heat}%` }} />
+                        </div>
+                      </div>
+                      <span className="text-xs text-gray-400 w-6">{sl.heat}</span>
+                      <div className="flex gap-1">
+                        {sl.status !== 'climax' && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                await api.advanceStoryline(sl.id, { heat_boost: 10 });
+                                await loadData();
+                              } catch (err: any) { setError(err.message); }
+                            }}
+                            className="px-2 py-0.5 text-xs bg-amber-800 hover:bg-amber-700 text-amber-200 rounded"
+                            title="Boost heat +10"
+                          >+Heat</button>
+                        )}
+                        {sl.status === 'brewing' && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                await api.advanceStoryline(sl.id, { status: 'active' });
+                                await loadData();
+                              } catch (err: any) { setError(err.message); }
+                            }}
+                            className="px-2 py-0.5 text-xs bg-green-800 hover:bg-green-700 text-green-200 rounded"
+                          >Activate</button>
+                        )}
+                        {sl.status === 'active' && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                await api.advanceStoryline(sl.id, { status: 'climax' });
+                                await loadData();
+                              } catch (err: any) { setError(err.message); }
+                            }}
+                            className="px-2 py-0.5 text-xs bg-red-800 hover:bg-red-700 text-red-200 rounded"
+                          >Climax</button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Unaffiliated Talent + Quick Actions */}
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-[#1a1a24] rounded-lg border border-gray-800 p-5">
+                <h3 className="text-white font-semibold mb-3">Unaffiliated Talent</h3>
+                <p className="text-xs text-gray-500 mb-3">Wrestlers not in a faction or without a manager — potential recruits or storyline targets.</p>
+                <div className="space-y-1 max-h-48 overflow-y-auto">
+                  {roster.filter(w => !stableMemberMap[w.id] && !managerMap[w.id]).map(w => (
+                    <div key={w.id} className="flex items-center justify-between py-1 px-2 rounded hover:bg-[#0f0f14]/50">
+                      <span className="text-sm text-gray-300">{w.name}</span>
+                      <div className="flex items-center gap-2">
+                        <AlignmentBadge alignment={w.alignment} />
+                        <span className="text-xs text-gray-500">Pop: {w.popularity}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {roster.filter(w => !stableMemberMap[w.id] && !managerMap[w.id]).length === 0 && (
+                    <p className="text-gray-600 text-sm">Everyone is affiliated!</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-[#1a1a24] rounded-lg border border-gray-800 p-5">
+                <h3 className="text-white font-semibold mb-3">Quick Actions</h3>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => { setShowStableForm(true); setFormData({}); setTab('factions'); }}
+                    className="w-full text-left px-3 py-2 rounded bg-purple-900/20 border border-purple-800/30 text-purple-300 hover:bg-purple-900/30 text-sm"
+                  >Form New Faction</button>
+                  <button
+                    onClick={() => { setShowManagerForm(true); setFormData({}); setTab('relationships'); }}
+                    className="w-full text-left px-3 py-2 rounded bg-cyan-900/20 border border-cyan-800/30 text-cyan-300 hover:bg-cyan-900/30 text-sm"
+                  >Create Manager</button>
+                  <button
+                    onClick={() => { setShowStorylineForm(true); setFormData({}); setTab('storylines'); }}
+                    className="w-full text-left px-3 py-2 rounded bg-amber-900/20 border border-amber-800/30 text-amber-300 hover:bg-amber-900/30 text-sm"
+                  >Start Storyline</button>
+                  <button
+                    onClick={() => { setShowAssignForm(true); setFormData({}); setTab('relationships'); }}
+                    className="w-full text-left px-3 py-2 rounded bg-green-900/20 border border-green-800/30 text-green-300 hover:bg-green-900/30 text-sm"
+                  >Assign Manager to Client</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ========== ROSTER TAB ========== */}
         {tab === 'roster' && (
@@ -372,9 +565,89 @@ export default function PromoterDashboard() {
           </div>
         )}
 
-        {/* ========== STORYLINES TAB (enhanced with wrestler names) ========== */}
+        {/* ========== STORYLINES TAB ========== */}
         {tab === 'storylines' && (
           <div className="space-y-3">
+            <div className="flex justify-end">
+              <button
+                onClick={() => { setShowStorylineForm(!showStorylineForm); setFormData({}); }}
+                className="px-4 py-2 bg-amber-700 hover:bg-amber-600 text-white rounded text-sm"
+              >{showStorylineForm ? 'Cancel' : 'Start Storyline'}</button>
+            </div>
+            {showStorylineForm && (
+              <div className="bg-[#1a1a24] rounded-lg border border-amber-800/50 p-5">
+                <h3 className="text-amber-300 font-semibold mb-4">Start New Storyline</h3>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Name (optional)</label>
+                    <input
+                      className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
+                      placeholder="Auto-generated if blank"
+                      value={formData.sl_name || ''}
+                      onChange={e => setFormData({ ...formData, sl_name: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Type</label>
+                    <select
+                      className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
+                      value={formData.sl_type || 'feud'}
+                      onChange={e => setFormData({ ...formData, sl_type: e.target.value })}
+                    >
+                      <option value="feud">Feud</option>
+                      <option value="betrayal">Betrayal</option>
+                      <option value="alliance">Alliance</option>
+                      <option value="title_chase">Title Chase</option>
+                      <option value="faction_war">Faction War</option>
+                      <option value="power_struggle">Power Struggle</option>
+                      <option value="manager_betrayal">Manager Betrayal</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="mb-4">
+                  <label className="text-xs text-gray-400 block mb-1">Wrestlers (select 2+, hold Ctrl/Cmd)</label>
+                  <select
+                    multiple
+                    className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm h-28"
+                    value={formData.sl_wrestlers || []}
+                    onChange={e => setFormData({ ...formData, sl_wrestlers: Array.from(e.target.selectedOptions, o => o.value) })}
+                  >
+                    {roster.map(w => (
+                      <option key={w.id} value={w.id}>{w.name} ({w.alignment})</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="mb-4">
+                  <label className="text-xs text-gray-400 block mb-1">Description (optional)</label>
+                  <input
+                    className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
+                    placeholder="Auto-generated if blank"
+                    value={formData.sl_desc || ''}
+                    onChange={e => setFormData({ ...formData, sl_desc: e.target.value })}
+                  />
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!worldId || !formData.sl_wrestlers || formData.sl_wrestlers.length < 2) {
+                      setError('Select at least 2 wrestlers'); return;
+                    }
+                    try {
+                      await api.createStoryline(worldId, {
+                        wrestler_ids: formData.sl_wrestlers,
+                        storyline_type: formData.sl_type || 'feud',
+                        name: formData.sl_name || undefined,
+                        description: formData.sl_desc || undefined,
+                      });
+                      setShowStorylineForm(false);
+                      setFormData({});
+                      await loadData();
+                    } catch (err: any) { setError(err.message); }
+                  }}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded text-sm font-medium"
+                >Create Storyline</button>
+              </div>
+            )}
+
             {storylines.map(sl => (
               <div key={sl.id} className="bg-[#1a1a24] rounded-lg border border-gray-800 p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -414,9 +687,101 @@ export default function PromoterDashboard() {
           </div>
         )}
 
-        {/* ========== FACTIONS TAB (NEW) ========== */}
+        {/* ========== FACTIONS TAB ========== */}
         {tab === 'factions' && (
           <div className="space-y-4">
+            {/* Form Faction Button/Form */}
+            <div className="flex justify-end">
+              <button
+                onClick={() => { setShowStableForm(!showStableForm); setFormData({}); }}
+                className="px-4 py-2 bg-purple-700 hover:bg-purple-600 text-white rounded text-sm"
+              >{showStableForm ? 'Cancel' : 'Form Faction'}</button>
+            </div>
+            {showStableForm && (
+              <div className="bg-[#1a1a24] rounded-lg border border-purple-800/50 p-5">
+                <h3 className="text-purple-300 font-semibold mb-4">Form New Faction</h3>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Name</label>
+                    <input
+                      className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
+                      placeholder="The Wolfpack"
+                      value={formData.name || ''}
+                      onChange={e => setFormData({ ...formData, name: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Alignment</label>
+                    <select
+                      className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
+                      value={formData.alignment || 'heel'}
+                      onChange={e => setFormData({ ...formData, alignment: e.target.value })}
+                    >
+                      <option value="heel">Heel</option>
+                      <option value="face">Face</option>
+                      <option value="tweener">Tweener</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Leader</label>
+                    <select
+                      className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
+                      value={formData.leader_id || ''}
+                      onChange={e => setFormData({ ...formData, leader_id: e.target.value })}
+                    >
+                      <option value="">Select leader...</option>
+                      {roster.filter(w => !stableMemberMap[w.id]).map(w => (
+                        <option key={w.id} value={w.id}>{w.name} (Pop: {w.popularity})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Catchphrase</label>
+                    <input
+                      className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
+                      placeholder="Optional..."
+                      value={formData.catchphrase || ''}
+                      onChange={e => setFormData({ ...formData, catchphrase: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="mb-4">
+                  <label className="text-xs text-gray-400 block mb-1">Additional Members (hold Ctrl/Cmd to select multiple)</label>
+                  <select
+                    multiple
+                    className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm h-28"
+                    value={formData.member_ids || []}
+                    onChange={e => setFormData({ ...formData, member_ids: Array.from(e.target.selectedOptions, o => o.value) })}
+                  >
+                    {roster.filter(w => !stableMemberMap[w.id] && w.id !== formData.leader_id).map(w => (
+                      <option key={w.id} value={w.id}>{w.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!worldId || !formData.name || !formData.leader_id) {
+                      setError('Name and leader required'); return;
+                    }
+                    try {
+                      const allMembers = [formData.leader_id, ...(formData.member_ids || [])];
+                      await api.createStable(worldId, {
+                        name: formData.name,
+                        leader_id: formData.leader_id,
+                        founding_member_ids: allMembers,
+                        alignment: formData.alignment || 'heel',
+                        catchphrase: formData.catchphrase || undefined,
+                      });
+                      setShowStableForm(false);
+                      setFormData({});
+                      await loadData();
+                    } catch (err: any) { setError(err.message); }
+                  }}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded text-sm font-medium"
+                >Create Faction</button>
+              </div>
+            )}
+
             {stables.map(s => (
               <div key={s.id} className="bg-[#1a1a24] rounded-lg border border-gray-800 overflow-hidden">
                 <div
@@ -480,6 +845,41 @@ export default function PromoterDashboard() {
                     {s.group_finisher_name && (
                       <p className="mt-3 text-xs text-amber-400">Group Finisher: {s.group_finisher_name}</p>
                     )}
+                    {/* Management controls */}
+                    <div className="mt-4 pt-3 border-t border-gray-800 flex items-center gap-3">
+                      <select
+                        className="p-1.5 bg-[#0f0f14] border border-gray-700 rounded text-white text-xs flex-1"
+                        value={formData[`add_to_${s.id}`] || ''}
+                        onChange={e => setFormData({ ...formData, [`add_to_${s.id}`]: e.target.value })}
+                      >
+                        <option value="">Add member...</option>
+                        {roster.filter(w => !stableMemberMap[w.id]).map(w => (
+                          <option key={w.id} value={w.id}>{w.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={async () => {
+                          const wid = formData[`add_to_${s.id}`];
+                          if (!wid) return;
+                          try {
+                            await api.addStableMember(s.id, { wrestler_id: wid, role: 'recruit' });
+                            setFormData({ ...formData, [`add_to_${s.id}`]: '' });
+                            await loadData();
+                          } catch (err: any) { setError(err.message); }
+                        }}
+                        className="px-3 py-1.5 bg-purple-700 hover:bg-purple-600 text-white rounded text-xs"
+                      >Add</button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Dissolve ${s.name}? This cannot be undone.`)) return;
+                          try {
+                            await api.submitAction(worldId!, 'dissolve_stable', { stable_id: s.id });
+                            await advanceDay(1);
+                          } catch (err: any) { setError(err.message); }
+                        }}
+                        className="px-3 py-1.5 bg-red-800 hover:bg-red-700 text-red-200 rounded text-xs"
+                      >Dissolve</button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -490,9 +890,157 @@ export default function PromoterDashboard() {
           </div>
         )}
 
-        {/* ========== RELATIONSHIPS TAB (NEW) ========== */}
+        {/* ========== RELATIONSHIPS TAB ========== */}
         {tab === 'relationships' && (
           <div className="space-y-6">
+            {/* Action buttons */}
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => { setShowManagerForm(!showManagerForm); setShowAssignForm(false); setFormData({}); }}
+                className="px-4 py-2 bg-cyan-700 hover:bg-cyan-600 text-white rounded text-sm"
+              >{showManagerForm ? 'Cancel' : 'Create Manager'}</button>
+              <button
+                onClick={() => { setShowAssignForm(!showAssignForm); setShowManagerForm(false); setFormData({}); }}
+                className="px-4 py-2 bg-green-700 hover:bg-green-600 text-white rounded text-sm"
+              >{showAssignForm ? 'Cancel' : 'Assign Manager'}</button>
+            </div>
+
+            {/* Create Manager Form */}
+            {showManagerForm && (
+              <div className="bg-[#1a1a24] rounded-lg border border-cyan-800/50 p-5">
+                <h3 className="text-cyan-300 font-semibold mb-4">Create New Manager</h3>
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Name</label>
+                    <input
+                      className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
+                      placeholder="Paul Bearer"
+                      value={formData.mgr_name || ''}
+                      onChange={e => setFormData({ ...formData, mgr_name: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Archetype</label>
+                    <select
+                      className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
+                      value={formData.mgr_archetype || 'scheming_manager'}
+                      onChange={e => setFormData({ ...formData, mgr_archetype: e.target.value })}
+                    >
+                      <option value="scheming_manager">Scheming Manager</option>
+                      <option value="corporate_suit">Corporate Suit</option>
+                      <option value="flamboyant_mouthpiece">Flamboyant Mouthpiece</option>
+                      <option value="enforcer_type">Enforcer Type</option>
+                      <option value="old_school">Old School</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Alignment</label>
+                    <select
+                      className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
+                      value={formData.mgr_alignment || 'heel'}
+                      onChange={e => setFormData({ ...formData, mgr_alignment: e.target.value })}
+                    >
+                      <option value="heel">Heel</option>
+                      <option value="face">Face</option>
+                      <option value="tweener">Tweener</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="mb-4">
+                  <label className="text-xs text-gray-400 block mb-1">Catchphrase (optional)</label>
+                  <input
+                    className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
+                    placeholder="Oh yesss!"
+                    value={formData.mgr_catchphrase || ''}
+                    onChange={e => setFormData({ ...formData, mgr_catchphrase: e.target.value })}
+                  />
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!worldId || !formData.mgr_name) { setError('Name required'); return; }
+                    try {
+                      await api.createManager(worldId, {
+                        name: formData.mgr_name,
+                        archetype: formData.mgr_archetype || 'scheming_manager',
+                        alignment: formData.mgr_alignment || 'heel',
+                        catchphrase: formData.mgr_catchphrase || undefined,
+                      }, federationId || undefined);
+                      setShowManagerForm(false);
+                      setFormData({});
+                      await loadData();
+                    } catch (err: any) { setError(err.message); }
+                  }}
+                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm font-medium"
+                >Create Manager</button>
+              </div>
+            )}
+
+            {/* Assign Manager Form */}
+            {showAssignForm && (
+              <div className="bg-[#1a1a24] rounded-lg border border-green-800/50 p-5">
+                <h3 className="text-green-300 font-semibold mb-4">Assign Manager to Client</h3>
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Manager</label>
+                    <select
+                      className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
+                      value={formData.assign_mgr || ''}
+                      onChange={e => setFormData({ ...formData, assign_mgr: e.target.value })}
+                    >
+                      <option value="">Select manager...</option>
+                      {managers.map((m: any) => (
+                        <option key={m.id} value={m.id}>{m.name} ({m.archetype.replace(/_/g, ' ')})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Client Wrestler</label>
+                    <select
+                      className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
+                      value={formData.assign_client || ''}
+                      onChange={e => setFormData({ ...formData, assign_client: e.target.value })}
+                    >
+                      <option value="">Select wrestler...</option>
+                      {roster.filter(w => !managerMap[w.id]).map(w => (
+                        <option key={w.id} value={w.id}>{w.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Role</label>
+                    <select
+                      className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
+                      value={formData.assign_role || 'manager'}
+                      onChange={e => setFormData({ ...formData, assign_role: e.target.value })}
+                    >
+                      <option value="manager">Manager</option>
+                      <option value="valet">Valet</option>
+                      <option value="advocate">Advocate</option>
+                      <option value="handler">Handler</option>
+                    </select>
+                  </div>
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!worldId || !formData.assign_mgr || !formData.assign_client) {
+                      setError('Select manager and client'); return;
+                    }
+                    try {
+                      await api.assignManager(worldId, {
+                        manager_id: formData.assign_mgr,
+                        client_wrestler_id: formData.assign_client,
+                        role: formData.assign_role || 'manager',
+                      });
+                      setShowAssignForm(false);
+                      setFormData({});
+                      await loadData();
+                    } catch (err: any) { setError(err.message); }
+                  }}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded text-sm font-medium"
+                >Assign</button>
+              </div>
+            )}
+
             {/* Manager/Valet Bonds */}
             <div>
               <h3 className="text-lg font-semibold text-amber-400 mb-3">Manager &amp; Valet Bonds</h3>
@@ -508,11 +1056,22 @@ export default function PromoterDashboard() {
                         </div>
                         <RoleBadge role={b.role} />
                       </div>
-                      <div className="flex items-center gap-4 text-xs text-gray-400">
-                        <span>Effectiveness: {b.effectiveness}%</span>
-                        <span>Specialization: {b.specialization}</span>
-                        <span>+{b.charisma_bonus} CHA</span>
-                        <span>+{b.heat_bonus} Heat</span>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4 text-xs text-gray-400">
+                          <span>Effectiveness: {b.effectiveness}%</span>
+                          <span>Specialization: {b.specialization}</span>
+                          <span>+{b.charisma_bonus} CHA</span>
+                          <span>+{b.heat_bonus} Heat</span>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await api.removeManagerBond(b.id);
+                              await loadData();
+                            } catch (err: any) { setError(err.message); }
+                          }}
+                          className="px-2 py-0.5 text-xs bg-red-900/50 hover:bg-red-800/50 text-red-300 rounded"
+                        >End</button>
                       </div>
                     </div>
                   ))}

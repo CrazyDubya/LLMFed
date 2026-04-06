@@ -137,6 +137,12 @@ class ActionType(str, enum.Enum):
     JOIN_STABLE = "join_stable"
     LEAVE_STABLE = "leave_stable"
     ASSIGN_MANAGER = "assign_manager"
+    CREATE_MANAGER = "create_manager"
+    # Narrative control
+    CREATE_STORYLINE = "create_storyline"
+    ADVANCE_STORYLINE = "advance_storyline"
+    DISSOLVE_STABLE = "dissolve_stable"
+    REMOVE_MANAGER = "remove_manager"
 
 
 class StableRole(str, enum.Enum):

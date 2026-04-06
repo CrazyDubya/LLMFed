@@ -239,6 +239,24 @@ class WorldTicker:
             return self._action_train(data)
         elif action_type == "cut_promo":
             return self._action_cut_promo(data)
+        elif action_type == "form_stable":
+            return self._action_form_stable(data)
+        elif action_type == "join_stable":
+            return self._action_join_stable(data)
+        elif action_type == "leave_stable":
+            return self._action_leave_stable(data)
+        elif action_type == "dissolve_stable":
+            return self._action_dissolve_stable(data)
+        elif action_type == "assign_manager":
+            return self._action_assign_manager(data)
+        elif action_type == "create_manager":
+            return self._action_create_manager(data)
+        elif action_type == "remove_manager":
+            return self._action_remove_manager(data)
+        elif action_type == "create_storyline":
+            return self._action_create_storyline(data)
+        elif action_type == "advance_storyline":
+            return self._action_advance_storyline(data)
         else:
             return {"message": f"Action '{action_type}' acknowledged"}
 
@@ -331,6 +349,184 @@ class WorldTicker:
         # For now, return acknowledgement. Full LLM promo generation
         # will be in the storyline engine.
         return {"message": "Promo direction noted", "direction": data.get("direction", "")}
+
+    # --- Faction / stable actions ---
+
+    def _action_form_stable(self, data: dict) -> dict:
+        """Promoter forms a new stable/faction."""
+        stable_svc = _get_stable_service()
+        name = data.get("name", "New Faction")
+        leader_id = data.get("leader_id")
+        member_ids = data.get("founding_member_ids", [])
+        if not leader_id:
+            raise ValueError("leader_id required")
+        if leader_id not in member_ids:
+            member_ids = [leader_id] + member_ids
+
+        # Find federation from leader's contract
+        contract = self.db.query(ContractDB).filter_by(
+            wrestler_id=leader_id, status="active"
+        ).first()
+        if not contract:
+            raise ValueError("Leader has no active contract")
+
+        stable = stable_svc.create_stable(
+            self.db, self.world.id, contract.federation_id,
+            name=name, leader_id=leader_id,
+            founding_member_ids=member_ids,
+            alignment=data.get("alignment", "heel"),
+            short_name=data.get("short_name"),
+            catchphrase=data.get("catchphrase"),
+            group_finisher_name=data.get("group_finisher_name"),
+            manager_id=data.get("manager_id"),
+            game_date=self.world.current_game_date,
+        )
+        self.events.append(f"Stable formed: {stable.name}")
+        return {"stable_id": stable.id, "name": stable.name}
+
+    def _action_join_stable(self, data: dict) -> dict:
+        """Add a wrestler to an existing stable."""
+        stable_svc = _get_stable_service()
+        stable_id = data.get("stable_id")
+        wrestler_id = data.get("wrestler_id")
+        role = data.get("role", "recruit")
+        if not stable_id or not wrestler_id:
+            raise ValueError("stable_id and wrestler_id required")
+        member = stable_svc.add_member(
+            self.db, stable_id, wrestler_id, role,
+            game_date=self.world.current_game_date,
+        )
+        wrestler = self.db.query(GameWrestlerDB).filter_by(id=wrestler_id).first()
+        self.events.append(f"{wrestler.name if wrestler else wrestler_id} joins stable")
+        return {"member_id": member.id, "role": member.role}
+
+    def _action_leave_stable(self, data: dict) -> dict:
+        """Remove a wrestler from a stable."""
+        stable_svc = _get_stable_service()
+        stable_id = data.get("stable_id")
+        wrestler_id = data.get("wrestler_id")
+        if not stable_id or not wrestler_id:
+            raise ValueError("stable_id and wrestler_id required")
+        result = stable_svc.remove_member(
+            self.db, stable_id, wrestler_id,
+            game_date=self.world.current_game_date,
+        )
+        if not result:
+            raise ValueError("Member not found in stable")
+        return {"removed": True}
+
+    def _action_dissolve_stable(self, data: dict) -> dict:
+        """Dissolve a stable entirely."""
+        stable_svc = _get_stable_service()
+        stable_id = data.get("stable_id")
+        if not stable_id:
+            raise ValueError("stable_id required")
+        from models.game_models import StableDB
+        stable = self.db.query(StableDB).filter_by(id=stable_id).first()
+        if not stable:
+            raise ValueError("Stable not found")
+        stable_svc.dissolve_stable(self.db, stable_id, game_date=self.world.current_game_date)
+        self.events.append(f"Stable dissolved: {stable.name}")
+        return {"dissolved": True, "name": stable.name}
+
+    # --- Manager actions ---
+
+    def _action_assign_manager(self, data: dict) -> dict:
+        """Assign a manager to a wrestler."""
+        mgr_svc = _get_manager_service()
+        manager_id = data.get("manager_id")
+        client_id = data.get("client_wrestler_id")
+        if not manager_id or not client_id:
+            raise ValueError("manager_id and client_wrestler_id required")
+        bond = mgr_svc.assign_manager(
+            self.db, self.world.id, manager_id, client_id,
+            role=data.get("role", "manager"),
+            specialization=data.get("specialization", "all_around"),
+            game_date=self.world.current_game_date,
+        )
+        return {"bond_id": bond.id, "effectiveness": bond.effectiveness}
+
+    def _action_create_manager(self, data: dict) -> dict:
+        """Create a new manager character."""
+        mgr_svc = _get_manager_service()
+        name = data.get("name")
+        if not name:
+            raise ValueError("name required")
+        mgr = mgr_svc.create_manager(
+            self.db, self.world.id, name=name,
+            alignment=data.get("alignment", "heel"),
+            archetype=data.get("archetype", "scheming_manager"),
+            federation_id=data.get("federation_id"),
+            catchphrase=data.get("catchphrase"),
+        )
+        self.events.append(f"Manager created: {mgr.name}")
+        return {"manager_id": mgr.id, "name": mgr.name}
+
+    def _action_remove_manager(self, data: dict) -> dict:
+        """End a manager-client bond."""
+        mgr_svc = _get_manager_service()
+        bond_id = data.get("bond_id")
+        if not bond_id:
+            raise ValueError("bond_id required")
+        result = mgr_svc.remove_manager(
+            self.db, bond_id, game_date=self.world.current_game_date,
+        )
+        if not result:
+            raise ValueError("Bond not found")
+        return {"removed": True}
+
+    # --- Storyline actions ---
+
+    def _action_create_storyline(self, data: dict) -> dict:
+        """Promoter creates a storyline between wrestlers."""
+        sl_svc = _get_storyline_service()
+        wrestler_ids = data.get("wrestler_ids", [])
+        if len(wrestler_ids) < 2:
+            raise ValueError("At least 2 wrestler_ids required")
+        federation_id = data.get("federation_id")
+        if not federation_id:
+            # Infer from first wrestler's contract
+            contract = self.db.query(ContractDB).filter_by(
+                wrestler_id=wrestler_ids[0], status="active"
+            ).first()
+            federation_id = contract.federation_id if contract else None
+        storyline = sl_svc.create_storyline(
+            self.db, self.world.id, federation_id,
+            wrestler_ids=wrestler_ids,
+            storyline_type=data.get("storyline_type", "feud"),
+            name=data.get("name"),
+            description=data.get("description"),
+            game_date=self.world.current_game_date,
+        )
+        self.events.append(f"Storyline created: {storyline.name}")
+        return {"storyline_id": storyline.id, "name": storyline.name}
+
+    def _action_advance_storyline(self, data: dict) -> dict:
+        """Promoter manually advances a storyline's status or heat."""
+        storyline_id = data.get("storyline_id")
+        if not storyline_id:
+            raise ValueError("storyline_id required")
+        storyline = self.db.query(StorylineDB).filter_by(id=storyline_id).first()
+        if not storyline:
+            raise ValueError("Storyline not found")
+
+        new_status = data.get("status")
+        heat_boost = data.get("heat_boost", 0)
+
+        if new_status and new_status in ("brewing", "active", "climax", "resolved"):
+            old_status = storyline.status
+            storyline.status = new_status
+            if new_status == "resolved":
+                storyline.end_date = self.world.current_game_date
+        if heat_boost:
+            storyline.heat = max(0, min(100, storyline.heat + heat_boost))
+
+        return {
+            "storyline_id": storyline.id,
+            "name": storyline.name,
+            "status": storyline.status,
+            "heat": storyline.heat,
+        }
 
     # ------------------------------------------------------------------
     # Phase 2: NPC AI decisions

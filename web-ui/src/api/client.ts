@@ -105,8 +105,21 @@ export const api = {
     request<any[]>(`/worlds/${worldId}/news?limit=${limit}`),
 
   // Storylines
-  listStorylines: (worldId: string) =>
-    request<any[]>(`/worlds/${worldId}/storylines`),
+  listStorylines: (worldId: string, status?: string) =>
+    request<any[]>(`/worlds/${worldId}/storylines${status ? `?status=${status}` : ''}`),
+
+  createStoryline: (worldId: string, data: {
+    wrestler_ids: string[]; storyline_type?: string;
+    name?: string; description?: string; federation_id?: string;
+  }) =>
+    request<any>(`/worlds/${worldId}/storylines`, {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+
+  advanceStoryline: (storylineId: string, data: { status?: string; heat_boost?: number }) =>
+    request<any>(`/storylines/${storylineId}`, {
+      method: 'PATCH', body: JSON.stringify(data),
+    }),
 
   // Shows - booking
   createShow: (fedId: string, data: {
