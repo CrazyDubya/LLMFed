@@ -79,6 +79,37 @@ NEAR_FALL_DESCRIPTIONS = [
     "Quick pin attempt! ONE... TWO... power out!",
 ]
 
+INTERFERENCE_SUCCESS = [
+    "{mgr} distracts the referee while {attacker} uses a low blow on {defender}!",
+    "{mgr} slides a chair into the ring — {attacker} uses it behind the ref's back!",
+    "{mgr} grabs {defender}'s ankle from outside! {attacker} capitalizes!",
+    "{mgr} throws powder in {defender}'s eyes while the ref argues with the crowd!",
+    "{mgr} pulls down the top rope — {defender} tumbles to the outside!",
+]
+
+INTERFERENCE_CAUGHT = [
+    "The referee catches {mgr} red-handed! The official ejects {mgr} from ringside!",
+    "{mgr} tries to interfere but the referee sees it — DISQUALIFICATION!",
+    "{defender} catches {mgr} trying to cheat — and decks {mgr} on the apron!",
+]
+
+INTERFERENCE_FAIL = [
+    "{mgr} tries to distract the referee but gets caught — warning issued!",
+    "{mgr} attempts to pass a weapon but {defender} sees it coming!",
+    "The referee is wise to {mgr}'s tricks tonight!",
+]
+
+POST_MATCH_ATTACK = [
+    "{attackers} storm the ring and lay out {victim} with a vicious beatdown!",
+    "After the match, {attackers} blindside {victim} from behind!",
+    "The bell has rung but {attackers} aren't done — {victim} takes a post-match assault!",
+]
+
+POST_MATCH_SAVE = [
+    "{savers} charge to the ring and clear out the attackers!",
+    "Here comes {savers} to make the save! The crowd goes wild!",
+]
+
 TAG_DESCRIPTIONS = [
     "tags in their partner",
     "reaches out and makes the tag",
@@ -134,6 +165,17 @@ class MatchSpot:
 
 
 @dataclass
+class ManagerContext:
+    """Manager at ringside for a wrestler."""
+    manager_id: str
+    manager_name: str
+    client_wrestler_id: str
+    interference_skill: int = 50
+    cunning: int = 50
+    specialization: str = "all_around"
+
+
+@dataclass
 class MatchResult:
     """Final result of a simulated match."""
     winner_id: Optional[str] = None
@@ -144,6 +186,8 @@ class MatchResult:
     duration_ticks: int = 0
     spots: List[MatchSpot] = field(default_factory=list)
     narrative_summary: str = ""
+    interference_occurred: bool = False
+    post_match_angle: Optional[Dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -163,14 +207,20 @@ class MatchSimulator:
 
     def __init__(self, planned_winner_id: str = None, planned_finish: str = None,
                  card_position: str = "midcard", is_title_match: bool = False,
-                 stipulation: str = None):
+                 stipulation: str = None, managers: List[ManagerContext] = None,
+                 rivalry_heat: int = 0, show_momentum: int = 50):
         self.planned_winner_id = planned_winner_id
         self.planned_finish = planned_finish or "pinfall"
         self.card_position = card_position
         self.is_title_match = is_title_match
         self.stipulation = stipulation
+        self.managers = managers or []
+        self.rivalry_heat = rivalry_heat  # 0-100, from storyline/relationship
+        self.show_momentum = show_momentum  # crowd energy from earlier segments
         self.spots: List[MatchSpot] = []
         self.tick = 0
+        self._interference_happened = False
+        self._dq_triggered = False
 
     def simulate(self, participants: List[MatchParticipantState]) -> MatchResult:
         """Run the full match simulation."""
@@ -204,6 +254,15 @@ class MatchSimulator:
 
             if not attacker.finisher_available and attacker.momentum > 75:
                 attacker.finisher_available = True
+
+            # Manager interference opportunity (second half of match)
+            if self.tick > target_length * 0.5 and not self._interference_happened:
+                interference = self._attempt_interference(attacker, defender)
+                if interference:
+                    self.spots.append(interference)
+                    if interference.is_finish:
+                        # DQ finish
+                        return self._build_result(interference, attacker, defender, participants)
 
             if self.tick >= target_length - 3:
                 finish_spot = self._attempt_finish(attacker, defender)
@@ -565,6 +624,83 @@ class MatchSimulator:
             description=desc,
         )
 
+    def _attempt_interference(self, attacker: MatchParticipantState,
+                              defender: MatchParticipantState) -> Optional[MatchSpot]:
+        """Check if a manager at ringside interferes."""
+        if self._interference_happened or not self.managers:
+            return None
+
+        for mgr in self.managers:
+            # Manager only helps their client (the attacker in this context)
+            if mgr.client_wrestler_id != attacker.wrestler_id:
+                continue
+
+            # Interference chance based on manager's skill
+            base_chance = mgr.interference_skill / 100.0
+            cunning_bonus = mgr.cunning / 200.0
+            chance = base_chance * 0.4 + cunning_bonus * 0.2 + 0.05
+            chance = min(0.35, chance)  # Max 35% per opportunity
+
+            if random.random() > chance:
+                continue
+
+            self._interference_happened = True
+
+            # Did they get caught?
+            caught = random.random() < 0.20  # 20% catch rate
+            if caught:
+                # DQ finish — defender wins by disqualification
+                if random.random() < 0.5:
+                    self._dq_triggered = True
+                    desc = random.choice(INTERFERENCE_CAUGHT).format(
+                        mgr=mgr.manager_name, attacker=attacker.name,
+                        defender=defender.name
+                    )
+                    return MatchSpot(
+                        tick=self.tick, attacker_id=defender.wrestler_id,
+                        defender_id=attacker.wrestler_id,
+                        move_name="Disqualification",
+                        move_type="interference", damage=0,
+                        is_finish=True, finish_type="disqualification",
+                        crowd_reaction="The crowd is furious!",
+                        heat_change=-5,
+                        description=desc,
+                    )
+                else:
+                    # Caught but only warned/ejected
+                    desc = random.choice(INTERFERENCE_FAIL).format(
+                        mgr=mgr.manager_name, defender=defender.name
+                    )
+                    return MatchSpot(
+                        tick=self.tick, attacker_id=attacker.wrestler_id,
+                        defender_id=defender.wrestler_id,
+                        move_name="Failed Interference",
+                        move_type="interference", damage=0,
+                        crowd_reaction="The referee is on to the tricks!",
+                        heat_change=2,
+                        description=desc,
+                    )
+            else:
+                # Successful interference — bonus damage + momentum
+                desc = random.choice(INTERFERENCE_SUCCESS).format(
+                    mgr=mgr.manager_name, attacker=attacker.name,
+                    defender=defender.name
+                )
+                defender.health -= 12
+                defender.momentum = max(0, defender.momentum - 15)
+                attacker.momentum = min(100, attacker.momentum + 10)
+                return MatchSpot(
+                    tick=self.tick, attacker_id=attacker.wrestler_id,
+                    defender_id=defender.wrestler_id,
+                    move_name="Manager Interference",
+                    move_type="interference", damage=12,
+                    crowd_reaction="The crowd boos the cheating!",
+                    heat_change=-3 if attacker.alignment == "heel" else 2,
+                    description=desc,
+                )
+
+        return None
+
     def _calculate_rating(self, participants: List[MatchParticipantState]) -> float:
         """Calculate match star rating (0.0 - 5.0)."""
         # Base: average of participants' psychology and selling
@@ -591,13 +727,22 @@ class MatchSimulator:
         # Title match bonus
         title_bonus = 0.3 if self.is_title_match else 0
 
-        rating = (base_quality * 2.5) + variety_bonus + near_fall_bonus + reversal_bonus + length_bonus + title_bonus
+        # Rivalry heat bonus — hot feuds produce better matches
+        rivalry_bonus = min(0.5, self.rivalry_heat / 200.0)
+
+        # Interference penalty — cheating cheapens ratings slightly
+        interference_penalty = -0.2 if self._interference_happened else 0
+
+        rating = (base_quality * 2.5) + variety_bonus + near_fall_bonus + reversal_bonus + length_bonus + title_bonus + rivalry_bonus + interference_penalty
         rating = min(5.0, max(0.5, rating + random.uniform(-0.3, 0.3)))
         return round(rating, 1)
 
     def _calculate_heat(self) -> int:
         """Calculate final crowd heat level."""
-        base = 50
+        # Start from show momentum (crowd energy carried from prior segments)
+        base = self.show_momentum
+        # Rivalry heat gives a crowd bonus — fans care about these two
+        base += int(self.rivalry_heat * 0.15)
         for spot in self.spots:
             base += spot.heat_change
         return max(0, min(100, base))
@@ -620,6 +765,7 @@ class MatchSimulator:
             duration_ticks=self.tick,
             spots=self.spots,
             narrative_summary=narrative,
+            interference_occurred=self._interference_happened,
         )
 
 
@@ -691,6 +837,50 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None) -
     if match.is_title_match and card_position == "midcard":
         card_position = "main_event"
 
+    # Load manager context for wrestlers at ringside
+    managers = []
+    try:
+        from models.game_models import ManagerClientDB, ManagerDB
+        for p_state in participant_states:
+            bond = db.query(ManagerClientDB).filter_by(
+                client_wrestler_id=p_state.wrestler_id, is_active=True
+            ).first()
+            if bond:
+                mgr = db.query(ManagerDB).filter_by(id=bond.manager_id).first()
+                if mgr:
+                    managers.append(ManagerContext(
+                        manager_id=mgr.id,
+                        manager_name=mgr.name,
+                        client_wrestler_id=p_state.wrestler_id,
+                        interference_skill=mgr.interference_skill or 50,
+                        cunning=mgr.cunning or 50,
+                        specialization=bond.specialization or "all_around",
+                    ))
+    except Exception:
+        pass  # Manager integration is optional
+
+    # Calculate rivalry heat between participants
+    rivalry_heat = 0
+    try:
+        from models.game_models import WrestlerRelationshipDB
+        if len(participant_states) >= 2 and match.world_id:
+            rel = db.query(WrestlerRelationshipDB).filter(
+                WrestlerRelationshipDB.world_id == match.world_id,
+                WrestlerRelationshipDB.wrestler1_id.in_(
+                    [participant_states[0].wrestler_id, participant_states[1].wrestler_id]
+                ),
+                WrestlerRelationshipDB.wrestler2_id.in_(
+                    [participant_states[0].wrestler_id, participant_states[1].wrestler_id]
+                ),
+            ).first()
+            if rel:
+                rivalry_heat = rel.rivalry_heat or 0
+    except Exception:
+        pass  # Rivalry heat is optional
+
+    # Show momentum passed via match attribute (set by world_ticker)
+    show_momentum = getattr(match, "_show_momentum", 50)
+
     # Simulate
     simulator = MatchSimulator(
         planned_winner_id=match.winner_id,  # Pre-planned winner from booker
@@ -698,6 +888,9 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None) -
         card_position=card_position,
         is_title_match=match.is_title_match,
         stipulation=match.stipulation,
+        managers=managers,
+        rivalry_heat=rivalry_heat,
+        show_momentum=show_momentum,
     )
     result = simulator.simulate(participant_states)
 
@@ -796,4 +989,96 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None) -
                         logger.warning("No game_date available for injury return date; skipping return date")
                         wrestler.injury_return_date = None
 
+    # Generate post-match angle (faction run-ins, beatdowns)
+    result.post_match_angle = _generate_post_match_angle(
+        db, match, result, participant_states
+    )
+
     return result
+
+
+def _generate_post_match_angle(
+    db: Session, match: MatchDB, result: MatchResult,
+    participants: List[MatchParticipantState],
+) -> Optional[Dict[str, Any]]:
+    """Check if a post-match angle occurs — faction attacks, saves, etc."""
+    if not result.winner_id or not match.world_id:
+        return None
+
+    try:
+        from models.game_models import StableMemberDB, StableDB, GameWrestlerDB
+
+        loser_id = None
+        for p in participants:
+            if p.wrestler_id != result.winner_id:
+                loser_id = p.wrestler_id
+                break
+        if not loser_id:
+            return None
+
+        # Check if winner is in a heel stable — faction beatdown chance
+        winner_member = db.query(StableMemberDB).filter_by(
+            wrestler_id=result.winner_id, is_active=True
+        ).first()
+        if winner_member:
+            stable = db.query(StableDB).filter_by(
+                id=winner_member.stable_id, is_active=True
+            ).first()
+            if stable and stable.alignment == "heel" and random.random() < 0.25:
+                # Faction beatdown on the loser
+                stablemates = db.query(StableMemberDB).filter_by(
+                    stable_id=stable.id, is_active=True
+                ).all()
+                attacker_ids = [m.wrestler_id for m in stablemates if m.wrestler_id != result.winner_id]
+                if attacker_ids:
+                    attackers = db.query(GameWrestlerDB).filter(
+                        GameWrestlerDB.id.in_(attacker_ids[:2])
+                    ).all()
+                    attacker_names = " & ".join(a.name for a in attackers)
+                    victim = db.query(GameWrestlerDB).filter_by(id=loser_id).first()
+                    desc = random.choice(POST_MATCH_ATTACK).format(
+                        attackers=f"{stable.name} ({attacker_names})",
+                        victim=victim.name if victim else "the loser"
+                    )
+                    return {
+                        "type": "faction_beatdown",
+                        "stable_id": stable.id,
+                        "stable_name": stable.name,
+                        "victim_id": loser_id,
+                        "attacker_ids": attacker_ids[:2],
+                        "description": desc,
+                    }
+
+        # Check if loser is in a face stable — save chance
+        loser_member = db.query(StableMemberDB).filter_by(
+            wrestler_id=loser_id, is_active=True
+        ).first()
+        if loser_member:
+            stable = db.query(StableDB).filter_by(
+                id=loser_member.stable_id, is_active=True
+            ).first()
+            if stable and stable.alignment == "face" and random.random() < 0.15:
+                stablemates = db.query(StableMemberDB).filter_by(
+                    stable_id=stable.id, is_active=True
+                ).all()
+                saver_ids = [m.wrestler_id for m in stablemates if m.wrestler_id != loser_id]
+                if saver_ids:
+                    savers = db.query(GameWrestlerDB).filter(
+                        GameWrestlerDB.id.in_(saver_ids[:2])
+                    ).all()
+                    saver_names = " & ".join(s.name for s in savers)
+                    desc = random.choice(POST_MATCH_SAVE).format(
+                        savers=f"{stable.name} ({saver_names})"
+                    )
+                    return {
+                        "type": "faction_save",
+                        "stable_id": stable.id,
+                        "stable_name": stable.name,
+                        "saved_id": loser_id,
+                        "saver_ids": saver_ids[:2],
+                        "description": desc,
+                    }
+    except Exception as e:
+        logger.warning("Post-match angle generation failed: %s", e)
+
+    return None

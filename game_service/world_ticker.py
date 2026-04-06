@@ -80,6 +80,26 @@ def _get_viewership_service():
     return _viewership_service
 
 
+_stable_service = None
+_manager_service = None
+
+
+def _get_stable_service():
+    global _stable_service
+    if _stable_service is None:
+        from game_service import stable_service as _stbs
+        _stable_service = _stbs
+    return _stable_service
+
+
+def _get_manager_service():
+    global _manager_service
+    if _manager_service is None:
+        from game_service import manager_service as _mgrs
+        _manager_service = _mgrs
+    return _manager_service
+
+
 def advance_game_date(date_str: str, days: int = 1) -> str:
     """Advance a YYYY-MM-DD date string by N days."""
     dt = datetime.strptime(date_str, "%Y-%m-%d")
@@ -168,6 +188,12 @@ class WorldTicker:
         # 14. Persona & social media (Group 7)
         self._persona_tick(new_date)
 
+        # 15. Stable/faction internal dynamics (Wednesdays + Saturdays)
+        self._stable_dynamics_tick(new_date)
+
+        # 16. Manager effectiveness tracking (Thursdays)
+        self._manager_tick(new_date)
+
         self.db.commit()
 
         return {
@@ -213,6 +239,24 @@ class WorldTicker:
             return self._action_train(data)
         elif action_type == "cut_promo":
             return self._action_cut_promo(data)
+        elif action_type == "form_stable":
+            return self._action_form_stable(data)
+        elif action_type == "join_stable":
+            return self._action_join_stable(data)
+        elif action_type == "leave_stable":
+            return self._action_leave_stable(data)
+        elif action_type == "dissolve_stable":
+            return self._action_dissolve_stable(data)
+        elif action_type == "assign_manager":
+            return self._action_assign_manager(data)
+        elif action_type == "create_manager":
+            return self._action_create_manager(data)
+        elif action_type == "remove_manager":
+            return self._action_remove_manager(data)
+        elif action_type == "create_storyline":
+            return self._action_create_storyline(data)
+        elif action_type == "advance_storyline":
+            return self._action_advance_storyline(data)
         else:
             return {"message": f"Action '{action_type}' acknowledged"}
 
@@ -305,6 +349,184 @@ class WorldTicker:
         # For now, return acknowledgement. Full LLM promo generation
         # will be in the storyline engine.
         return {"message": "Promo direction noted", "direction": data.get("direction", "")}
+
+    # --- Faction / stable actions ---
+
+    def _action_form_stable(self, data: dict) -> dict:
+        """Promoter forms a new stable/faction."""
+        stable_svc = _get_stable_service()
+        name = data.get("name", "New Faction")
+        leader_id = data.get("leader_id")
+        member_ids = data.get("founding_member_ids", [])
+        if not leader_id:
+            raise ValueError("leader_id required")
+        if leader_id not in member_ids:
+            member_ids = [leader_id] + member_ids
+
+        # Find federation from leader's contract
+        contract = self.db.query(ContractDB).filter_by(
+            wrestler_id=leader_id, status="active"
+        ).first()
+        if not contract:
+            raise ValueError("Leader has no active contract")
+
+        stable = stable_svc.create_stable(
+            self.db, self.world.id, contract.federation_id,
+            name=name, leader_id=leader_id,
+            founding_member_ids=member_ids,
+            alignment=data.get("alignment", "heel"),
+            short_name=data.get("short_name"),
+            catchphrase=data.get("catchphrase"),
+            group_finisher_name=data.get("group_finisher_name"),
+            manager_id=data.get("manager_id"),
+            game_date=self.world.current_game_date,
+        )
+        self.events.append(f"Stable formed: {stable.name}")
+        return {"stable_id": stable.id, "name": stable.name}
+
+    def _action_join_stable(self, data: dict) -> dict:
+        """Add a wrestler to an existing stable."""
+        stable_svc = _get_stable_service()
+        stable_id = data.get("stable_id")
+        wrestler_id = data.get("wrestler_id")
+        role = data.get("role", "recruit")
+        if not stable_id or not wrestler_id:
+            raise ValueError("stable_id and wrestler_id required")
+        member = stable_svc.add_member(
+            self.db, stable_id, wrestler_id, role,
+            game_date=self.world.current_game_date,
+        )
+        wrestler = self.db.query(GameWrestlerDB).filter_by(id=wrestler_id).first()
+        self.events.append(f"{wrestler.name if wrestler else wrestler_id} joins stable")
+        return {"member_id": member.id, "role": member.role}
+
+    def _action_leave_stable(self, data: dict) -> dict:
+        """Remove a wrestler from a stable."""
+        stable_svc = _get_stable_service()
+        stable_id = data.get("stable_id")
+        wrestler_id = data.get("wrestler_id")
+        if not stable_id or not wrestler_id:
+            raise ValueError("stable_id and wrestler_id required")
+        result = stable_svc.remove_member(
+            self.db, stable_id, wrestler_id,
+            game_date=self.world.current_game_date,
+        )
+        if not result:
+            raise ValueError("Member not found in stable")
+        return {"removed": True}
+
+    def _action_dissolve_stable(self, data: dict) -> dict:
+        """Dissolve a stable entirely."""
+        stable_svc = _get_stable_service()
+        stable_id = data.get("stable_id")
+        if not stable_id:
+            raise ValueError("stable_id required")
+        from models.game_models import StableDB
+        stable = self.db.query(StableDB).filter_by(id=stable_id).first()
+        if not stable:
+            raise ValueError("Stable not found")
+        stable_svc.dissolve_stable(self.db, stable_id, game_date=self.world.current_game_date)
+        self.events.append(f"Stable dissolved: {stable.name}")
+        return {"dissolved": True, "name": stable.name}
+
+    # --- Manager actions ---
+
+    def _action_assign_manager(self, data: dict) -> dict:
+        """Assign a manager to a wrestler."""
+        mgr_svc = _get_manager_service()
+        manager_id = data.get("manager_id")
+        client_id = data.get("client_wrestler_id")
+        if not manager_id or not client_id:
+            raise ValueError("manager_id and client_wrestler_id required")
+        bond = mgr_svc.assign_manager(
+            self.db, self.world.id, manager_id, client_id,
+            role=data.get("role", "manager"),
+            specialization=data.get("specialization", "all_around"),
+            game_date=self.world.current_game_date,
+        )
+        return {"bond_id": bond.id, "effectiveness": bond.effectiveness}
+
+    def _action_create_manager(self, data: dict) -> dict:
+        """Create a new manager character."""
+        mgr_svc = _get_manager_service()
+        name = data.get("name")
+        if not name:
+            raise ValueError("name required")
+        mgr = mgr_svc.create_manager(
+            self.db, self.world.id, name=name,
+            alignment=data.get("alignment", "heel"),
+            archetype=data.get("archetype", "scheming_manager"),
+            federation_id=data.get("federation_id"),
+            catchphrase=data.get("catchphrase"),
+        )
+        self.events.append(f"Manager created: {mgr.name}")
+        return {"manager_id": mgr.id, "name": mgr.name}
+
+    def _action_remove_manager(self, data: dict) -> dict:
+        """End a manager-client bond."""
+        mgr_svc = _get_manager_service()
+        bond_id = data.get("bond_id")
+        if not bond_id:
+            raise ValueError("bond_id required")
+        result = mgr_svc.remove_manager(
+            self.db, bond_id, game_date=self.world.current_game_date,
+        )
+        if not result:
+            raise ValueError("Bond not found")
+        return {"removed": True}
+
+    # --- Storyline actions ---
+
+    def _action_create_storyline(self, data: dict) -> dict:
+        """Promoter creates a storyline between wrestlers."""
+        sl_svc = _get_storyline_service()
+        wrestler_ids = data.get("wrestler_ids", [])
+        if len(wrestler_ids) < 2:
+            raise ValueError("At least 2 wrestler_ids required")
+        federation_id = data.get("federation_id")
+        if not federation_id:
+            # Infer from first wrestler's contract
+            contract = self.db.query(ContractDB).filter_by(
+                wrestler_id=wrestler_ids[0], status="active"
+            ).first()
+            federation_id = contract.federation_id if contract else None
+        storyline = sl_svc.create_storyline(
+            self.db, self.world.id, federation_id,
+            wrestler_ids=wrestler_ids,
+            storyline_type=data.get("storyline_type", "feud"),
+            name=data.get("name"),
+            description=data.get("description"),
+            game_date=self.world.current_game_date,
+        )
+        self.events.append(f"Storyline created: {storyline.name}")
+        return {"storyline_id": storyline.id, "name": storyline.name}
+
+    def _action_advance_storyline(self, data: dict) -> dict:
+        """Promoter manually advances a storyline's status or heat."""
+        storyline_id = data.get("storyline_id")
+        if not storyline_id:
+            raise ValueError("storyline_id required")
+        storyline = self.db.query(StorylineDB).filter_by(id=storyline_id).first()
+        if not storyline:
+            raise ValueError("Storyline not found")
+
+        new_status = data.get("status")
+        heat_boost = data.get("heat_boost", 0)
+
+        if new_status and new_status in ("brewing", "active", "climax", "resolved"):
+            old_status = storyline.status
+            storyline.status = new_status
+            if new_status == "resolved":
+                storyline.end_date = self.world.current_game_date
+        if heat_boost:
+            storyline.heat = max(0, min(100, storyline.heat + heat_boost))
+
+        return {
+            "storyline_id": storyline.id,
+            "name": storyline.name,
+            "status": storyline.status,
+            "heat": storyline.heat,
+        }
 
     # ------------------------------------------------------------------
     # Phase 2: NPC AI decisions
@@ -486,6 +708,8 @@ class WorldTicker:
         total_segments = len(match_segments)
 
         match_ratings = []
+        # Show momentum flows between segments — hot crowd carries forward
+        show_momentum = 50  # Neutral start
         for idx, seg in enumerate(segments):
             if seg.segment_type == "match" and seg.match_id:
                 match = self.db.query(MatchDB).filter(
@@ -505,6 +729,9 @@ class WorldTicker:
                     match.card_position = card_position
                     match.game_date = show.game_date
 
+                    # Pass show momentum to match engine
+                    match._show_momentum = show_momentum
+
                     try:
                         result = me.simulate_match_from_db(self.db, match, game_date=show.game_date)
                         seg.is_completed = True
@@ -513,10 +740,43 @@ class WorldTicker:
                         seg.actual_duration_minutes = result.duration_ticks
                         match_ratings.append(result.match_rating)
 
+                        # Update show momentum from this match's crowd heat
+                        # Good matches lift the crowd, bad ones cool them
+                        if result.crowd_heat > 60:
+                            show_momentum = min(80, show_momentum + 5)
+                        elif result.crowd_heat < 35:
+                            show_momentum = max(30, show_momentum - 5)
+
                         # Process post-match consequences
                         aftermath.process_match_aftermath(
                             self.db, match, self.world.current_game_date
                         )
+
+                        # Process stable effects from match result
+                        try:
+                            stable_svc = _get_stable_service()
+                            losers = [p.wrestler_id for p in self.db.query(MatchParticipantDB).filter(
+                                MatchParticipantDB.match_id == match.id,
+                                MatchParticipantDB.is_winner == False,
+                            ).all()]
+                            for loser_id in losers:
+                                stable_svc.process_match_result_for_stables(
+                                    self.db, result.winner_id, loser_id,
+                                    self.world.id, self.world.current_game_date,
+                                )
+                        except Exception:
+                            pass
+
+                        # Log post-match angle if one occurred
+                        if result.post_match_angle:
+                            angle = result.post_match_angle
+                            self._log_event(
+                                angle["type"],
+                                angle["description"],
+                                angle.get("attacker_ids", []) + [angle.get("victim_id") or angle.get("saved_id", "")],
+                                importance=7,
+                            )
+                            show_momentum = min(85, show_momentum + 8)  # Angles are hot
 
                         # Check for storyline triggers from match result
                         sl_svc.check_match_storyline_triggers(
@@ -531,6 +791,11 @@ class WorldTicker:
                 seg.is_completed = True
                 promo_rating = self._evaluate_promo_segment(seg, show)
                 seg.rating = promo_rating
+                # Good promos build show momentum
+                if promo_rating >= 3.5:
+                    show_momentum = min(80, show_momentum + 4)
+                elif promo_rating < 2.0:
+                    show_momentum = max(30, show_momentum - 3)
 
         # Calculate show overall rating
         show.is_completed = True
@@ -1384,6 +1649,56 @@ class WorldTicker:
             )
         except Exception as e:
             logger.warning(f"Social media tick failed: {e}")
+
+    def _stable_dynamics_tick(self, game_date: str):
+        """Process internal faction politics for all active stables.
+
+        Runs on Wednesdays and Saturdays — two chances per week for
+        loyalty drift, influence jockeying, and auto-generated drama.
+        """
+        day_of_week = get_day_of_week(game_date)
+        if day_of_week not in (2, 5):  # Wednesday, Saturday
+            return
+
+        try:
+            stable_svc = _get_stable_service()
+            from models.game_models import StableDB
+            stables = self.db.query(StableDB).filter_by(
+                world_id=self.world.id, is_active=True
+            ).all()
+            for stable in stables:
+                stable_svc.tick_stable_dynamics(self.db, stable, game_date)
+            if stables:
+                self.events.append(f"Faction dynamics processed for {len(stables)} stable(s)")
+        except Exception as e:
+            logger.warning("Stable dynamics tick failed: %s", e)
+
+    def _manager_tick(self, game_date: str):
+        """Track manager effectiveness and bond evolution.
+
+        Runs on Thursdays — manager bonds slowly grow in effectiveness
+        as the pairing builds chemistry.
+        """
+        if get_day_of_week(game_date) != 3:  # Thursday
+            return
+
+        try:
+            from models.game_models import ManagerClientDB
+            bonds = self.db.query(ManagerClientDB).filter_by(
+                world_id=self.world.id, is_active=True
+            ).all()
+            for bond in bonds:
+                # Effectiveness slowly grows over time (chemistry building)
+                if bond.effectiveness < 90:
+                    bond.effectiveness = min(100, bond.effectiveness + 1)
+                # Recalculate bonuses as effectiveness grows
+                if bond.effectiveness > 70:
+                    bond.charisma_bonus = min(20, bond.charisma_bonus + 1)
+                    bond.heat_bonus = min(20, bond.heat_bonus + 1)
+            if bonds:
+                self.events.append(f"Manager bonds updated for {len(bonds)} pairing(s)")
+        except Exception as e:
+            logger.warning("Manager tick failed: %s", e)
 
     # ------------------------------------------------------------------
     # Helpers

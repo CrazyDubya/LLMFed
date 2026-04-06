@@ -292,3 +292,229 @@ class TestSimulateMatchFromDB:
         db_session.refresh(wrestlers[0])
         db_session.refresh(wrestlers[1])
         assert wrestlers[0].condition < 100 or wrestlers[1].condition < 100
+
+
+# ---------------------------------------------------------------------------
+# Manager interference tests
+# ---------------------------------------------------------------------------
+
+class TestManagerInterference:
+    def test_interference_can_occur_with_high_skill_manager(self):
+        """A high-skill manager should produce interference in some matches."""
+        from core_engine.match_engine import ManagerContext
+        interference_count = 0
+        for _ in range(100):
+            mgr = ManagerContext(
+                manager_id="mgr1", manager_name="Paul E.",
+                client_wrestler_id="w1",
+                interference_skill=95, cunning=95,
+                specialization="interference",
+            )
+            sim = MatchSimulator(
+                planned_winner_id="w1", managers=[mgr],
+                card_position="main_event",
+            )
+            p1 = _make_participant("Face", "w1")
+            p2 = _make_participant("Heel", "w2")
+            result = sim.simulate([p1, p2])
+            if result.interference_occurred:
+                interference_count += 1
+        assert interference_count > 0, "Interference never occurred in 100 matches"
+
+    def test_no_interference_without_manager(self):
+        """No managers means no interference."""
+        for _ in range(30):
+            sim = MatchSimulator(planned_winner_id="w1")
+            p1 = _make_participant("A", "w1")
+            p2 = _make_participant("B", "w2")
+            result = sim.simulate([p1, p2])
+            assert not result.interference_occurred
+
+    def test_dq_finish_possible_from_interference(self):
+        """Caught interference can produce DQ finish."""
+        from core_engine.match_engine import ManagerContext
+        dq_count = 0
+        for _ in range(300):
+            mgr = ManagerContext(
+                manager_id="mgr1", manager_name="Sneaky",
+                client_wrestler_id="w1",
+                interference_skill=99, cunning=99,
+            )
+            sim = MatchSimulator(
+                planned_winner_id="w1", managers=[mgr],
+                card_position="main_event",
+            )
+            p1 = _make_participant("A", "w1")
+            p2 = _make_participant("B", "w2")
+            result = sim.simulate([p1, p2])
+            if result.finish_type == "disqualification":
+                dq_count += 1
+        # DQ should happen at least once in 300 trials with max-skill manager
+        assert dq_count > 0, "DQ never occurred"
+
+
+# ---------------------------------------------------------------------------
+# Rivalry heat tests
+# ---------------------------------------------------------------------------
+
+class TestRivalryHeat:
+    def test_rivalry_heat_boosts_match_rating(self):
+        """High rivalry heat should produce higher average ratings."""
+        import random as rng
+        ratings_no_rivalry = []
+        ratings_high_rivalry = []
+        rng.seed(42)
+        for _ in range(50):
+            sim = MatchSimulator(planned_winner_id="w1", rivalry_heat=0)
+            p1 = _make_participant("A", "w1", stats={"psychology": 60, "selling": 60})
+            p2 = _make_participant("B", "w2", stats={"psychology": 60, "selling": 60})
+            result = sim.simulate([p1, p2])
+            ratings_no_rivalry.append(result.match_rating)
+
+        rng.seed(42)
+        for _ in range(50):
+            sim = MatchSimulator(planned_winner_id="w1", rivalry_heat=100)
+            p1 = _make_participant("A", "w1", stats={"psychology": 60, "selling": 60})
+            p2 = _make_participant("B", "w2", stats={"psychology": 60, "selling": 60})
+            result = sim.simulate([p1, p2])
+            ratings_high_rivalry.append(result.match_rating)
+
+        avg_low = sum(ratings_no_rivalry) / len(ratings_no_rivalry)
+        avg_high = sum(ratings_high_rivalry) / len(ratings_high_rivalry)
+        assert avg_high > avg_low, f"Rivalry avg {avg_high:.2f} should be > no-rivalry {avg_low:.2f}"
+
+    def test_rivalry_heat_boosts_crowd_heat(self):
+        """High rivalry heat should produce higher crowd heat."""
+        heats_low = []
+        heats_high = []
+        for _ in range(50):
+            sim = MatchSimulator(planned_winner_id="w1", rivalry_heat=0, show_momentum=50)
+            p1 = _make_participant("A", "w1")
+            p2 = _make_participant("B", "w2")
+            result = sim.simulate([p1, p2])
+            heats_low.append(result.crowd_heat)
+
+        for _ in range(50):
+            sim = MatchSimulator(planned_winner_id="w1", rivalry_heat=100, show_momentum=50)
+            p1 = _make_participant("A", "w1")
+            p2 = _make_participant("B", "w2")
+            result = sim.simulate([p1, p2])
+            heats_high.append(result.crowd_heat)
+
+        avg_low = sum(heats_low) / len(heats_low)
+        avg_high = sum(heats_high) / len(heats_high)
+        assert avg_high > avg_low
+
+
+# ---------------------------------------------------------------------------
+# Show momentum tests
+# ---------------------------------------------------------------------------
+
+class TestShowMomentum:
+    def test_high_show_momentum_boosts_crowd_heat(self):
+        """Higher show momentum should produce higher crowd heat."""
+        heats_low = []
+        heats_high = []
+        for _ in range(50):
+            sim = MatchSimulator(planned_winner_id="w1", show_momentum=20)
+            p1 = _make_participant("A", "w1")
+            p2 = _make_participant("B", "w2")
+            result = sim.simulate([p1, p2])
+            heats_low.append(result.crowd_heat)
+
+        for _ in range(50):
+            sim = MatchSimulator(planned_winner_id="w1", show_momentum=90)
+            p1 = _make_participant("A", "w1")
+            p2 = _make_participant("B", "w2")
+            result = sim.simulate([p1, p2])
+            heats_high.append(result.crowd_heat)
+
+        avg_low = sum(heats_low) / len(heats_low)
+        avg_high = sum(heats_high) / len(heats_high)
+        assert avg_high > avg_low, f"High momentum {avg_high:.1f} not > low {avg_low:.1f}"
+
+
+# ---------------------------------------------------------------------------
+# Post-match angle tests (DB-integrated)
+# ---------------------------------------------------------------------------
+
+class TestPostMatchAngle:
+    def test_post_match_angle_with_heel_stable(self, db_session):
+        """A heel stable winner should sometimes generate a faction beatdown."""
+        from models.game_models import StableDB, StableMemberDB
+        from core_engine.match_engine import _generate_post_match_angle
+
+        world = create_world(db_session, "Angle Test World")
+        wrestlers = db_session.query(GameWrestlerDB).filter(
+            GameWrestlerDB.world_id == world.id
+        ).limit(3).all()
+        assert len(wrestlers) >= 3
+
+        fed = db_session.query(GameFederationDB).filter(
+            GameFederationDB.world_id == world.id
+        ).first()
+
+        # Create a heel stable with wrestler 0 as leader and wrestler 2 as enforcer
+        stable = StableDB(
+            world_id=world.id, federation_id=fed.id,
+            name="Evil Corp", alignment="heel", is_active=True,
+        )
+        db_session.add(stable)
+        db_session.flush()
+
+        for i, role in [(0, "leader"), (2, "enforcer")]:
+            db_session.add(StableMemberDB(
+                stable_id=stable.id, wrestler_id=wrestlers[i].id,
+                role=role, is_active=True,
+            ))
+        db_session.commit()
+
+        # Build a match result where wrestler 0 (heel stable leader) won vs wrestler 1
+        match = MatchDB(
+            world_id=world.id, match_type="singles",
+            winner_id=wrestlers[0].id,
+        )
+        db_session.add(match)
+        db_session.flush()
+
+        result = MatchResult(
+            winner_id=wrestlers[0].id,
+            finish_type="pinfall",
+        )
+
+        # Run many trials — should get a beatdown angle eventually
+        participant_states = [
+            _make_participant(wrestlers[0].name, wrestlers[0].id, alignment="heel"),
+            _make_participant(wrestlers[1].name, wrestlers[1].id, alignment="face"),
+        ]
+
+        angles = 0
+        for _ in range(100):
+            angle = _generate_post_match_angle(db_session, match, result, participant_states)
+            if angle is not None:
+                assert angle["type"] == "faction_beatdown"
+                assert angle["stable_name"] == "Evil Corp"
+                angles += 1
+        assert angles > 0, "No post-match angles generated in 100 trials"
+
+    def test_no_angle_without_stable(self, db_session):
+        """Without stables, no post-match angles."""
+        from core_engine.match_engine import _generate_post_match_angle
+
+        world = create_world(db_session, "No Angle World")
+        wrestlers = db_session.query(GameWrestlerDB).filter(
+            GameWrestlerDB.world_id == world.id
+        ).limit(2).all()
+
+        match = MatchDB(world_id=world.id, match_type="singles", winner_id=wrestlers[0].id)
+        db_session.add(match)
+        db_session.flush()
+
+        result = MatchResult(winner_id=wrestlers[0].id)
+        participant_states = [
+            _make_participant(w.name, w.id) for w in wrestlers
+        ]
+
+        for _ in range(50):
+            angle = _generate_post_match_angle(db_session, match, result, participant_states)
+            assert angle is None, "Got angle without any stables"

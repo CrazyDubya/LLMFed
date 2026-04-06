@@ -12,6 +12,8 @@ export default function WrestlerDashboard() {
   const [worldData, setWorldData] = useState<any>(null);
   const [narrative, setNarrative] = useState<any[]>([]);
   const [federations, setFederations] = useState<any[]>([]);
+  const [stableInfo, setStableInfo] = useState<any>(null);
+  const [managerInfo, setManagerInfo] = useState<any>(null);
   const [tab, setTab] = useState<'stats' | 'career' | 'train' | 'world'>('stats');
   const [advancing, setAdvancing] = useState(false);
   const [trainingStat, setTrainingStat] = useState('stamina');
@@ -20,17 +22,21 @@ export default function WrestlerDashboard() {
   const loadData = async () => {
     if (!worldId || !wrestlerId) return;
     try {
-      const [wd, wData, narr, feds] = await Promise.all([
+      const [wd, wData, narr, feds, stbl, mgr] = await Promise.all([
         api.getWorld(worldId),
         api.getWrestler(wrestlerId),
         api.getNarrative(worldId, 20),
         api.listFederations(worldId),
+        api.getWrestlerStable(wrestlerId).catch(() => null),
+        api.getWrestlerManager(wrestlerId).catch(() => null),
       ]);
       setWorldData(wd);
       setWrestler(wData.wrestler);
       setStats(wData.stats);
       setNarrative(narr);
       setFederations(feds);
+      setStableInfo(stbl);
+      setManagerInfo(mgr);
     } catch (err: any) {
       setError(err.message);
     }
@@ -169,6 +175,40 @@ export default function WrestlerDashboard() {
                   {wrestler?.is_injured && <p className="text-red-400 font-medium">INJURED - Return: {wrestler.injury_return_date}</p>}
                 </div>
               </div>
+
+              {/* Faction & Manager Info */}
+              {(stableInfo?.in_stable || managerInfo?.has_manager) && (
+                <div className="mt-6 pt-4 border-t border-gray-800">
+                  <h3 className="text-white font-medium mb-2">Alliances</h3>
+                  <div className="space-y-3">
+                    {stableInfo?.in_stable && (
+                      <div className="bg-purple-900/20 border border-purple-800/30 rounded p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-purple-300 font-medium">{stableInfo.stable_name}</span>
+                          <span className="px-2 py-0.5 rounded text-xs bg-purple-900/50 text-purple-300">{stableInfo.role}</span>
+                        </div>
+                        <div className="flex gap-4 text-xs text-gray-400">
+                          <span>Loyalty: <span className={stableInfo.loyalty >= 60 ? 'text-green-400' : stableInfo.loyalty >= 30 ? 'text-yellow-400' : 'text-red-400'}>{stableInfo.loyalty}</span></span>
+                          <span>Influence: {stableInfo.influence}</span>
+                        </div>
+                      </div>
+                    )}
+                    {managerInfo?.has_manager && (
+                      <div className="bg-cyan-900/20 border border-cyan-800/30 rounded p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-cyan-300 font-medium">{managerInfo.manager_name}</span>
+                          <span className="px-2 py-0.5 rounded text-xs bg-cyan-900/50 text-cyan-300">{managerInfo.role}</span>
+                        </div>
+                        <div className="flex gap-4 text-xs text-gray-400">
+                          <span>Effectiveness: {managerInfo.effectiveness}%</span>
+                          <span>+{managerInfo.charisma_bonus} CHA</span>
+                          <span>+{managerInfo.heat_bonus} Heat</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

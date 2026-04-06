@@ -261,6 +261,19 @@ class PlayerActionResponse(BaseModel):
 # Storylines
 # ---------------------------------------------------------------------------
 
+class StorylineCreate(BaseModel):
+    wrestler_ids: List[str] = Field(min_length=2)
+    storyline_type: str = "feud"
+    name: Optional[str] = None
+    description: Optional[str] = None
+    federation_id: Optional[str] = None
+
+
+class StorylineAdvance(BaseModel):
+    status: Optional[str] = None
+    heat_boost: int = 0
+
+
 class StorylineResponse(BaseModel):
     id: str
     world_id: str
@@ -406,3 +419,137 @@ class PromoResponse(BaseModel):
     is_player_written: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# Managers & Valets
+# ---------------------------------------------------------------------------
+
+class ManagerCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    real_name: Optional[str] = Field(default=None, max_length=100)
+    gender: str = Field(default="male", pattern=r"^(male|female|non_binary)$")
+    alignment: str = Field(default="heel", pattern=r"^(face|heel|tweener)$")
+    archetype: str = Field(
+        default="scheming_manager",
+        pattern=r"^(scheming_manager|corporate_suit|flamboyant_mouthpiece|enforcer_type|old_school)$"
+    )
+    personality_traits: List[str] = Field(default_factory=list)
+    catchphrase: Optional[str] = Field(default=None, max_length=200)
+
+
+class ManagerResponse(BaseModel):
+    id: str
+    world_id: str
+    federation_id: Optional[str]
+    name: str
+    real_name: Optional[str]
+    gender: str
+    alignment: str
+    archetype: str
+    personality_traits: List[str]
+    catchphrase: Optional[str]
+    charisma: int
+    mic_skill: int
+    cunning: int
+    interference_skill: int
+    can_wrestle: bool
+    popularity: int
+    heat: int
+    is_active: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ManagerClientCreate(BaseModel):
+    manager_id: str
+    client_wrestler_id: str
+    role: str = Field(default="manager", pattern=r"^(manager|valet|advocate|handler)$")
+    specialization: str = Field(
+        default="all_around",
+        pattern=r"^(promo_boost|interference|negotiation|distraction|all_around)$"
+    )
+
+
+class ManagerClientResponse(BaseModel):
+    id: str
+    world_id: str
+    manager_id: str
+    client_wrestler_id: str
+    role: str
+    effectiveness: int
+    specialization: str
+    charisma_bonus: int
+    heat_bonus: int
+    contract_started: Optional[str]
+    is_active: bool
+    manager_name: Optional[str] = None
+    client_name: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# Stables / Factions
+# ---------------------------------------------------------------------------
+
+class StableCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    short_name: Optional[str] = Field(default=None, max_length=20)
+    alignment: str = Field(default="heel", pattern=r"^(face|heel|tweener)$")
+    catchphrase: Optional[str] = Field(default=None, max_length=200)
+    group_finisher_name: Optional[str] = Field(default=None, max_length=100)
+    founding_member_ids: List[str] = Field(min_length=2)
+    leader_id: str
+    manager_id: Optional[str] = None
+
+
+class StableMemberResponse(BaseModel):
+    wrestler_id: str
+    wrestler_name: Optional[str] = None
+    role: str
+    loyalty: int
+    influence: int
+    joined_date: Optional[str]
+    is_active: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StableResponse(BaseModel):
+    id: str
+    world_id: str
+    federation_id: str
+    name: str
+    short_name: Optional[str]
+    alignment: str
+    catchphrase: Optional[str]
+    group_finisher_name: Optional[str]
+    heat: int
+    prestige: int
+    dominance: int
+    cohesion: int
+    manager_id: Optional[str]
+    manager_name: Optional[str] = None
+    formed_date: Optional[str]
+    is_active: bool
+    members: List[StableMemberResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StableAddMember(BaseModel):
+    wrestler_id: str
+    role: str = Field(
+        default="member",
+        pattern=r"^(leader|enforcer|mouthpiece|lieutenant|member|recruit)$"
+    )
+
+
+class StableUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=100)
+    short_name: Optional[str] = Field(default=None, max_length=20)
+    alignment: Optional[str] = Field(default=None, pattern=r"^(face|heel|tweener)$")
+    catchphrase: Optional[str] = Field(default=None, max_length=200)
+    group_finisher_name: Optional[str] = Field(default=None, max_length=100)
