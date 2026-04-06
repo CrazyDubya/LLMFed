@@ -4,6 +4,7 @@ World management service - creating worlds, players, and managing game state.
 
 import logging
 import random
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from models.game_models import (
@@ -238,6 +239,10 @@ def create_world(db: Session, name: str, description: str = None,
         # 80% chance of being signed to a federation
         if random.random() < 0.8 and federations:
             fed = random.choice(federations)
+            # Contract length: 26-78 weeks (6-18 months)
+            contract_weeks = random.randint(26, 78)
+            start = datetime.strptime(world.current_game_date, "%Y-%m-%d")
+            end_date = (start + timedelta(weeks=contract_weeks)).strftime("%Y-%m-%d")
             db.add(ContractDB(
                 world_id=world.id,
                 wrestler_id=wrestler.id,
@@ -245,6 +250,7 @@ def create_world(db: Session, name: str, description: str = None,
                 status="active",
                 salary_weekly=random.uniform(500, 10000),
                 start_date=world.current_game_date,
+                end_date=end_date,
                 is_exclusive=random.random() < 0.7,
             ))
         else:

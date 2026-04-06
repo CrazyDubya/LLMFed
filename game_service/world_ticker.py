@@ -329,8 +329,8 @@ class WorldTicker:
         try:
             from game_service.wrestler_lifecycle_service import training_with_mentor
             gain += training_with_mentor(self.db, wrestler_id, stat_name)
-        except Exception:
-            pass
+        except (ValueError, AttributeError) as e:
+            logger.debug("Mentor bonus skipped for %s: %s", wrestler_id, e)
 
         new_val = min(100, current + gain)
         setattr(stats, stat_name, new_val)
@@ -345,10 +345,68 @@ class WorldTicker:
         return {"stat": stat_name, "old": current, "new": new_val, "gain": new_val - current}
 
     def _action_cut_promo(self, data: dict) -> dict:
-        """Wrestler cuts a promo (processed by LLM later)."""
-        # For now, return acknowledgement. Full LLM promo generation
-        # will be in the storyline engine.
-        return {"message": "Promo direction noted", "direction": data.get("direction", "")}
+        """Wrestler cuts a promo — gains popularity, boosts storyline heat."""
+        wrestler_id = data.get("wrestler_id")
+        target_id = data.get("target_wrestler_id")
+        direction = data.get("direction", "")
+
+        wrestler = self.db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.id == wrestler_id
+        ).first()
+        if not wrestler:
+            raise ValueError("Wrestler not found")
+
+        stats = self.db.query(WrestlerStatsDB).filter(
+            WrestlerStatsDB.wrestler_id == wrestler_id
+        ).first()
+
+        # Promo quality based on charisma + mic skill
+        charisma = stats.charisma if stats else 50
+        mic = stats.mic_skill if stats else 50
+        base_quality = (charisma + mic) / 2
+        roll = random.randint(-15, 15)
+        quality = max(1, min(100, base_quality + roll))
+
+        # Popularity gain: 1-5 based on quality
+        pop_gain = 1
+        if quality >= 80:
+            pop_gain = random.randint(3, 5)
+        elif quality >= 60:
+            pop_gain = random.randint(2, 4)
+        elif quality >= 40:
+            pop_gain = random.randint(1, 3)
+
+        old_pop = wrestler.popularity
+        wrestler.popularity = min(100, wrestler.popularity + pop_gain)
+        wrestler.morale = min(100, (wrestler.morale or 50) + 2)
+
+        result = {
+            "quality": quality,
+            "popularity_gain": pop_gain,
+            "old_popularity": old_pop,
+            "new_popularity": wrestler.popularity,
+            "direction": direction,
+        }
+
+        # If targeting a rival, boost storyline heat
+        if target_id:
+            sl_svc = _get_storyline_service()
+            existing = sl_svc._find_storyline_between(self.db, wrestler_id, target_id)
+            if existing:
+                heat_boost = 5 if quality >= 60 else 3
+                sl_svc.progress_storyline(
+                    self.db, existing, "promo", heat_boost,
+                    description=f"{wrestler.name} cut a fiery promo targeting their rival!",
+                )
+                result["storyline_heat_boost"] = heat_boost
+
+        self._log_event(
+            "promo",
+            f"{wrestler.name} cuts a promo (quality: {quality}, pop +{pop_gain})",
+            [wrestler_id] + ([target_id] if target_id else []),
+            importance=5,
+        )
+        return result
 
     # --- Faction / stable actions ---
 
@@ -764,8 +822,8 @@ class WorldTicker:
                                     self.db, result.winner_id, loser_id,
                                     self.world.id, self.world.current_game_date,
                                 )
-                        except Exception:
-                            pass
+                        except (ValueError, AttributeError) as e:
+                            logger.debug("Stable match processing skipped: %s", e)
 
                         # Log post-match angle if one occurred
                         if result.post_match_angle:
@@ -783,7 +841,10 @@ class WorldTicker:
                             self.db, match, self.world.current_game_date
                         )
                     except Exception as e:
-                        logger.warning(f"Match simulation failed: {e}")
+                        logger.error(
+                            "Match simulation failed for match %s: %s",
+                            match.id, e, exc_info=True,
+                        )
                         seg.is_completed = True
                         seg.rating = round(random.uniform(2.0, 4.0), 1)
                         match_ratings.append(seg.rating)
@@ -854,7 +915,7 @@ class WorldTicker:
             news_svc = _get_news_service()
             news_svc.generate_show_news(self.db, show, match_ratings, fed)
         except Exception as e:
-            logger.warning(f"News generation failed: {e}")
+            logger.error("News generation failed for show %s: %s", show.id, e, exc_info=True)
 
         self._log_event(
             "show",
@@ -931,9 +992,14 @@ class WorldTicker:
         ).all()
 
         for storyline in active:
-            # Storylines heat decays if not progressed
-            if random.random() < 0.1:  # 10% chance per day
-                storyline.heat = max(0, storyline.heat - 1)
+            # Storylines heat decays daily — unserviced storylines fade faster
+            decay_chance = 0.3  # 30% chance per day (was 10%)
+            decay_amount = 1
+            if storyline.status == "climax":
+                decay_chance = 0.5  # Climax storylines need constant fuel
+                decay_amount = 2
+            if random.random() < decay_chance:
+                storyline.heat = max(0, storyline.heat - decay_amount)
 
             # Storylines can naturally escalate
             if storyline.status == "brewing" and storyline.heat > 60:
@@ -1083,7 +1149,17 @@ class WorldTicker:
                 GameWrestlerDB.id == contract.wrestler_id
             ).first()
             if wrestler:
-                self.events.append(f"Contract expired: {wrestler.name}")
+                fed = self.db.query(GameFederationDB).filter(
+                    GameFederationDB.id == contract.federation_id
+                ).first()
+                fed_name = (fed.short_name or fed.name) if fed else "Unknown"
+                self._log_event(
+                    "contract_expired",
+                    f"{wrestler.name}'s contract with {fed_name} has expired — now a free agent!",
+                    [wrestler.id, contract.federation_id],
+                    importance=6,
+                )
+                self.events.append(f"Contract expired: {wrestler.name} is now a free agent")
 
     # ------------------------------------------------------------------
     # Phase 8: Recovery
@@ -1527,7 +1603,7 @@ class WorldTicker:
             news_svc = _get_news_service()
             news_svc.generate_weekly_dirt_sheet(self.db, self.world.id, game_date)
         except Exception as e:
-            logger.warning(f"Weekly news generation failed: {e}")
+            logger.error("Weekly news generation failed: %s", e, exc_info=True)
 
     # ------------------------------------------------------------------
     # Phase 13: Wrestler lifecycle (Groups 1-6)
@@ -1543,16 +1619,33 @@ class WorldTicker:
         )
 
         # --- Annual events ---
-        # Jan 1: Age all wrestlers (Group 1)
+        # Jan 1: Age all wrestlers (Group 1) + PPV calendar rollover
         if game_date.endswith("-01-01"):
             age_wrestlers(self.db, self.world.id, game_date)
             self.events.append("Annual aging applied to all wrestlers")
+
+            # Generate next year's PPV calendars for all active federations
+            from game_service.ppv_calendar_service import rollover_ppv_calendar
+            all_feds = self.db.query(GameFederationDB).filter(
+                GameFederationDB.world_id == self.world.id,
+                GameFederationDB.is_active == True,
+            ).all()
+            for fed in all_feds:
+                new_ppvs = rollover_ppv_calendar(self.db, fed, game_date)
+                if new_ppvs:
+                    self.events.append(
+                        f"{fed.short_name or fed.name}: {len(new_ppvs)} PPVs scheduled for new year"
+                    )
 
         # April 1: Hall of Fame ceremony (Group 5)
         if game_date.endswith("-04-01"):
             inductee = hall_of_fame_ceremony(self.db, self.world.id, game_date)
             if inductee:
                 self.events.append(f"HALL OF FAME: {inductee.name} inducted!")
+
+        # Dec 31: Year-end summary and awards
+        if game_date.endswith("-12-31"):
+            self._generate_year_end_summary(game_date)
 
         # --- Weekly events (Thursdays) ---
         if get_day_of_week(game_date) == 3:
@@ -1619,7 +1712,7 @@ class WorldTicker:
                 tick_persona(self.db, self.world.id, game_date)
                 self.events.append("Persona lifecycle tick processed")
             except Exception as e:
-                logger.warning(f"Persona tick failed: {e}")
+                logger.error("Persona tick failed: %s", e, exc_info=True)
 
             # Check for worked-shoot storylines from life events
             try:
@@ -1639,7 +1732,7 @@ class WorldTicker:
                 for sl in coll_storylines:
                     self.events.append(f"Collision storyline '{sl.name}' created!")
             except Exception as e:
-                logger.warning(f"Kayfabe collision check failed: {e}")
+                logger.error("Kayfabe collision check failed: %s", e, exc_info=True)
 
         # Daily social media tick
         try:
@@ -1648,7 +1741,7 @@ class WorldTicker:
                 self.db, self.world.id, game_date
             )
         except Exception as e:
-            logger.warning(f"Social media tick failed: {e}")
+            logger.error("Social media tick failed: %s", e, exc_info=True)
 
     def _stable_dynamics_tick(self, game_date: str):
         """Process internal faction politics for all active stables.
@@ -1671,7 +1764,7 @@ class WorldTicker:
             if stables:
                 self.events.append(f"Faction dynamics processed for {len(stables)} stable(s)")
         except Exception as e:
-            logger.warning("Stable dynamics tick failed: %s", e)
+            logger.error("Stable dynamics tick failed: %s", e, exc_info=True)
 
     def _manager_tick(self, game_date: str):
         """Track manager effectiveness and bond evolution.
@@ -1698,7 +1791,118 @@ class WorldTicker:
             if bonds:
                 self.events.append(f"Manager bonds updated for {len(bonds)} pairing(s)")
         except Exception as e:
-            logger.warning("Manager tick failed: %s", e)
+            logger.error("Manager tick failed: %s", e, exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Year-end summary
+    # ------------------------------------------------------------------
+
+    def _generate_year_end_summary(self, game_date: str):
+        """Generate year-end awards and summary news. Fires on Dec 31."""
+        news_svc = _get_news_service()
+        year = game_date[:4]
+
+        # Find all completed shows this year
+        year_start = f"{year}-01-01"
+        shows = self.db.query(ShowDB).filter(
+            ShowDB.world_id == self.world.id,
+            ShowDB.is_completed == True,
+            ShowDB.game_date >= year_start,
+            ShowDB.game_date <= game_date,
+        ).all()
+
+        # Best show of the year
+        best_show = max(shows, key=lambda s: s.overall_rating or 0) if shows else None
+
+        # Most popular wrestler (current popularity)
+        wrestlers = self.db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.world_id == self.world.id,
+            GameWrestlerDB.is_active == True,
+        ).order_by(GameWrestlerDB.popularity.desc()).all()
+        wrestler_of_year = wrestlers[0] if wrestlers else None
+
+        # Best match of the year
+        best_match = self.db.query(MatchDB).filter(
+            MatchDB.world_id == self.world.id,
+            MatchDB.is_completed == True,
+            MatchDB.match_rating != None,
+            MatchDB.game_date >= year_start,
+        ).order_by(MatchDB.match_rating.desc()).first()
+
+        # Most dominant (highest win count)
+        from sqlalchemy import func
+        win_counts = (
+            self.db.query(
+                MatchParticipantDB.wrestler_id,
+                func.count(MatchParticipantDB.id).label("wins"),
+            )
+            .join(MatchDB)
+            .filter(
+                MatchParticipantDB.is_winner == True,
+                MatchDB.is_completed == True,
+                MatchDB.game_date >= year_start,
+                MatchDB.game_date <= game_date,
+            )
+            .group_by(MatchParticipantDB.wrestler_id)
+            .order_by(func.count(MatchParticipantDB.id).desc())
+            .first()
+        )
+
+        most_wins_wrestler = None
+        most_wins_count = 0
+        if win_counts:
+            most_wins_wrestler = self.db.query(GameWrestlerDB).filter(
+                GameWrestlerDB.id == win_counts[0]
+            ).first()
+            most_wins_count = win_counts[1]
+
+        # Federation of the year (highest momentum)
+        feds = self.db.query(GameFederationDB).filter(
+            GameFederationDB.world_id == self.world.id,
+            GameFederationDB.is_active == True,
+        ).order_by(GameFederationDB.momentum.desc()).all()
+        fed_of_year = feds[0] if feds else None
+
+        # Build summary
+        awards = []
+        if wrestler_of_year:
+            awards.append(f"Wrestler of the Year: {wrestler_of_year.name} (Popularity: {wrestler_of_year.popularity})")
+        if best_show:
+            fed = self.db.query(GameFederationDB).filter(
+                GameFederationDB.id == best_show.federation_id
+            ).first()
+            fed_name = (fed.short_name or fed.name) if fed else "Unknown"
+            awards.append(f"Show of the Year: {best_show.name} by {fed_name} ({best_show.overall_rating:.1f} stars)")
+        if best_match and best_match.match_rating:
+            awards.append(f"Match of the Year: {best_match.match_rating:.1f}-star classic")
+        if most_wins_wrestler:
+            awards.append(f"Most Dominant: {most_wins_wrestler.name} ({most_wins_count} wins)")
+        if fed_of_year:
+            awards.append(f"Federation of the Year: {fed_of_year.short_name or fed_of_year.name} (Momentum: {fed_of_year.momentum})")
+
+        summary = f"YEAR IN REVIEW {year}\n" + "\n".join(f"  - {a}" for a in awards)
+
+        self._log_event(
+            "year_end_awards",
+            summary,
+            [],
+            importance=10,
+        )
+
+        # Generate news article
+        self.db.add(WorldNewsDB(
+            world_id=self.world.id,
+            headline=f"YEAR IN REVIEW: The {year} Wrestling Awards!",
+            body="\n\n".join(awards),
+            category="year_end",
+            game_date=game_date,
+            is_kayfabe=False,
+            source="Wrestling Observer Year-End Issue",
+        ))
+
+        self.events.append(f"Year-end awards generated for {year}")
+        for award in awards:
+            self.events.append(f"AWARD: {award}")
 
     # ------------------------------------------------------------------
     # Helpers

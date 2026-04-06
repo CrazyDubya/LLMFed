@@ -291,11 +291,15 @@ def check_match_storyline_triggers(db: Session, match: MatchDB, game_date: str):
     existing = _find_storyline_between(db, winner.wrestler_id, loser.wrestler_id)
 
     if existing:
-        # Progress existing storyline
-        heat_delta = 8 if match.is_title_match else 5
+        # Progress existing storyline — heat scales with match quality
+        rating = match.match_rating or 3.0
+        base_heat = 8 if match.is_title_match else 6
+        quality_bonus = max(0, int((rating - 3.0) * 3))  # +3 per star above 3.0
+        card_bonus = 3 if getattr(match, 'card_position', '') == 'main_event' else 0
+        heat_delta = base_heat + quality_bonus + card_bonus
         progress_storyline(
             db, existing, "match_result", heat_delta,
-            description=f"Their rivalry intensified after a {match.match_rating or 0:.1f}-star match!",
+            description=f"Their rivalry intensified after a {rating:.1f}-star match!",
         )
     else:
         # Small chance a competitive match spawns a new feud

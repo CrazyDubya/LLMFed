@@ -270,6 +270,55 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
     segments = []
     used = set()
 
+    # Storyline-aware booking: feuding wrestlers should face each other
+    from models.game_models import StorylineDB, StorylineParticipantDB
+    active_storylines = db.query(StorylineDB).filter(
+        StorylineDB.federation_id == fed.id,
+        StorylineDB.status.in_(["active", "climax"]),
+    ).order_by(StorylineDB.heat.desc()).all()
+
+    storyline_matches_booked = 0
+    for sl in active_storylines:
+        if storyline_matches_booked >= 2:
+            break  # Max 2 storyline matches per weekly show
+        parts = db.query(StorylineParticipantDB).filter(
+            StorylineParticipantDB.storyline_id == sl.id,
+        ).all()
+        sl_wrestler_ids = [p.wrestler_id for p in parts]
+        # Find available pairs from the storyline
+        available = [wid for wid in sl_wrestler_ids
+                     if wid in wrestler_ids and wid not in used]
+        if len(available) >= 2:
+            w1_id, w2_id = available[0], available[1]
+            w1 = next((w for w in wrestlers if w.id == w1_id), None)
+            w2 = next((w for w in wrestlers if w.id == w2_id), None)
+            if w1 and w2 and not w1.is_injured and not w2.is_injured:
+                # Higher-heat storyline gets higher card position
+                is_main = (storyline_matches_booked == 0 and sl.heat >= 70)
+                w1_push = push_map.get(w1.id)
+                w2_push = push_map.get(w2.id)
+                w1_rank = PUSH_TIERS.index(w1_push.push_tier) if w1_push and w1_push.push_tier in PUSH_TIERS else 2
+                w2_rank = PUSH_TIERS.index(w2_push.push_tier) if w2_push and w2_push.push_tier in PUSH_TIERS else 2
+                planned_winner = w1 if w1_rank <= w2_rank else w2
+                # Climax storylines get gimmick finishes
+                finish = "pinfall"
+                stipulation = None
+                if sl.status == "climax" and random.random() < 0.4:
+                    stipulation = random.choice(["No DQ", "Steel Cage", "Last Man Standing"])
+
+                seg = book_match(
+                    db, show.id, show.world_id,
+                    wrestler_ids=[w1.id, w2.id],
+                    match_type="singles",
+                    stipulation=stipulation,
+                    planned_winner_id=planned_winner.id,
+                    planned_finish=finish,
+                )
+                segments.append(seg)
+                used.add(w1.id)
+                used.add(w2.id)
+                storyline_matches_booked += 1
+
     # Check for tag teams — book a tag match if available (30% chance)
     tag_teams = db.query(TagTeamDB).filter(
         TagTeamDB.world_id == show.world_id,
@@ -355,7 +404,14 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
                 "No DQ", "Falls Count Anywhere", "Street Fight", "Extreme Rules"
             ])
 
-        finish = random.choice(["pinfall", "pinfall", "pinfall", "submission"])
+        finish = random.choices(
+            ["pinfall", "submission", "count_out", "disqualification"],
+            weights=[60, 15, 10, 15],
+            k=1,
+        )[0]
+        # Title matches almost always end clean
+        if is_title and finish in ("count_out", "disqualification"):
+            finish = "pinfall"
         position = actual_pos + 1
 
         seg = book_match(
