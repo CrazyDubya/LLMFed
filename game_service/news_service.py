@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from models.game_models import (
     WorldNewsDB, ShowDB, GameFederationDB, GameWrestlerDB,
     GameNarrativeLogDB, ContractDB, ChampionshipDB,
+    SocialMediaPostDB, LifeEventDB, GimmickHistoryDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -186,4 +187,101 @@ def generate_weekly_dirt_sheet(db: Session, world_id: str, game_date: str):
         game_date=game_date,
         is_kayfabe=False,
         source="Wrestling Observer Newsletter",
+    ))
+
+
+def generate_social_media_news(db: Session, world_id: str, game_date: str):
+    """Generate news from viral social media posts."""
+    viral_posts = db.query(SocialMediaPostDB).filter(
+        SocialMediaPostDB.world_id == world_id,
+        SocialMediaPostDB.game_date == game_date,
+        SocialMediaPostDB.is_viral == True,
+    ).all()
+
+    for post in viral_posts:
+        wrestler = db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.id == post.wrestler_id,
+        ).first()
+        if not wrestler:
+            continue
+
+        name = wrestler.name
+        if post.post_type == "shoot":
+            headline = f"VIRAL: {name}'s shoot post breaks the internet!"
+            body = (f'{name} posted what appears to be a genuine, unscripted message '
+                    f'on {post.platform} that has the wrestling world buzzing. '
+                    f'The post has generated massive engagement and debate among fans.')
+        elif post.post_type == "worked_shoot":
+            headline = f"Is {name}'s viral post a work or a shoot? Fans debate"
+            body = (f'A cryptic post from {name} on {post.platform} has fans '
+                    f'divided on whether it\'s a storyline tease or a genuine grievance. '
+                    f'The ambiguity has only fueled more discussion.')
+        else:
+            headline = f"{name}'s {post.platform} post goes viral"
+            body = (f'{name} is trending after a {post.platform} post caught fire. '
+                    f'Fan reaction has been {post.fan_reaction}.')
+
+        db.add(WorldNewsDB(
+            world_id=world_id,
+            headline=headline,
+            body=body,
+            category="social_media",
+            game_date=game_date,
+            is_kayfabe=False,
+            source="Social Media Report",
+            related_entities=[wrestler.id],
+        ))
+
+
+def generate_life_event_news(db: Session, world_id: str, game_date: str):
+    """Generate news from public life events."""
+    public_events = db.query(LifeEventDB).filter(
+        LifeEventDB.world_id == world_id,
+        LifeEventDB.game_date == game_date,
+        LifeEventDB.is_public == True,
+    ).all()
+
+    for event in public_events:
+        wrestler = db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.id == event.wrestler_id,
+        ).first()
+        if not wrestler:
+            continue
+
+        name = wrestler.name
+        positive_types = {"marriage", "child_born", "personal_achievement",
+                          "charity_work", "family_reconciliation"}
+        if event.event_type in positive_types:
+            headline = f"Congratulations! {name} shares personal good news"
+            source = "Wrestling Insider"
+        else:
+            headline = f"Sources say {name} dealing with personal issues"
+            source = "Wrestling Observer"
+
+        db.add(WorldNewsDB(
+            world_id=world_id,
+            headline=headline,
+            body=event.description,
+            category="personal",
+            game_date=game_date,
+            is_kayfabe=False,
+            source=source,
+            related_entities=[wrestler.id],
+        ))
+
+
+def generate_gimmick_change_news(db: Session, world_id: str, wrestler: GameWrestlerDB,
+                                  old_gimmick: str, new_gimmick: str, game_date: str):
+    """Generate news about a wrestler's gimmick change/repackaging."""
+    db.add(WorldNewsDB(
+        world_id=world_id,
+        headline=f"REPACKAGE: {wrestler.name} debuts new character!",
+        body=(f'{wrestler.name} has been repackaged with a new gimmick. '
+              f'The previous "{old_gimmick}" character has been retired. '
+              f'Fans will see the new persona on the next show.'),
+        category="repackage",
+        game_date=game_date,
+        is_kayfabe=False,
+        source="Wrestling Observer",
+        related_entities=[wrestler.id],
     ))

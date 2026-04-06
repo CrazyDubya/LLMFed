@@ -13,7 +13,8 @@ from sqlalchemy.orm import Session
 from models.game_models import (
     StorylineDB, StorylineParticipantDB, GameWrestlerDB, GameFederationDB,
     ContractDB, MatchDB, MatchParticipantDB, ChampionshipDB,
-    GameNarrativeLogDB,
+    GameNarrativeLogDB, LifeEventDB, WrestlerRelationshipDB,
+    WrestlerBackstoryDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,8 @@ STORYLINE_NAMES = {
 def create_storyline(db: Session, world_id: str, federation_id: str,
                      wrestler_ids: list, storyline_type: str = "feud",
                      name: str = None, description: str = None,
-                     game_date: str = None) -> StorylineDB:
+                     game_date: str = None,
+                     kayfabe_level: int = 100) -> StorylineDB:
     """Create a new storyline between wrestlers."""
     if not name:
         names = STORYLINE_NAMES.get(storyline_type, STORYLINE_NAMES["feud"])
@@ -112,6 +114,7 @@ def create_storyline(db: Session, world_id: str, federation_id: str,
         description=description,
         heat=random.randint(30, 50),
         start_date=game_date,
+        kayfabe_level=kayfabe_level,
     )
     db.add(storyline)
     db.flush()
@@ -303,3 +306,171 @@ def _find_storyline_between(db: Session, w1_id: str, w2_id: str):
         StorylineDB.id.in_(common),
         StorylineDB.status.in_(["brewing", "active", "climax"]),
     ).first()
+
+
+# ---------------------------------------------------------------------------
+# Kayfabe spectrum: worked-shoot storylines from real events
+# ---------------------------------------------------------------------------
+
+WORKED_SHOOT_NAMES = [
+    "Breaking Point", "Shoot to Kill", "Off Script", "Real Talk",
+    "Behind the Curtain", "No Character Required", "The Unscripted",
+]
+
+WORKED_SHOOT_DESCRIPTIONS = [
+    "What started as a real backstage conflict has become the hottest angle in the company.",
+    "The lines between real life and storyline have blurred beyond recognition.",
+    "Nobody is sure what's real and what's a work anymore — and that's the point.",
+    "A personal grievance has spilled over into the ring.",
+]
+
+
+def check_life_event_storylines(db: Session, world_id: str, game_date: str):
+    """Check if any public life events should become worked-shoot storylines.
+
+    Only fires for federations with low-to-medium kayfabe strictness.
+    """
+    new_storylines = []
+
+    # Find public, storyline-potential life events not yet used
+    events = db.query(LifeEventDB).filter(
+        LifeEventDB.world_id == world_id,
+        LifeEventDB.is_public == True,
+        LifeEventDB.storyline_potential == True,
+        LifeEventDB.was_used_in_storyline == False,
+        LifeEventDB.is_active == True,
+    ).all()
+
+    for event in events:
+        wrestler = db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.id == event.wrestler_id,
+        ).first()
+        if not wrestler:
+            continue
+
+        # Find the wrestler's federation
+        contract = db.query(ContractDB).filter(
+            ContractDB.wrestler_id == wrestler.id,
+            ContractDB.status == "active",
+        ).first()
+        if not contract:
+            continue
+
+        fed = db.query(GameFederationDB).filter(
+            GameFederationDB.id == contract.federation_id,
+        ).first()
+        if not fed:
+            continue
+
+        # Only low-to-medium kayfabe federations use real events
+        strictness = fed.kayfabe_strictness or 50
+        if strictness > 60:
+            continue
+
+        # Probability based on severity and fed's openness
+        probability = (event.severity / 10.0) * ((100 - strictness) / 100.0) * 0.3
+        if random.random() > probability:
+            continue
+
+        # Find a foil — someone the wrestler has a relationship with
+        rel = db.query(WrestlerRelationshipDB).filter(
+            ((WrestlerRelationshipDB.wrestler1_id == wrestler.id) |
+             (WrestlerRelationshipDB.wrestler2_id == wrestler.id)),
+            WrestlerRelationshipDB.rivalry_heat > 30,
+        ).first()
+
+        if rel:
+            foil_id = rel.wrestler2_id if rel.wrestler1_id == wrestler.id else rel.wrestler1_id
+        else:
+            # Pick a random roster member
+            roster = db.query(ContractDB).filter(
+                ContractDB.federation_id == fed.id,
+                ContractDB.status == "active",
+                ContractDB.wrestler_id != wrestler.id,
+            ).all()
+            if not roster:
+                continue
+            foil_id = random.choice(roster).wrestler_id
+
+        # Determine kayfabe level based on how "real" the source material is
+        kayfabe_level = max(10, 50 - event.severity * 4)
+
+        sl = create_storyline(
+            db, world_id, fed.id,
+            [wrestler.id, foil_id],
+            storyline_type="feud",
+            name=random.choice(WORKED_SHOOT_NAMES),
+            description=random.choice(WORKED_SHOOT_DESCRIPTIONS),
+            game_date=game_date,
+            kayfabe_level=kayfabe_level,
+        )
+        event.was_used_in_storyline = True
+        new_storylines.append(sl)
+        logger.info("Created worked-shoot storyline '%s' from life event for %s",
+                     sl.name, wrestler.name)
+
+    return new_storylines
+
+
+def check_relationship_collision_storylines(db: Session, world_id: str, game_date: str):
+    """Check for real-vs-kayfabe relationship collisions that could become storylines.
+
+    Detects: real friends booked as rivals, real enemies booked as allies.
+    """
+    new_storylines = []
+
+    # Find relationships where real and kayfabe are in tension
+    rels = db.query(WrestlerRelationshipDB).filter(
+        WrestlerRelationshipDB.world_id == world_id,
+    ).all()
+
+    for rel in rels:
+        real = rel.real_relationship
+        kayfabe = rel.kayfabe_alignment
+        if not real or not kayfabe:
+            continue
+
+        # Real friends, kayfabe rivals — potential worked-shoot tension
+        is_collision = (
+            (real == "friends" and kayfabe == "rivals") or
+            (real == "enemies" and kayfabe in ("allies", "tag_partners"))
+        )
+        if not is_collision:
+            continue
+
+        # Low probability per check — this is a slow-burn trigger
+        if random.random() > 0.05:
+            continue
+
+        # Check if they already have an active storyline
+        existing = _find_storyline_between(db, rel.wrestler1_id, rel.wrestler2_id)
+        if existing:
+            continue
+
+        # Find federation
+        contract = db.query(ContractDB).filter(
+            ContractDB.wrestler_id == rel.wrestler1_id,
+            ContractDB.status == "active",
+        ).first()
+        if not contract:
+            continue
+
+        fed = db.query(GameFederationDB).filter(
+            GameFederationDB.id == contract.federation_id,
+        ).first()
+        if not fed or (fed.kayfabe_strictness or 50) > 70:
+            continue
+
+        collision_type = "feud" if real == "enemies" else "betrayal"
+        sl = create_storyline(
+            db, world_id, fed.id,
+            [rel.wrestler1_id, rel.wrestler2_id],
+            storyline_type=collision_type,
+            name=random.choice(WORKED_SHOOT_NAMES),
+            description="The tension between these two has become impossible to contain.",
+            game_date=game_date,
+            kayfabe_level=30,
+        )
+        new_storylines.append(sl)
+
+    return new_storylines

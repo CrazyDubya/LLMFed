@@ -18,6 +18,7 @@ from models.game_models import (
     ShowDB, ShowSegmentDB, WrestlerPushDB, BookingVisionDB,
     GameNarrativeLogDB, WrestlerHistoryDB,
     WrestlerGoalDB, MentorshipDB, CareerHighlightDB, HallOfFameDB,
+    GimmickHistoryDB, WrestlerBackstoryDB, LifeEventDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -724,3 +725,63 @@ def grow_specialization(stats: WrestlerStatsDB, stipulation: str):
     if attr:
         old = getattr(stats, attr, 0) or 0
         setattr(stats, attr, min(100, old + 2))
+
+
+# ---------------------------------------------------------------------------
+# Group 7: Persona — Gimmick Evolution & Life Events
+# ---------------------------------------------------------------------------
+
+def tick_persona(db: Session, world_id: str, game_date: str):
+    """Weekly persona tick: gimmick staleness, life events, gimmick evolution.
+
+    Called from world ticker on Fridays.
+    """
+    from game_service import persona_service
+
+    wrestlers = db.query(GameWrestlerDB).filter(
+        GameWrestlerDB.world_id == world_id,
+        GameWrestlerDB.is_active == True,
+    ).all()
+
+    for wrestler in wrestlers:
+        # Ensure persona data exists (migration for pre-existing wrestlers)
+        backstory = db.query(WrestlerBackstoryDB).filter(
+            WrestlerBackstoryDB.wrestler_id == wrestler.id,
+        ).first()
+        if not backstory:
+            persona_service.generate_backstory(db, wrestler)
+
+        gimmick = db.query(GimmickHistoryDB).filter(
+            GimmickHistoryDB.wrestler_id == wrestler.id,
+            GimmickHistoryDB.is_active == True,
+        ).first()
+        if not gimmick:
+            persona_service.generate_initial_gimmick(db, wrestler, game_date)
+            continue
+
+        # Tick gimmick staleness
+        persona_service.tick_gimmick_staleness(db, wrestler, game_date)
+
+        # Evolve gimmick depth/fan investment based on recent activity
+        persona_service.evolve_gimmick(db, wrestler, game_date)
+
+        # Check for repackaging pressure (NPC only)
+        if wrestler.is_npc:
+            pressure = persona_service.check_repackaging_pressure(db, wrestler)
+            if pressure["pressure"] > 80:
+                persona_service.execute_gimmick_change(
+                    db, wrestler, game_date, pressure["reason"]
+                )
+
+        # Life event roll (~3% per wrestler per week)
+        persona_service.generate_life_event(db, wrestler.id, world_id, game_date)
+
+        # Process effects of active life events
+        active_events = db.query(LifeEventDB).filter(
+            LifeEventDB.wrestler_id == wrestler.id,
+            LifeEventDB.is_active == True,
+        ).all()
+        for event in active_events:
+            persona_service.process_life_event_effects(db, event)
+
+    db.flush()

@@ -252,6 +252,10 @@ class GameFederationDB(Base):
     regional_strength = Column(JSON, default=dict)  # {region: 0-100} strength per market
     is_active = Column(Boolean, default=True)
     ai_personality = Column(JSON, default=dict)  # LLM personality traits for NPC booking
+    # --- Kayfabe Profile ---
+    kayfabe_strictness = Column(Integer, default=50)  # 0-100, how strictly kayfabe is enforced
+    allows_worked_shoots = Column(Boolean, default=True)  # Whether worked shoots are permitted
+    social_media_policy = Column(String(20), default="guided")  # strict_kayfabe, guided, free
     created_at = Column(DateTime, default=_utc_now)
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
@@ -327,6 +331,14 @@ class GameWrestlerDB(Base):
     created_at = Column(DateTime, default=_utc_now)
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
+    # --- Persona & Gimmick ---
+    kayfabe_commitment = Column(Integer, default=50)  # 0-100, how seriously they protect kayfabe
+    social_media_following = Column(Integer, default=1000)  # Fan base size
+    public_perception = Column(String(30), default="neutral")  # beloved, respected, controversial, forgotten, neutral
+    character_depth = Column(Integer, default=40)  # 0-100, how developed their character work is
+    gimmick_changes = Column(Integer, default=0)  # How many times repackaged
+    kayfabe_break_count = Column(Integer, default=0)  # Times the person broke character publicly
+
     world = relationship("WorldDB", back_populates="wrestlers")
     player = relationship("PlayerDB", back_populates="wrestler",
                           foreign_keys="PlayerDB.wrestler_id", uselist=False)
@@ -339,6 +351,15 @@ class GameWrestlerDB(Base):
     storyline_roles = relationship("StorylineParticipantDB", back_populates="wrestler")
     title_reigns = relationship("ChampionshipHistoryDB", back_populates="wrestler")
     history_entries = relationship("WrestlerHistoryDB", back_populates="wrestler")
+    backstory = relationship("WrestlerBackstoryDB", back_populates="wrestler",
+                             uselist=False, cascade="all, delete-orphan")
+    gimmick_history = relationship("GimmickHistoryDB", back_populates="wrestler",
+                                   cascade="all, delete-orphan")
+    life_events = relationship("LifeEventDB", back_populates="wrestler",
+                               cascade="all, delete-orphan")
+    social_media_posts = relationship("SocialMediaPostDB", back_populates="wrestler",
+                                      foreign_keys="SocialMediaPostDB.wrestler_id",
+                                      cascade="all, delete-orphan")
 
 
 class WrestlerStatsDB(Base):
@@ -618,6 +639,7 @@ class StorylineDB(Base):
     end_date = Column(String(10), nullable=True)
     planned_blowoff = Column(Text, nullable=True)  # Planned conclusion
     ai_notes = Column(JSON, default=dict)  # LLM context for continuing the story
+    kayfabe_level = Column(Integer, default=100)  # 100=pure fiction, 0=shoot; for worked-shoot storylines
     created_at = Column(DateTime, default=_utc_now)
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
@@ -739,6 +761,11 @@ class WrestlerRelationshipDB(Base):
     chemistry_score = Column(Float, default=0.0)  # Computed: total_rating / matches_together
     rivalry_heat = Column(Integer, default=0)  # 0-100, intensity of rivalry
     last_match_date = Column(String(10), nullable=True)
+    # --- Real vs Kayfabe relationship layers ---
+    relationship_type = Column(String(20), default="professional")  # professional, personal, romantic, family, mentorship
+    kayfabe_alignment = Column(String(20), nullable=True)  # allies, rivals, tag_partners, neutral (on-screen)
+    real_relationship = Column(String(20), nullable=True)  # friends, enemies, indifferent, romantic (backstage)
+    trust_level = Column(Integer, default=50)  # 0-100, real interpersonal trust
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
     __table_args__ = (
@@ -983,4 +1010,138 @@ class HallOfFameDB(Base):
 
     __table_args__ = (
         UniqueConstraint("world_id", "wrestler_id", name="uq_hof_wrestler"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Persona Duality: The Human Behind the Character
+# ---------------------------------------------------------------------------
+
+class WrestlerBackstoryDB(Base):
+    """The real person behind the wrestling character."""
+    __tablename__ = "wrestler_backstories"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, unique=True)
+    origin_story = Column(Text, nullable=True)  # Narrative of where they came from
+    family_situation = Column(String(50), default="single")  # single, married, divorced, kids, estranged
+    pre_wrestling_career = Column(String(100), nullable=True)  # Bouncer, teacher, athlete, military
+    wrestling_motivation = Column(String(50), default="passion")  # passion, money, legacy, escape, family_tradition
+    real_personality = Column(JSON, default=dict)
+    # Structure: {
+    #   "temperament": "calm"|"volatile"|"anxious"|"steady",
+    #   "introversion": 0-100 (0=extrovert, 100=introvert),
+    #   "ambition": 0-100,
+    #   "ego": 0-100,
+    #   "substance_risk": 0-100,
+    #   "media_savvy": 0-100,
+    # }
+    personal_struggles = Column(JSON, default=list)  # ["financial_pressure", "family_estrangement"]
+    personal_life_stability = Column(Integer, default=70)  # 0-100 aggregate health of real life
+    created_at = Column(DateTime, default=_utc_now)
+    updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+    wrestler = relationship("GameWrestlerDB", back_populates="backstory")
+
+
+class GimmickHistoryDB(Base):
+    """A wrestling gimmick/character that a wrestler has adopted.
+
+    Wrestlers can have multiple gimmicks over their career (1-to-many).
+    Exactly one should have is_active=True at any time.
+    """
+    __tablename__ = "gimmick_history"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
+    gimmick_name = Column(String(100), nullable=False)  # Ring name / character name
+    archetype = Column(String(30), default="anti_hero")
+    # Archetypes: monster_heel, underdog_face, cocky_technician, silent_assassin,
+    #             cult_leader, comedy_act, anti_hero, legacy, patriot, daredevil
+    description = Column(Text, nullable=True)  # Full character description
+    origin_narrative = Column(Text, nullable=True)  # Kayfabe origin story
+    alignment = Column(String(20), default="face")  # Alignment during this gimmick
+    voice_style = Column(JSON, default=dict)
+    # Structure: {
+    #   "vocabulary": "simple"|"elaborate"|"street"|"academic",
+    #   "cadence": "rapid_fire"|"slow_burn"|"staccato"|"conversational",
+    #   "catchphrases": ["..."],
+    #   "speech_patterns": ["third_person", "yelling", "whispering", "monotone"],
+    #   "promo_tempo": "aggressive"|"methodical"|"erratic"|"cool",
+    # }
+    visual_identity = Column(JSON, default=dict)  # attire, mask, face_paint, signature_look
+    start_date = Column(String(10), nullable=True)  # Game date adopted
+    end_date = Column(String(10), nullable=True)  # Game date retired (null = current)
+    depth_score = Column(Integer, default=40)  # 0-100, how layered/developed
+    effectiveness = Column(Integer, default=50)  # 0-100, how well it's working with audiences
+    staleness = Column(Integer, default=0)  # 0-100, increases over time
+    fan_investment = Column(Integer, default=30)  # 0-100, emotional attachment
+    is_active = Column(Boolean, default=True)
+    reason_for_change = Column(Text, nullable=True)  # Why they changed (for retired gimmicks)
+    created_at = Column(DateTime, default=_utc_now)
+
+    wrestler = relationship("GameWrestlerDB", back_populates="gimmick_history")
+
+
+class LifeEventDB(Base):
+    """A real-life event affecting the person behind the wrestler.
+
+    These events can affect morale, performance, and potentially become
+    storyline material depending on federation kayfabe strictness.
+    """
+    __tablename__ = "life_events"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
+    world_id = Column(String, ForeignKey("worlds.id"), nullable=False, index=True)
+    game_date = Column(String(10), nullable=False)
+    event_type = Column(String(30), nullable=False)
+    # Types: marriage, divorce, child_born, death_in_family, legal_trouble,
+    #        personal_achievement, substance_issue, public_controversy,
+    #        charity_work, outside_media, financial_trouble, mental_health,
+    #        relationship_start, relationship_end, family_reconciliation
+    description = Column(Text, nullable=False)
+    severity = Column(Integer, default=5)  # 1-10 impact magnitude
+    is_public = Column(Boolean, default=False)  # Known to fans/media?
+    morale_impact = Column(Integer, default=0)  # Delta to wrestler morale
+    performance_impact = Column(Integer, default=0)  # Delta to in-ring work quality
+    storyline_potential = Column(Boolean, default=False)  # Could become a storyline?
+    was_used_in_storyline = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)  # Ongoing vs resolved
+    resolved_date = Column(String(10), nullable=True)
+    created_at = Column(DateTime, default=_utc_now)
+
+    wrestler = relationship("GameWrestlerDB", back_populates="life_events")
+
+    __table_args__ = (
+        Index("ix_life_event_world_date", "world_id", "game_date"),
+    )
+
+
+class SocialMediaPostDB(Base):
+    """A social media post by a wrestler — in-character, shoot, or ambiguous."""
+    __tablename__ = "social_media_posts"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
+    world_id = Column(String, ForeignKey("worlds.id"), nullable=False, index=True)
+    game_date = Column(String(10), nullable=False)
+    content = Column(Text, nullable=False)  # The post text
+    post_type = Column(String(20), default="kayfabe")  # kayfabe, shoot, worked_shoot, personal
+    platform = Column(String(20), default="twitter")  # twitter, instagram, youtube, tiktok, podcast
+    engagement_score = Column(Integer, default=10)  # 0-100 virality/interaction
+    controversy_level = Column(Integer, default=0)  # 0-100 heat generated
+    storyline_id = Column(String, ForeignKey("storylines.id"), nullable=True)
+    target_wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=True)
+    is_viral = Column(Boolean, default=False)
+    fan_reaction = Column(String(20), default="positive")  # positive, negative, mixed, confused
+    kayfabe_break_level = Column(Integer, default=0)  # 0-100, how much fourth wall is broken
+    popularity_impact = Column(Integer, default=0)  # Delta to wrestler popularity
+    created_at = Column(DateTime, default=_utc_now)
+
+    wrestler = relationship("GameWrestlerDB", back_populates="social_media_posts",
+                            foreign_keys=[wrestler_id])
+
+    __table_args__ = (
+        Index("ix_social_media_world_date", "world_id", "game_date"),
     )
