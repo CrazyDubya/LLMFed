@@ -61,7 +61,33 @@ STORYLINE_NAMES = {
         "Road to Gold", "Championship Pursuit", "Title or Bust",
         "The Contender", "Golden Opportunity",
     ],
+    "faction_war": [
+        "War Games", "Gang Warfare", "Hostile Takeover", "Turf War",
+        "The Invasion", "All-Out War", "Blood & Gold",
+    ],
+    "power_struggle": [
+        "Civil War", "The Coup", "Throne Games", "Crown or Nothing",
+        "House Divided", "Internal Combustion",
+    ],
+    "manager_betrayal": [
+        "The Snake Sheds Its Skin", "Business Decision", "Free Agent",
+        "Behind My Back", "Sold Out", "New Management",
+    ],
 }
+
+FACTION_WAR_TRIGGERS = [
+    "{s1} and {s2} erupted into an all-out brawl to close the show!",
+    "{s1} invaded {s2}'s locker room, leaving destruction in their wake!",
+    "The rivalry between {s1} and {s2} has reached a boiling point!",
+    "{s1} issued a challenge to {s2} — winner takes all!",
+]
+
+MANAGER_BETRAYAL_TRIGGERS = [
+    "{mgr} turned on {client}, revealing a secret alliance with their opponent!",
+    "{mgr} walked out on {client} mid-match, leaving them to lose the championship!",
+    "{mgr} announced they're done with {client} — and introduced their NEW client!",
+    "Shocking betrayal! {mgr} hit {client} with a low blow and sided with the enemy!",
+]
 
 
 # ---------------------------------------------------------------------------

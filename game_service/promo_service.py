@@ -261,6 +261,29 @@ EMOTIONAL_BLEED_LINES = {
     ],
 }
 
+# Faction/stable promo templates — delivered by the mouthpiece on behalf of the group
+FACTION_PROMO_OPENERS = [
+    "Let me tell you about {stable}.",
+    "You're looking at the most dominant force in this company — {stable}.",
+    "When {stable} walks into the building, everyone pays attention.",
+    "The numbers don't lie, and {stable} has ALL the numbers.",
+]
+
+FACTION_PROMO_BODIES = [
+    "We run this company. Every title, every main event, every decision — that's US.",
+    "You want to challenge one of us? You challenge ALL of us. And there's no winning that fight.",
+    "While the rest of the locker room fights over scraps, {stable} takes the whole feast.",
+    "They call us a faction. We call ourselves a FAMILY. And family looks out for family.",
+]
+
+FACTION_PROMO_CLOSERS = [
+    "So to anyone in the back thinking about stepping up — don't.",
+    "This is OUR era. Accept it or get run over.",
+    "4 life. *group pose*",
+    "We're everywhere. We're everyone. And we're just getting started.",
+]
+
+
 # Worked-shoot promo fragments
 WORKED_SHOOT_FRAGMENTS = [
     "You know what? I'm tired of reading scripts.",
@@ -600,3 +623,67 @@ def _determine_crowd_reaction(wrestler, quality, promo_type, gimmick):
     elif wrestler.alignment == "heel":
         return "heat" if quality >= 3.0 else "mild_heat"
     return "mixed"
+
+
+# ---------------------------------------------------------------------------
+# Faction / stable promos
+# ---------------------------------------------------------------------------
+
+def generate_faction_promo(
+    db: Session,
+    world_id: str,
+    stable_id: str,
+    speaker_wrestler_id: str,
+    target_stable_name: str = None,
+    game_date: str = None,
+) -> dict:
+    """Generate a promo on behalf of an entire faction.
+
+    The speaker (usually the mouthpiece) delivers using stable identity.
+    """
+    from models.game_models import StableDB, StableMemberDB
+
+    stable = db.query(StableDB).filter_by(id=stable_id).first()
+    speaker = db.query(GameWrestlerDB).filter_by(id=speaker_wrestler_id).first()
+    if not stable or not speaker:
+        return {"content": "", "quality": 0, "heat": 0}
+
+    stable_name = stable.name
+
+    opener = random.choice(FACTION_PROMO_OPENERS).replace("{stable}", stable_name)
+    body = random.choice(FACTION_PROMO_BODIES).replace("{stable}", stable_name)
+    closer = random.choice(FACTION_PROMO_CLOSERS).replace("{stable}", stable_name)
+
+    # Add target stable reference
+    target_line = ""
+    if target_stable_name:
+        target_lines = [
+            f"And to {target_stable_name} — your days are numbered.",
+            f"{target_stable_name} thinks they run this place? They're about to find out who REALLY runs things.",
+            f"We've been watching {target_stable_name}. And we're not impressed.",
+        ]
+        target_line = " " + random.choice(target_lines)
+
+    content = f"{opener} {body}{target_line} {closer}"
+
+    # Quality from speaker's stats
+    stats = db.query(WrestlerStatsDB).filter_by(wrestler_id=speaker_wrestler_id).first()
+    mic = stats.mic_skill if stats else 50
+    charisma = stats.charisma if stats else 50
+    quality = round(((mic + charisma) / 2) / 100 * 4.0 + random.uniform(-0.3, 0.5), 1)
+    quality = max(0.5, min(5.0, quality))
+
+    heat = int(quality * 8 + stable.heat * 0.2 + random.randint(0, 10))
+    heat = min(50, heat)
+
+    # Boost stable heat
+    stable.heat = min(100, stable.heat + 2)
+
+    return {
+        "content": content,
+        "speaker_name": speaker.name,
+        "stable_name": stable_name,
+        "target_stable": target_stable_name,
+        "quality_rating": quality,
+        "heat_generated": heat,
+    }

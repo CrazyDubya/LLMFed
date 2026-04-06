@@ -8,6 +8,54 @@ interface Wrestler {
   condition: number; is_injured: boolean; is_npc: boolean;
 }
 
+type TabKey = 'roster' | 'freeagents' | 'shows' | 'titles' | 'storylines' | 'factions' | 'relationships' | 'news';
+
+const TAB_LABELS: Record<TabKey, string> = {
+  roster: 'Roster',
+  freeagents: 'Free Agents',
+  shows: 'Shows',
+  titles: 'Titles',
+  storylines: 'Storylines',
+  factions: 'Factions',
+  relationships: 'Relationships',
+  news: 'News',
+};
+
+function AlignmentBadge({ alignment }: { alignment: string }) {
+  const cls = alignment === 'face' ? 'bg-blue-900/50 text-blue-300'
+    : alignment === 'heel' ? 'bg-red-900/50 text-red-300'
+    : 'bg-gray-800 text-gray-300';
+  return <span className={`px-2 py-0.5 rounded text-xs ${cls}`}>{alignment}</span>;
+}
+
+function HeatBar({ value, label }: { value: number; label?: string }) {
+  const color = value >= 70 ? 'bg-red-500' : value >= 40 ? 'bg-amber-500' : 'bg-gray-500';
+  return (
+    <div className="flex items-center gap-2">
+      <div className="w-20 bg-gray-800 rounded-full h-2">
+        <div className={`${color} h-2 rounded-full`} style={{ width: `${value}%` }} />
+      </div>
+      <span className="text-xs text-gray-400">{label || value}</span>
+    </div>
+  );
+}
+
+function RoleBadge({ role }: { role: string }) {
+  const colors: Record<string, string> = {
+    leader: 'bg-amber-900/50 text-amber-300',
+    enforcer: 'bg-red-900/50 text-red-300',
+    mouthpiece: 'bg-purple-900/50 text-purple-300',
+    lieutenant: 'bg-cyan-900/50 text-cyan-300',
+    member: 'bg-gray-800 text-gray-300',
+    recruit: 'bg-gray-700 text-gray-400',
+    protagonist: 'bg-blue-900/50 text-blue-300',
+    antagonist: 'bg-red-900/50 text-red-300',
+    ally: 'bg-green-900/50 text-green-300',
+    manager: 'bg-purple-900/50 text-purple-300',
+  };
+  return <span className={`px-2 py-0.5 rounded text-xs ${colors[role] || 'bg-gray-800 text-gray-300'}`}>{role}</span>;
+}
+
 export default function PromoterDashboard() {
   const { worldId, federationId, clearGame } = useGame();
   const navigate = useNavigate();
@@ -20,14 +68,18 @@ export default function PromoterDashboard() {
   const [narrative, setNarrative] = useState<any[]>([]);
   const [worldData, setWorldData] = useState<any>(null);
   const [storylines, setStorylines] = useState<any[]>([]);
-  const [tab, setTab] = useState<'roster' | 'freeagents' | 'shows' | 'titles' | 'storylines' | 'news'>('roster');
+  const [stables, setStables] = useState<any[]>([]);
+  const [managerBonds, setManagerBonds] = useState<any[]>([]);
+  const [managers, setManagers] = useState<any[]>([]);
+  const [tab, setTab] = useState<TabKey>('roster');
   const [advancing, setAdvancing] = useState(false);
   const [error, setError] = useState('');
+  const [expandedStable, setExpandedStable] = useState<string | null>(null);
 
   const loadData = async () => {
     if (!worldId || !federationId) return;
     try {
-      const [fed, rost, agents, sh, champs, narr, world, sls] = await Promise.all([
+      const [fed, rost, agents, sh, champs, narr, world, sls, stbs, bonds, mgrs] = await Promise.all([
         api.getFederation(federationId),
         api.getRoster(federationId),
         api.listFreeAgents(worldId),
@@ -36,6 +88,9 @@ export default function PromoterDashboard() {
         api.getNarrative(worldId, 20),
         api.getWorld(worldId),
         api.listStorylines(worldId),
+        api.listStables(worldId, federationId).catch(() => []),
+        api.listManagerBonds(worldId).catch(() => []),
+        api.listManagers(worldId, federationId).catch(() => []),
       ]);
       setFederation(fed);
       setRoster(rost);
@@ -45,6 +100,9 @@ export default function PromoterDashboard() {
       setNarrative(narr);
       setWorldData(world);
       setStorylines(sls);
+      setStables(stbs);
+      setManagerBonds(bonds);
+      setManagers(mgrs);
     } catch (err: any) {
       setError(err.message);
     }
@@ -73,7 +131,6 @@ export default function PromoterDashboard() {
         federation_id: federationId,
         salary_weekly: 2000,
       });
-      // Advance a day to process the action
       await advanceDay(1);
     } catch (err: any) {
       setError(err.message);
@@ -84,6 +141,18 @@ export default function PromoterDashboard() {
     clearGame();
     navigate('/setup');
   };
+
+  // Build lookup maps for roster enrichment
+  const stableMemberMap: Record<string, { stableName: string; role: string }> = {};
+  for (const s of stables) {
+    for (const m of (s.members || [])) {
+      stableMemberMap[m.wrestler_id] = { stableName: s.name, role: m.role };
+    }
+  }
+  const managerMap: Record<string, string> = {};
+  for (const b of managerBonds) {
+    managerMap[b.client_wrestler_id] = b.manager_name;
+  }
 
   if (!worldId || !federationId) {
     return <div className="p-8 text-center text-gray-400">No active game. <button onClick={() => navigate('/setup')} className="text-amber-400">Start a new game</button></div>;
@@ -133,21 +202,22 @@ export default function PromoterDashboard() {
 
       {/* Tabs */}
       <div className="max-w-7xl mx-auto px-6 mt-6">
-        <div className="flex gap-1 mb-6">
-          {(['roster', 'freeagents', 'shows', 'titles', 'storylines', 'news'] as const).map(t => (
+        <div className="flex gap-1 mb-6 flex-wrap">
+          {(Object.keys(TAB_LABELS) as TabKey[]).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={`px-4 py-2 rounded-t text-sm ${tab === t ? 'bg-[#1a1a24] text-amber-400 border-t border-x border-gray-800' : 'text-gray-500 hover:text-gray-300'}`}
             >
-              {t === 'freeagents' ? 'Free Agents' : t.charAt(0).toUpperCase() + t.slice(1)}
+              {TAB_LABELS[t]}
               {t === 'roster' && ` (${roster.length})`}
               {t === 'freeagents' && ` (${freeAgents.length})`}
+              {t === 'factions' && stables.length > 0 && ` (${stables.length})`}
             </button>
           ))}
         </div>
 
-        {/* Roster Tab */}
+        {/* ========== ROSTER TAB ========== */}
         {tab === 'roster' && (
           <div className="bg-[#1a1a24] rounded-lg border border-gray-800 overflow-hidden">
             <table className="w-full text-sm">
@@ -155,47 +225,57 @@ export default function PromoterDashboard() {
                 <tr className="text-gray-400">
                   <th className="text-left p-3">Name</th>
                   <th className="text-left p-3">Alignment</th>
+                  <th className="text-left p-3">Faction</th>
+                  <th className="text-left p-3">Manager</th>
                   <th className="text-center p-3">Popularity</th>
                   <th className="text-center p-3">Condition</th>
                   <th className="text-center p-3">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {roster.map(w => (
-                  <tr key={w.id} className="border-t border-gray-800 hover:bg-[#0f0f14]/50">
-                    <td className="p-3 text-white">{w.name}</td>
-                    <td className="p-3">
-                      <span className={`px-2 py-0.5 rounded text-xs ${
-                        w.alignment === 'face' ? 'bg-blue-900/50 text-blue-300' :
-                        w.alignment === 'heel' ? 'bg-red-900/50 text-red-300' :
-                        'bg-gray-800 text-gray-300'
-                      }`}>{w.alignment}</span>
-                    </td>
-                    <td className="p-3 text-center">
-                      <div className="w-16 mx-auto bg-gray-800 rounded-full h-2">
-                        <div className="bg-amber-500 h-2 rounded-full" style={{ width: `${w.popularity}%` }} />
-                      </div>
-                      <span className="text-xs text-gray-400">{w.popularity}</span>
-                    </td>
-                    <td className="p-3 text-center">
-                      <span className={w.condition > 70 ? 'text-green-400' : w.condition > 40 ? 'text-yellow-400' : 'text-red-400'}>
-                        {w.condition}%
-                      </span>
-                    </td>
-                    <td className="p-3 text-center">
-                      {w.is_injured ? <span className="text-red-400 text-xs">INJURED</span> : <span className="text-green-400 text-xs">Active</span>}
-                    </td>
-                  </tr>
-                ))}
+                {roster.map(w => {
+                  const faction = stableMemberMap[w.id];
+                  const mgr = managerMap[w.id];
+                  return (
+                    <tr key={w.id} className="border-t border-gray-800 hover:bg-[#0f0f14]/50">
+                      <td className="p-3 text-white">{w.name}</td>
+                      <td className="p-3"><AlignmentBadge alignment={w.alignment} /></td>
+                      <td className="p-3">
+                        {faction ? (
+                          <span className="text-xs text-purple-300">
+                            {faction.stableName} <RoleBadge role={faction.role} />
+                          </span>
+                        ) : <span className="text-xs text-gray-600">--</span>}
+                      </td>
+                      <td className="p-3">
+                        {mgr ? <span className="text-xs text-cyan-300">{mgr}</span> : <span className="text-xs text-gray-600">--</span>}
+                      </td>
+                      <td className="p-3 text-center">
+                        <div className="w-16 mx-auto bg-gray-800 rounded-full h-2">
+                          <div className="bg-amber-500 h-2 rounded-full" style={{ width: `${w.popularity}%` }} />
+                        </div>
+                        <span className="text-xs text-gray-400">{w.popularity}</span>
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className={w.condition > 70 ? 'text-green-400' : w.condition > 40 ? 'text-yellow-400' : 'text-red-400'}>
+                          {w.condition}%
+                        </span>
+                      </td>
+                      <td className="p-3 text-center">
+                        {w.is_injured ? <span className="text-red-400 text-xs">INJURED</span> : <span className="text-green-400 text-xs">Active</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
                 {roster.length === 0 && (
-                  <tr><td colSpan={5} className="p-8 text-center text-gray-500">No wrestlers on roster. Sign some free agents!</td></tr>
+                  <tr><td colSpan={7} className="p-8 text-center text-gray-500">No wrestlers on roster. Sign some free agents!</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         )}
 
-        {/* Free Agents Tab */}
+        {/* ========== FREE AGENTS TAB ========== */}
         {tab === 'freeagents' && (
           <div className="bg-[#1a1a24] rounded-lg border border-gray-800 overflow-hidden">
             <table className="w-full text-sm">
@@ -212,22 +292,11 @@ export default function PromoterDashboard() {
                 {freeAgents.map(w => (
                   <tr key={w.id} className="border-t border-gray-800 hover:bg-[#0f0f14]/50">
                     <td className="p-3 text-white">{w.name}</td>
-                    <td className="p-3">
-                      <span className={`px-2 py-0.5 rounded text-xs ${
-                        w.alignment === 'face' ? 'bg-blue-900/50 text-blue-300' :
-                        w.alignment === 'heel' ? 'bg-red-900/50 text-red-300' :
-                        'bg-gray-800 text-gray-300'
-                      }`}>{w.alignment}</span>
-                    </td>
+                    <td className="p-3"><AlignmentBadge alignment={w.alignment} /></td>
                     <td className="p-3 text-center text-gray-300">{w.popularity}</td>
                     <td className="p-3 text-center text-gray-300">{w.condition}%</td>
                     <td className="p-3 text-center">
-                      <button
-                        onClick={() => signWrestler(w.id)}
-                        className="px-3 py-1 bg-green-700 hover:bg-green-600 text-white rounded text-xs transition-colors"
-                      >
-                        Sign
-                      </button>
+                      <button onClick={() => signWrestler(w.id)} className="px-3 py-1 bg-green-700 hover:bg-green-600 text-white rounded text-xs transition-colors">Sign</button>
                     </td>
                   </tr>
                 ))}
@@ -239,7 +308,7 @@ export default function PromoterDashboard() {
           </div>
         )}
 
-        {/* Shows Tab */}
+        {/* ========== SHOWS TAB ========== */}
         {tab === 'shows' && (
           <div className="space-y-3">
             <div className="flex justify-end mb-2">
@@ -277,19 +346,9 @@ export default function PromoterDashboard() {
                       {s.gate_revenue && <div className="text-sm text-green-400">${s.gate_revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
                     </div>
                   ) : (
-                    <button
-                      onClick={() => navigate(`/show/${s.id}/book`)}
-                      className="px-3 py-1 bg-purple-700 hover:bg-purple-600 text-white rounded text-xs"
-                    >
-                      Build Card
-                    </button>
+                    <button onClick={() => navigate(`/show/${s.id}/book`)} className="px-3 py-1 bg-purple-700 hover:bg-purple-600 text-white rounded text-xs">Build Card</button>
                   )}
-                  <button
-                    onClick={() => navigate(`/show/${s.id}`)}
-                    className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded text-xs"
-                  >
-                    View
-                  </button>
+                  <button onClick={() => navigate(`/show/${s.id}`)} className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded text-xs">View</button>
                 </div>
               </div>
             ))}
@@ -297,7 +356,7 @@ export default function PromoterDashboard() {
           </div>
         )}
 
-        {/* Championships Tab */}
+        {/* ========== CHAMPIONSHIPS TAB ========== */}
         {tab === 'titles' && (
           <div className="space-y-3">
             {championships.map(c => (
@@ -313,7 +372,7 @@ export default function PromoterDashboard() {
           </div>
         )}
 
-        {/* Storylines Tab */}
+        {/* ========== STORYLINES TAB (enhanced with wrestler names) ========== */}
         {tab === 'storylines' && (
           <div className="space-y-3">
             {storylines.map(sl => (
@@ -322,24 +381,28 @@ export default function PromoterDashboard() {
                   <h3 className="text-white font-medium">{sl.name}</h3>
                   <div className="flex items-center gap-2">
                     <span className={`px-2 py-0.5 rounded text-xs ${
+                      sl.storyline_type === 'faction_war' ? 'bg-purple-900/50 text-purple-300' :
+                      sl.storyline_type === 'power_struggle' ? 'bg-orange-900/50 text-orange-300' :
+                      sl.storyline_type === 'manager_betrayal' ? 'bg-cyan-900/50 text-cyan-300' :
+                      'bg-gray-700 text-gray-300'
+                    }`}>{sl.storyline_type.replace(/_/g, ' ')}</span>
+                    <span className={`px-2 py-0.5 rounded text-xs ${
                       sl.status === 'climax' ? 'bg-red-900/50 text-red-300' :
                       sl.status === 'active' ? 'bg-green-900/50 text-green-300' :
                       sl.status === 'brewing' ? 'bg-yellow-900/50 text-yellow-300' :
                       'bg-gray-800 text-gray-300'
                     }`}>{sl.status}</span>
-                    <span className="text-sm text-gray-400">Heat: {sl.heat}</span>
+                    <HeatBar value={sl.heat} label={`Heat: ${sl.heat}`} />
                   </div>
                 </div>
-                <p className="text-sm text-gray-400 mb-2">{sl.storyline_type}</p>
-                {sl.description && <p className="text-sm text-gray-300">{sl.description}</p>}
+                {sl.description && <p className="text-sm text-gray-300 mb-2">{sl.description}</p>}
                 {sl.participants && sl.participants.length > 0 && (
-                  <div className="mt-2 flex gap-2">
+                  <div className="mt-2 flex gap-2 flex-wrap">
                     {sl.participants.map((p: any, i: number) => (
-                      <span key={i} className={`text-xs px-2 py-0.5 rounded ${
-                        p.role === 'protagonist' ? 'bg-blue-900/50 text-blue-300' :
-                        p.role === 'antagonist' ? 'bg-red-900/50 text-red-300' :
-                        'bg-gray-800 text-gray-300'
-                      }`}>{p.role}</span>
+                      <span key={i} className="flex items-center gap-1">
+                        <span className="text-xs text-white">{p.wrestler_name || 'Unknown'}</span>
+                        <RoleBadge role={p.role} />
+                      </span>
                     ))}
                   </div>
                 )}
@@ -351,7 +414,144 @@ export default function PromoterDashboard() {
           </div>
         )}
 
-        {/* News Tab */}
+        {/* ========== FACTIONS TAB (NEW) ========== */}
+        {tab === 'factions' && (
+          <div className="space-y-4">
+            {stables.map(s => (
+              <div key={s.id} className="bg-[#1a1a24] rounded-lg border border-gray-800 overflow-hidden">
+                <div
+                  className="p-4 cursor-pointer hover:bg-[#1e1e2a] transition-colors"
+                  onClick={() => setExpandedStable(expandedStable === s.id ? null : s.id)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-white font-bold text-lg">{s.name}</h3>
+                      {s.short_name && <span className="text-xs text-gray-500">({s.short_name})</span>}
+                      <AlignmentBadge alignment={s.alignment} />
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <div className="flex items-center gap-3">
+                          <HeatBar value={s.heat} label={`Heat: ${s.heat}`} />
+                          <HeatBar value={s.prestige} label={`Prestige: ${s.prestige}`} />
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`text-xs ${s.cohesion >= 60 ? 'text-green-400' : s.cohesion >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>
+                            Cohesion: {s.cohesion}%
+                          </span>
+                          <span className="text-xs text-gray-500">{(s.members || []).length} members</span>
+                        </div>
+                      </div>
+                      <span className="text-gray-500">{expandedStable === s.id ? '\u25B2' : '\u25BC'}</span>
+                    </div>
+                  </div>
+                  {s.catchphrase && <p className="text-sm text-gray-400 italic mt-1">"{s.catchphrase}"</p>}
+                  {s.manager_name && <p className="text-xs text-cyan-400 mt-1">Managed by: {s.manager_name}</p>}
+                </div>
+
+                {expandedStable === s.id && (
+                  <div className="border-t border-gray-800 p-4">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-gray-400 text-xs">
+                          <th className="text-left pb-2">Member</th>
+                          <th className="text-left pb-2">Role</th>
+                          <th className="text-center pb-2">Loyalty</th>
+                          <th className="text-center pb-2">Influence</th>
+                          <th className="text-left pb-2">Joined</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(s.members || []).map((m: any) => (
+                          <tr key={m.wrestler_id} className="border-t border-gray-800/50">
+                            <td className="py-2 text-white">{m.wrestler_name}</td>
+                            <td className="py-2"><RoleBadge role={m.role} /></td>
+                            <td className="py-2 text-center">
+                              <span className={m.loyalty >= 60 ? 'text-green-400' : m.loyalty >= 30 ? 'text-yellow-400' : 'text-red-400'}>
+                                {m.loyalty}
+                              </span>
+                            </td>
+                            <td className="py-2 text-center text-gray-300">{m.influence}</td>
+                            <td className="py-2 text-xs text-gray-500">{m.joined_date || '--'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {s.group_finisher_name && (
+                      <p className="mt-3 text-xs text-amber-400">Group Finisher: {s.group_finisher_name}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+            {stables.length === 0 && (
+              <div className="text-center text-gray-500 py-8">No factions formed yet. Create stables to unlock faction warfare!</div>
+            )}
+          </div>
+        )}
+
+        {/* ========== RELATIONSHIPS TAB (NEW) ========== */}
+        {tab === 'relationships' && (
+          <div className="space-y-6">
+            {/* Manager/Valet Bonds */}
+            <div>
+              <h3 className="text-lg font-semibold text-amber-400 mb-3">Manager &amp; Valet Bonds</h3>
+              {managerBonds.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {managerBonds.map((b: any) => (
+                    <div key={b.id} className="bg-[#1a1a24] rounded-lg border border-gray-800 p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <span className="text-cyan-300 font-medium">{b.manager_name}</span>
+                          <span className="text-gray-500 mx-2">&rarr;</span>
+                          <span className="text-white font-medium">{b.client_name}</span>
+                        </div>
+                        <RoleBadge role={b.role} />
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-gray-400">
+                        <span>Effectiveness: {b.effectiveness}%</span>
+                        <span>Specialization: {b.specialization}</span>
+                        <span>+{b.charisma_bonus} CHA</span>
+                        <span>+{b.heat_bonus} Heat</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-sm">No manager bonds. Assign managers to wrestlers to boost their presence!</p>
+              )}
+            </div>
+
+            {/* Managers roster */}
+            {managers.length > 0 && (
+              <div>
+                <h3 className="text-lg font-semibold text-amber-400 mb-3">Available Managers</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {managers.map((m: any) => (
+                    <div key={m.id} className="bg-[#1a1a24] rounded-lg border border-gray-800 p-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-white font-medium">{m.name}</span>
+                        <AlignmentBadge alignment={m.alignment} />
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        <span className="capitalize">{m.archetype.replace(/_/g, ' ')}</span>
+                        <span className="mx-1">|</span>
+                        <span>CHA: {m.charisma}</span>
+                        <span className="mx-1">|</span>
+                        <span>Mic: {m.mic_skill}</span>
+                        <span className="mx-1">|</span>
+                        <span>Pop: {m.popularity}</span>
+                      </div>
+                      {m.catchphrase && <p className="text-xs text-gray-500 italic mt-1">"{m.catchphrase}"</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ========== NEWS TAB (enhanced with event type colors) ========== */}
         {tab === 'news' && (
           <div className="space-y-3">
             {narrative.map(n => (
@@ -361,8 +561,16 @@ export default function PromoterDashboard() {
                     n.event_type === 'show' ? 'bg-amber-900/50 text-amber-300' :
                     n.event_type === 'injury' ? 'bg-red-900/50 text-red-300' :
                     n.event_type === 'signing' ? 'bg-green-900/50 text-green-300' :
+                    n.event_type === 'stable_formed' ? 'bg-purple-900/50 text-purple-300' :
+                    n.event_type === 'stable_dissolved' ? 'bg-purple-900/50 text-purple-300' :
+                    n.event_type === 'manager_assigned' ? 'bg-cyan-900/50 text-cyan-300' :
+                    n.event_type === 'manager_removed' ? 'bg-cyan-900/50 text-cyan-300' :
+                    n.event_type === 'power_struggle' ? 'bg-orange-900/50 text-orange-300' :
+                    n.event_type === 'betrayal_brewing' ? 'bg-red-900/50 text-red-300' :
+                    n.event_type === 'stable_member_added' ? 'bg-purple-900/50 text-purple-300' :
+                    n.event_type === 'stable_member_removed' ? 'bg-purple-900/50 text-purple-300' :
                     'bg-gray-800 text-gray-300'
-                  }`}>{n.event_type}</span>
+                  }`}>{n.event_type.replace(/_/g, ' ')}</span>
                   <span className="text-xs text-gray-500">{n.game_date}</span>
                 </div>
                 <p className="text-gray-300 text-sm">{n.description}</p>

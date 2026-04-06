@@ -137,4 +137,64 @@ export const api = {
     promo_type?: string; player_direction?: string; player_content?: string;
   }) =>
     request<any>(`/worlds/${worldId}/promos`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Managers & Valets
+  listManagers: (worldId: string, federationId?: string) =>
+    request<any[]>(`/worlds/${worldId}/managers${federationId ? `?federation_id=${federationId}` : ''}`),
+
+  createManager: (worldId: string, data: {
+    name: string; alignment?: string; archetype?: string;
+    real_name?: string; gender?: string; catchphrase?: string;
+    personality_traits?: string[];
+  }, federationId?: string) =>
+    request<any>(`/worlds/${worldId}/managers${federationId ? `?federation_id=${federationId}` : ''}`, {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+
+  listManagerBonds: (worldId: string) =>
+    request<any[]>(`/worlds/${worldId}/manager-bonds`),
+
+  assignManager: (worldId: string, data: {
+    manager_id: string; client_wrestler_id: string;
+    role?: string; specialization?: string;
+  }) =>
+    request<any>(`/worlds/${worldId}/manager-bonds`, {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+
+  removeManagerBond: (bondId: string) =>
+    request<void>(`/manager-bonds/${bondId}`, { method: 'DELETE' }),
+
+  getWrestlerManager: (wrestlerId: string) =>
+    request<any>(`/wrestlers/${wrestlerId}/manager`),
+
+  generateManagerPromo: (managerId: string, clientId: string, targetId?: string) =>
+    request<any>(`/managers/${managerId}/promo?client_wrestler_id=${clientId}${targetId ? `&target_wrestler_id=${targetId}` : ''}`),
+
+  // Stables / Factions
+  listStables: (worldId: string, federationId?: string) =>
+    request<any[]>(`/worlds/${worldId}/stables${federationId ? `?federation_id=${federationId}` : ''}`),
+
+  createStable: (worldId: string, data: {
+    name: string; leader_id: string; founding_member_ids: string[];
+    alignment?: string; short_name?: string; catchphrase?: string;
+    group_finisher_name?: string; manager_id?: string;
+  }) =>
+    request<any>(`/worlds/${worldId}/stables`, {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+
+  getStable: (stableId: string) =>
+    request<any>(`/stables/${stableId}`),
+
+  addStableMember: (stableId: string, data: { wrestler_id: string; role?: string }) =>
+    request<any>(`/stables/${stableId}/members`, {
+      method: 'POST', body: JSON.stringify(data),
+    }),
+
+  removeStableMember: (stableId: string, wrestlerId: string) =>
+    request<void>(`/stables/${stableId}/members/${wrestlerId}`, { method: 'DELETE' }),
+
+  getWrestlerStable: (wrestlerId: string) =>
+    request<any>(`/wrestlers/${wrestlerId}/stable`),
 };

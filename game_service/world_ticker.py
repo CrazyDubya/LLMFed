@@ -80,6 +80,26 @@ def _get_viewership_service():
     return _viewership_service
 
 
+_stable_service = None
+_manager_service = None
+
+
+def _get_stable_service():
+    global _stable_service
+    if _stable_service is None:
+        from game_service import stable_service as _stbs
+        _stable_service = _stbs
+    return _stable_service
+
+
+def _get_manager_service():
+    global _manager_service
+    if _manager_service is None:
+        from game_service import manager_service as _mgrs
+        _manager_service = _mgrs
+    return _manager_service
+
+
 def advance_game_date(date_str: str, days: int = 1) -> str:
     """Advance a YYYY-MM-DD date string by N days."""
     dt = datetime.strptime(date_str, "%Y-%m-%d")
@@ -167,6 +187,12 @@ class WorldTicker:
 
         # 14. Persona & social media (Group 7)
         self._persona_tick(new_date)
+
+        # 15. Stable/faction internal dynamics (Wednesdays + Saturdays)
+        self._stable_dynamics_tick(new_date)
+
+        # 16. Manager effectiveness tracking (Thursdays)
+        self._manager_tick(new_date)
 
         self.db.commit()
 
@@ -1384,6 +1410,56 @@ class WorldTicker:
             )
         except Exception as e:
             logger.warning(f"Social media tick failed: {e}")
+
+    def _stable_dynamics_tick(self, game_date: str):
+        """Process internal faction politics for all active stables.
+
+        Runs on Wednesdays and Saturdays — two chances per week for
+        loyalty drift, influence jockeying, and auto-generated drama.
+        """
+        day_of_week = get_day_of_week(game_date)
+        if day_of_week not in (2, 5):  # Wednesday, Saturday
+            return
+
+        try:
+            stable_svc = _get_stable_service()
+            from models.game_models import StableDB
+            stables = self.db.query(StableDB).filter_by(
+                world_id=self.world.id, is_active=True
+            ).all()
+            for stable in stables:
+                stable_svc.tick_stable_dynamics(self.db, stable, game_date)
+            if stables:
+                self.events.append(f"Faction dynamics processed for {len(stables)} stable(s)")
+        except Exception as e:
+            logger.warning("Stable dynamics tick failed: %s", e)
+
+    def _manager_tick(self, game_date: str):
+        """Track manager effectiveness and bond evolution.
+
+        Runs on Thursdays — manager bonds slowly grow in effectiveness
+        as the pairing builds chemistry.
+        """
+        if get_day_of_week(game_date) != 3:  # Thursday
+            return
+
+        try:
+            from models.game_models import ManagerClientDB
+            bonds = self.db.query(ManagerClientDB).filter_by(
+                world_id=self.world.id, is_active=True
+            ).all()
+            for bond in bonds:
+                # Effectiveness slowly grows over time (chemistry building)
+                if bond.effectiveness < 90:
+                    bond.effectiveness = min(100, bond.effectiveness + 1)
+                # Recalculate bonuses as effectiveness grows
+                if bond.effectiveness > 70:
+                    bond.charisma_bonus = min(20, bond.charisma_bonus + 1)
+                    bond.heat_bonus = min(20, bond.heat_bonus + 1)
+            if bonds:
+                self.events.append(f"Manager bonds updated for {len(bonds)} pairing(s)")
+        except Exception as e:
+            logger.warning("Manager tick failed: %s", e)
 
     # ------------------------------------------------------------------
     # Helpers
