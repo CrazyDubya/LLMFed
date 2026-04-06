@@ -40,6 +40,11 @@ export default function CardBuilderPage() {
   const [isTitleMatch, setIsTitleMatch] = useState(false);
   const [selectedChampionship, setSelectedChampionship] = useState('');
 
+  // Promo booking form
+  const [promoMode, setPromoMode] = useState(false);
+  const [promoWrestler, setPromoWrestler] = useState('');
+  const [promoTarget, setPromoTarget] = useState('');
+
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState('');
@@ -105,8 +110,21 @@ export default function CardBuilderPage() {
     }
   };
 
-  // Wrestlers already booked on this show
-  const bookedIds = new Set<string>(); // TODO: track from segments
+  // Wrestlers already booked on this show — extract from segment participant lists
+  const bookedIds = new Set<string>();
+  for (const seg of segments) {
+    if (seg.participants) {
+      for (const p of seg.participants) {
+        if (p.wrestler_id) bookedIds.add(p.wrestler_id);
+      }
+    }
+    // Also check match_participants if available in segment data
+    if (seg.match_id && seg.match_participants) {
+      for (const mp of seg.match_participants) {
+        if (mp.wrestler_id) bookedIds.add(mp.wrestler_id);
+      }
+    }
+  }
 
   const availableRoster = roster.filter(w => !bookedIds.has(w.id));
   const selectedNames = selectedWrestlers
@@ -325,6 +343,67 @@ export default function CardBuilderPage() {
             >
               {booking ? 'Booking...' : `Book Match (${selectedWrestlers.length} wrestlers)`}
             </button>
+
+            {/* Promo Segment Section */}
+            <div className="mt-6 pt-4 border-t border-gray-800">
+              <button
+                onClick={() => setPromoMode(!promoMode)}
+                className="text-sm text-purple-400 hover:text-purple-300"
+              >
+                {promoMode ? 'Cancel Promo' : '+ Add Promo Segment'}
+              </button>
+              {promoMode && (
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Speaker</label>
+                    <select
+                      className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
+                      value={promoWrestler}
+                      onChange={e => setPromoWrestler(e.target.value)}
+                    >
+                      <option value="">Select wrestler...</option>
+                      {roster.map(w => (
+                        <option key={w.id} value={w.id}>{w.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Target (optional)</label>
+                    <select
+                      className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
+                      value={promoTarget}
+                      onChange={e => setPromoTarget(e.target.value)}
+                    >
+                      <option value="">No target</option>
+                      {roster.filter(w => w.id !== promoWrestler).map(w => (
+                        <option key={w.id} value={w.id}>{w.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!showId || !promoWrestler) return;
+                      try {
+                        setBooking(true);
+                        await api.bookPromo(showId, promoWrestler, promoTarget || undefined);
+                        setPromoWrestler('');
+                        setPromoTarget('');
+                        setPromoMode(false);
+                        await loadData();
+                      } catch (err: any) {
+                        setError(err.message);
+                      } finally {
+                        setBooking(false);
+                      }
+                    }}
+                    disabled={!promoWrestler || booking}
+                    className="w-full py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded text-sm"
+                  >
+                    Book Promo
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

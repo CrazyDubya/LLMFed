@@ -138,6 +138,11 @@ export const api = {
   }) =>
     request<any>(`/shows/${showId}/matches`, { method: 'POST', body: JSON.stringify(data) }),
 
+  bookPromo: (showId: string, wrestlerId: string, targetId?: string, promoType?: string) =>
+    request<any>(`/shows/${showId}/promos?wrestler_id=${wrestlerId}${targetId ? `&target_wrestler_id=${targetId}` : ''}${promoType ? `&promo_type=${promoType}` : ''}`, {
+      method: 'POST',
+    }),
+
   getMatch: (matchId: string) =>
     request<any>(`/matches/${matchId}`),
 

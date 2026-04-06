@@ -386,6 +386,33 @@ def api_book_match(
         _handle_value_error(e)
 
 
+@router.post("/shows/{show_id}/promos", response_model=ShowSegmentResponse, status_code=201)
+def api_book_promo(
+    show_id: str,
+    wrestler_id: str,
+    target_wrestler_id: Optional[str] = None,
+    promo_type: str = "in_ring",
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Book a promo segment on a show."""
+    show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
+    if not show:
+        raise HTTPException(status_code=404, detail="Show not found")
+    try:
+        seg = svc_book_promo_segment(
+            db, show_id, show.world_id,
+            wrestler_id=wrestler_id,
+            target_wrestler_id=target_wrestler_id,
+            promo_type=promo_type,
+        )
+        db.commit()
+        db.refresh(seg)
+        return ShowSegmentResponse.model_validate(seg)
+    except ValueError as e:
+        _handle_value_error(e)
+
+
 @router.get("/matches/{match_id}", response_model=MatchResultResponse)
 def api_get_match(
     match_id: str,

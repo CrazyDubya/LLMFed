@@ -708,6 +708,8 @@ class WorldTicker:
         total_segments = len(match_segments)
 
         match_ratings = []
+        # Show momentum flows between segments — hot crowd carries forward
+        show_momentum = 50  # Neutral start
         for idx, seg in enumerate(segments):
             if seg.segment_type == "match" and seg.match_id:
                 match = self.db.query(MatchDB).filter(
@@ -727,6 +729,9 @@ class WorldTicker:
                     match.card_position = card_position
                     match.game_date = show.game_date
 
+                    # Pass show momentum to match engine
+                    match._show_momentum = show_momentum
+
                     try:
                         result = me.simulate_match_from_db(self.db, match, game_date=show.game_date)
                         seg.is_completed = True
@@ -735,10 +740,43 @@ class WorldTicker:
                         seg.actual_duration_minutes = result.duration_ticks
                         match_ratings.append(result.match_rating)
 
+                        # Update show momentum from this match's crowd heat
+                        # Good matches lift the crowd, bad ones cool them
+                        if result.crowd_heat > 60:
+                            show_momentum = min(80, show_momentum + 5)
+                        elif result.crowd_heat < 35:
+                            show_momentum = max(30, show_momentum - 5)
+
                         # Process post-match consequences
                         aftermath.process_match_aftermath(
                             self.db, match, self.world.current_game_date
                         )
+
+                        # Process stable effects from match result
+                        try:
+                            stable_svc = _get_stable_service()
+                            losers = [p.wrestler_id for p in self.db.query(MatchParticipantDB).filter(
+                                MatchParticipantDB.match_id == match.id,
+                                MatchParticipantDB.is_winner == False,
+                            ).all()]
+                            for loser_id in losers:
+                                stable_svc.process_match_result_for_stables(
+                                    self.db, result.winner_id, loser_id,
+                                    self.world.id, self.world.current_game_date,
+                                )
+                        except Exception:
+                            pass
+
+                        # Log post-match angle if one occurred
+                        if result.post_match_angle:
+                            angle = result.post_match_angle
+                            self._log_event(
+                                angle["type"],
+                                angle["description"],
+                                angle.get("attacker_ids", []) + [angle.get("victim_id") or angle.get("saved_id", "")],
+                                importance=7,
+                            )
+                            show_momentum = min(85, show_momentum + 8)  # Angles are hot
 
                         # Check for storyline triggers from match result
                         sl_svc.check_match_storyline_triggers(
@@ -753,6 +791,11 @@ class WorldTicker:
                 seg.is_completed = True
                 promo_rating = self._evaluate_promo_segment(seg, show)
                 seg.rating = promo_rating
+                # Good promos build show momentum
+                if promo_rating >= 3.5:
+                    show_momentum = min(80, show_momentum + 4)
+                elif promo_rating < 2.0:
+                    show_momentum = max(30, show_momentum - 3)
 
         # Calculate show overall rating
         show.is_completed = True
