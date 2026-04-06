@@ -165,6 +165,9 @@ class WorldTicker:
         # 13. Wrestler lifecycle (Groups 1-6)
         self._wrestler_lifecycle(new_date)
 
+        # 14. Persona & social media (Group 7)
+        self._persona_tick(new_date)
+
         self.db.commit()
 
         return {
@@ -1337,6 +1340,50 @@ class WorldTicker:
                     # Only apply once per return (when they get booked again,
                     # ring_rust_days resets)
                     pass  # Pop applied in match_aftermath when booked
+
+    # ------------------------------------------------------------------
+    # Phase 14: Persona & Social Media (Group 7)
+    # ------------------------------------------------------------------
+
+    def _persona_tick(self, game_date: str):
+        """Persona duality processing: gimmick evolution, life events, social media."""
+        # Weekly persona tick on Fridays
+        if get_day_of_week(game_date) == 4:  # Friday
+            try:
+                from game_service.wrestler_lifecycle_service import tick_persona
+                tick_persona(self.db, self.world.id, game_date)
+                self.events.append("Persona lifecycle tick processed")
+            except Exception as e:
+                logger.warning(f"Persona tick failed: {e}")
+
+            # Check for worked-shoot storylines from life events
+            try:
+                from game_service.storyline_service import (
+                    check_life_event_storylines,
+                    check_relationship_collision_storylines,
+                )
+                ws_storylines = check_life_event_storylines(
+                    self.db, self.world.id, game_date
+                )
+                for sl in ws_storylines:
+                    self.events.append(f"Worked-shoot storyline '{sl.name}' created!")
+
+                coll_storylines = check_relationship_collision_storylines(
+                    self.db, self.world.id, game_date
+                )
+                for sl in coll_storylines:
+                    self.events.append(f"Collision storyline '{sl.name}' created!")
+            except Exception as e:
+                logger.warning(f"Kayfabe collision check failed: {e}")
+
+        # Daily social media tick
+        try:
+            from game_service import social_media_service
+            social_media_service.tick_social_media(
+                self.db, self.world.id, game_date
+            )
+        except Exception as e:
+            logger.warning(f"Social media tick failed: {e}")
 
     # ------------------------------------------------------------------
     # Helpers
