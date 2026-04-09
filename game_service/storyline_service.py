@@ -131,6 +131,27 @@ def create_storyline(db: Session, world_id: str, federation_id: str,
         else:
             description = f"A new {storyline_type} storyline unfolds."
 
+    # LLM-as-booker: the head booker AI crafts the storyline
+    import os
+    if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
+        try:
+            from game_service.character_agent import booker_decide_storyline
+            names = [w_names.get(wid, "Unknown") for wid in wrestler_ids[:2]]
+            booker_result = booker_decide_storyline(
+                db, federation_id,
+                names[0] if names else "Unknown",
+                names[1] if len(names) > 1 else "Unknown",
+                context=f"Creating a {storyline_type} storyline.",
+            )
+            if booker_result.get("name"):
+                name = booker_result["name"]
+            if booker_result.get("description"):
+                description = booker_result["description"]
+            if booker_result.get("storyline_type"):
+                storyline_type = booker_result["storyline_type"]
+        except Exception:
+            pass  # Keep template values
+
     storyline = StorylineDB(
         world_id=world_id,
         federation_id=federation_id,
@@ -291,11 +312,33 @@ def check_match_storyline_triggers(db: Session, match: MatchDB, game_date: str):
     existing = _find_storyline_between(db, winner.wrestler_id, loser.wrestler_id)
 
     if existing:
-        # Progress existing storyline
-        heat_delta = 8 if match.is_title_match else 5
+        # Progress existing storyline — heat scales with match quality
+        rating = match.match_rating or 3.0
+        base_heat = 8 if match.is_title_match else 6
+        quality_bonus = max(0, int((rating - 3.0) * 3))  # +3 per star above 3.0
+        card_bonus = 3 if getattr(match, 'card_position', '') == 'main_event' else 0
+        heat_delta = base_heat + quality_bonus + card_bonus
+
+        # Seasonal heat multiplier: storylines get a boost during PPV build windows
+        try:
+            from game_service.ppv_calendar_service import get_next_ppv, is_build_window
+            from models.game_models import ShowDB, ShowSegmentDB
+            seg = match.segment
+            if seg:
+                show = db.query(ShowDB).filter(ShowDB.id == seg.show_id).first()
+                if show:
+                    next_ppv = get_next_ppv(db, show.federation_id, show.game_date)
+                    if next_ppv and is_build_window(show.game_date, next_ppv.scheduled_date):
+                        if getattr(next_ppv, 'is_crown_jewel', False):
+                            heat_delta = int(heat_delta * 2.0)  # Crown Jewel build: +100%
+                        else:
+                            heat_delta = int(heat_delta * 1.5)  # Regular PPV build: +50%
+        except Exception:
+            pass  # PPV calendar system is optional
+
         progress_storyline(
             db, existing, "match_result", heat_delta,
-            description=f"Their rivalry intensified after a {match.match_rating or 0:.1f}-star match!",
+            description=f"Their rivalry intensified after a {rating:.1f}-star match!",
         )
     else:
         # Small chance a competitive match spawns a new feud

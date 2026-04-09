@@ -157,6 +157,22 @@ def calculate_card_draw(db: Session, show: ShowDB) -> float:
     if rivalry_bonus:
         card_draw += 5
 
+    # Viral social media buzz bonus
+    try:
+        from game_service.social_media_service import get_viral_buzz_bonus
+        all_wrestler_ids = []
+        for seg in match_segments:
+            match = db.query(MatchDB).filter(MatchDB.id == seg.match_id).first()
+            if match:
+                pids = [p.wrestler_id for p in db.query(MatchParticipantDB).filter(
+                    MatchParticipantDB.match_id == match.id).all()]
+                all_wrestler_ids.extend(pids)
+        if all_wrestler_ids:
+            buzz = get_viral_buzz_bonus(db, show.world_id, show.game_date, all_wrestler_ids)
+            card_draw *= (1.0 + buzz)
+    except Exception:
+        pass  # Social media system is optional
+
     return max(0.0, min(100.0, card_draw))
 
 

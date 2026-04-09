@@ -6,10 +6,32 @@ storyline progression, economy, and world events.
 """
 
 import logging
+import os
 import random
 from datetime import datetime, timedelta
 from typing import List, Optional
 from sqlalchemy.orm import Session
+
+# LLM integration gate — set LLMFED_USE_LLM=1 to enable LLM-generated narrative
+USE_LLM = os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes")
+
+
+def _llm_generate(prompt: str, fallback: str, system_msg: str = None) -> str:
+    """Generate text via LLM if enabled, otherwise return fallback.
+
+    Never raises — any failure returns the fallback text silently.
+    """
+    if not USE_LLM:
+        return fallback
+    try:
+        from llm_abstraction.provider import get_llm
+        llm = get_llm()
+        response = llm.generate(prompt, system_message=system_msg, max_tokens=200)
+        if response and response.content:
+            return response.content.strip()
+    except Exception as e:
+        logging.getLogger(__name__).debug("LLM generation failed, using fallback: %s", e)
+    return fallback
 
 from models.game_models import (
     WorldDB, WorldStateDB, PlayerActionDB, GameFederationDB,
@@ -194,6 +216,9 @@ class WorldTicker:
         # 16. Manager effectiveness tracking (Thursdays)
         self._manager_tick(new_date)
 
+        # 17. Character agency — LLM-driven wrestler decisions
+        self._character_agency_tick(new_date)
+
         self.db.commit()
 
         return {
@@ -257,6 +282,10 @@ class WorldTicker:
             return self._action_create_storyline(data)
         elif action_type == "advance_storyline":
             return self._action_advance_storyline(data)
+        elif action_type == "request_match":
+            return self._action_request_match(data)
+        elif action_type == "open_challenge":
+            return self._action_open_challenge(data)
         else:
             return {"message": f"Action '{action_type}' acknowledged"}
 
@@ -329,8 +358,8 @@ class WorldTicker:
         try:
             from game_service.wrestler_lifecycle_service import training_with_mentor
             gain += training_with_mentor(self.db, wrestler_id, stat_name)
-        except Exception:
-            pass
+        except (ValueError, AttributeError) as e:
+            logger.debug("Mentor bonus skipped for %s: %s", wrestler_id, e)
 
         new_val = min(100, current + gain)
         setattr(stats, stat_name, new_val)
@@ -345,10 +374,203 @@ class WorldTicker:
         return {"stat": stat_name, "old": current, "new": new_val, "gain": new_val - current}
 
     def _action_cut_promo(self, data: dict) -> dict:
-        """Wrestler cuts a promo (processed by LLM later)."""
-        # For now, return acknowledgement. Full LLM promo generation
-        # will be in the storyline engine.
-        return {"message": "Promo direction noted", "direction": data.get("direction", "")}
+        """Wrestler cuts a promo — gains popularity, boosts storyline heat."""
+        wrestler_id = data.get("wrestler_id")
+        target_id = data.get("target_wrestler_id")
+        direction = data.get("direction", "")
+
+        wrestler = self.db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.id == wrestler_id
+        ).first()
+        if not wrestler:
+            raise ValueError("Wrestler not found")
+
+        stats = self.db.query(WrestlerStatsDB).filter(
+            WrestlerStatsDB.wrestler_id == wrestler_id
+        ).first()
+
+        # Promo quality based on charisma + mic skill
+        charisma = stats.charisma if stats else 50
+        mic = stats.mic_skill if stats else 50
+        base_quality = (charisma + mic) / 2
+        roll = random.randint(-15, 15)
+        quality = max(1, min(100, base_quality + roll))
+
+        # Popularity gain: 1-5 based on quality
+        pop_gain = 1
+        if quality >= 80:
+            pop_gain = random.randint(3, 5)
+        elif quality >= 60:
+            pop_gain = random.randint(2, 4)
+        elif quality >= 40:
+            pop_gain = random.randint(1, 3)
+
+        old_pop = wrestler.popularity
+        wrestler.popularity = min(100, wrestler.popularity + pop_gain)
+        wrestler.morale = min(100, (wrestler.morale or 50) + 2)
+
+        result = {
+            "quality": quality,
+            "popularity_gain": pop_gain,
+            "old_popularity": old_pop,
+            "new_popularity": wrestler.popularity,
+            "direction": direction,
+        }
+
+        # If targeting a rival, boost storyline heat
+        if target_id:
+            sl_svc = _get_storyline_service()
+            existing = sl_svc._find_storyline_between(self.db, wrestler_id, target_id)
+            if existing:
+                heat_boost = 5 if quality >= 60 else 3
+                sl_svc.progress_storyline(
+                    self.db, existing, "promo", heat_boost,
+                    description=f"{wrestler.name} cut a fiery promo targeting their rival!",
+                )
+                result["storyline_heat_boost"] = heat_boost
+
+        self._log_event(
+            "promo",
+            f"{wrestler.name} cuts a promo (quality: {quality}, pop +{pop_gain})",
+            [wrestler_id] + ([target_id] if target_id else []),
+            importance=5,
+        )
+        return result
+
+    # --- Match request / open challenge actions ---
+
+    def _action_request_match(self, data: dict) -> dict:
+        """Player requests a match on the next show for their federation.
+
+        Books the player into an opening slot on the next weekly show.
+        Win = +2-4 popularity, Loss = +1 popularity (exposure value).
+        Cooldown: 1 request per game week (7 ticks).
+        """
+        wrestler_id = data.get("wrestler_id")
+        wrestler = self.db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.id == wrestler_id
+        ).first()
+        if not wrestler:
+            raise ValueError("Wrestler not found")
+
+        # Find wrestler's federation
+        contract = self.db.query(ContractDB).filter(
+            ContractDB.wrestler_id == wrestler_id,
+            ContractDB.status == "active",
+        ).first()
+        if not contract:
+            raise ValueError("Wrestler has no active contract")
+
+        # Store the request in world metadata for the show booking phase to pick up
+        meta = self.world.world_config or {}
+        match_requests = meta.get("pending_match_requests", [])
+
+        # Check cooldown — only 1 request per 7 days
+        game_date = self.world.current_game_date
+        for req in match_requests:
+            if req.get("wrestler_id") == wrestler_id:
+                last_date = req.get("date", "")
+                try:
+                    days_since = (datetime.strptime(game_date, "%Y-%m-%d") -
+                                  datetime.strptime(last_date, "%Y-%m-%d")).days
+                    if days_since < 7:
+                        return {"message": f"Match request on cooldown ({7 - days_since} days remaining)"}
+                except (ValueError, TypeError):
+                    pass
+
+        # Remove old request for this wrestler if any, add new one
+        match_requests = [r for r in match_requests if r.get("wrestler_id") != wrestler_id]
+        match_requests.append({
+            "wrestler_id": wrestler_id,
+            "federation_id": contract.federation_id,
+            "date": game_date,
+            "type": "request_match",
+        })
+        meta["pending_match_requests"] = match_requests
+        self.world.world_config = meta
+
+        self._log_event(
+            "match_request",
+            f"{wrestler.name} has requested a match on the next show!",
+            [wrestler_id], importance=4,
+        )
+        return {"message": f"{wrestler.name} is booked for a match on the next show", "status": "pending"}
+
+    def _action_open_challenge(self, data: dict) -> dict:
+        """Player issues an open challenge — higher risk/reward than request_match.
+
+        Matched against someone ±10 popularity. Win = +4-6 pop, Loss = +0.
+        Can spark a storyline if player popularity > 40.
+        """
+        wrestler_id = data.get("wrestler_id")
+        wrestler = self.db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.id == wrestler_id
+        ).first()
+        if not wrestler:
+            raise ValueError("Wrestler not found")
+
+        contract = self.db.query(ContractDB).filter(
+            ContractDB.wrestler_id == wrestler_id,
+            ContractDB.status == "active",
+        ).first()
+        if not contract:
+            raise ValueError("Wrestler has no active contract")
+
+        # Find a suitable opponent: ±10 popularity from same federation
+        roster_contracts = self.db.query(ContractDB).filter(
+            ContractDB.federation_id == contract.federation_id,
+            ContractDB.status == "active",
+            ContractDB.wrestler_id != wrestler_id,
+        ).all()
+
+        candidates = []
+        for c in roster_contracts:
+            opp = self.db.query(GameWrestlerDB).filter(
+                GameWrestlerDB.id == c.wrestler_id,
+                GameWrestlerDB.is_injured == False,
+            ).first()
+            if opp and abs(opp.popularity - wrestler.popularity) <= 15:
+                candidates.append(opp)
+
+        if not candidates:
+            # Fallback: anyone on the roster who isn't injured
+            for c in roster_contracts:
+                opp = self.db.query(GameWrestlerDB).filter(
+                    GameWrestlerDB.id == c.wrestler_id,
+                    GameWrestlerDB.is_injured == False,
+                ).first()
+                if opp:
+                    candidates.append(opp)
+
+        if not candidates:
+            return {"message": "No suitable opponents available for an open challenge"}
+
+        opponent = random.choice(candidates)
+
+        # Store in metadata for show booking
+        meta = self.world.world_config or {}
+        match_requests = meta.get("pending_match_requests", [])
+        match_requests = [r for r in match_requests if r.get("wrestler_id") != wrestler_id]
+        match_requests.append({
+            "wrestler_id": wrestler_id,
+            "federation_id": contract.federation_id,
+            "opponent_id": opponent.id,
+            "date": self.world.current_game_date,
+            "type": "open_challenge",
+        })
+        meta["pending_match_requests"] = match_requests
+        self.world.world_config = meta
+
+        self._log_event(
+            "open_challenge",
+            f"{wrestler.name} issues an open challenge! {opponent.name} answers!",
+            [wrestler_id, opponent.id], importance=6,
+        )
+        return {
+            "message": f"{wrestler.name} issues an open challenge — {opponent.name} has accepted!",
+            "opponent": opponent.name,
+            "opponent_id": opponent.id,
+        }
 
     # --- Faction / stable actions ---
 
@@ -577,12 +799,18 @@ class WorldTicker:
     def _npc_book_ppv_show(self, fed: GameFederationDB, ppv):
         """Book and create a PPV show from the PPV calendar."""
         show_svc = _get_show_service()
+        ppv_capacity = ppv.capacity or 15000
+        if not ppv.venue:
+            from game_service.world_service import pick_venue
+            ppv_venue = pick_venue(fed.home_region or "Northeast", ppv_capacity)
+        else:
+            ppv_venue = ppv.venue
         show = show_svc.create_show(
             self.db, self.world.id, fed.id,
             name=ppv.name,
             show_type="ppv",
-            venue=ppv.venue or f"{fed.home_region} Arena",
-            capacity=ppv.capacity or 15000,
+            venue=ppv_venue,
+            capacity=ppv_capacity,
             game_date=self.world.current_game_date,
         )
         ppv.show_id = show.id
@@ -606,16 +834,25 @@ class WorldTicker:
 
         show_name = f"{fed.short_name or fed.name} Weekly"
         if next_ppv and is_go_home_week(self.world.current_game_date, next_ppv.scheduled_date):
-            show_name = f"{fed.short_name or fed.name} Go-Home Show"
+            if getattr(next_ppv, 'is_crown_jewel', False):
+                show_name = f"{fed.short_name or fed.name} {next_ppv.name} Go-Home Special"
+            else:
+                show_name = f"{fed.short_name or fed.name} Go-Home Show"
         elif next_ppv and is_build_window(self.world.current_game_date, next_ppv.scheduled_date):
-            show_name = f"{fed.short_name or fed.name} Weekly (Building to {next_ppv.name})"
+            if getattr(next_ppv, 'is_crown_jewel', False):
+                show_name = f"Road to {next_ppv.name}"
+            else:
+                show_name = f"{fed.short_name or fed.name} Weekly (Building to {next_ppv.name})"
 
+        weekly_cap = random.randint(2000, 10000)
+        from game_service.world_service import pick_venue
+        weekly_venue = pick_venue(fed.home_region or "Northeast", weekly_cap)
         show = show_svc.create_show(
             self.db, self.world.id, fed.id,
             name=show_name,
             show_type="weekly",
-            venue=f"{fed.home_region} Arena",
-            capacity=random.randint(2000, 10000),
+            venue=weekly_venue,
+            capacity=weekly_cap,
             game_date=self.world.current_game_date,
         )
         segments = show_svc.npc_book_card(self.db, show, next_ppv=next_ppv)
@@ -752,6 +989,28 @@ class WorldTicker:
                             self.db, match, self.world.current_game_date
                         )
 
+                        # Character reactions — LLM-driven wrestlers react to match results
+                        if USE_LLM:
+                            try:
+                                from game_service.character_agent import character_react
+                                winner = self.db.query(GameWrestlerDB).filter(
+                                    GameWrestlerDB.id == result.winner_id
+                                ).first()
+                                if winner:
+                                    event_type = "title_win" if match.is_title_match else "win"
+                                    reaction = character_react(
+                                        self.db, winner.id, event_type,
+                                        f"Defeated opponent via {result.finish_type}. "
+                                        f"Match rating: {result.match_rating:.1f} stars.",
+                                    )
+                                    if reaction:
+                                        self._log_event(
+                                            "character_reaction", reaction,
+                                            [winner.id], importance=4,
+                                        )
+                            except Exception:
+                                pass  # Character reactions are optional
+
                         # Process stable effects from match result
                         try:
                             stable_svc = _get_stable_service()
@@ -764,8 +1023,8 @@ class WorldTicker:
                                     self.db, result.winner_id, loser_id,
                                     self.world.id, self.world.current_game_date,
                                 )
-                        except Exception:
-                            pass
+                        except (ValueError, AttributeError) as e:
+                            logger.debug("Stable match processing skipped: %s", e)
 
                         # Log post-match angle if one occurred
                         if result.post_match_angle:
@@ -783,7 +1042,10 @@ class WorldTicker:
                             self.db, match, self.world.current_game_date
                         )
                     except Exception as e:
-                        logger.warning(f"Match simulation failed: {e}")
+                        logger.error(
+                            "Match simulation failed for match %s: %s",
+                            match.id, e, exc_info=True,
+                        )
                         seg.is_completed = True
                         seg.rating = round(random.uniform(2.0, 4.0), 1)
                         match_ratings.append(seg.rating)
@@ -854,7 +1116,7 @@ class WorldTicker:
             news_svc = _get_news_service()
             news_svc.generate_show_news(self.db, show, match_ratings, fed)
         except Exception as e:
-            logger.warning(f"News generation failed: {e}")
+            logger.error("News generation failed for show %s: %s", show.id, e, exc_info=True)
 
         self._log_event(
             "show",
@@ -931,9 +1193,14 @@ class WorldTicker:
         ).all()
 
         for storyline in active:
-            # Storylines heat decays if not progressed
-            if random.random() < 0.1:  # 10% chance per day
-                storyline.heat = max(0, storyline.heat - 1)
+            # Storylines heat decays daily — unserviced storylines fade faster
+            decay_chance = 0.3  # 30% chance per day (was 10%)
+            decay_amount = 1
+            if storyline.status == "climax":
+                decay_chance = 0.5  # Climax storylines need constant fuel
+                decay_amount = 2
+            if random.random() < decay_chance:
+                storyline.heat = max(0, storyline.heat - decay_amount)
 
             # Storylines can naturally escalate
             if storyline.status == "brewing" and storyline.heat > 60:
@@ -1083,7 +1350,17 @@ class WorldTicker:
                 GameWrestlerDB.id == contract.wrestler_id
             ).first()
             if wrestler:
-                self.events.append(f"Contract expired: {wrestler.name}")
+                fed = self.db.query(GameFederationDB).filter(
+                    GameFederationDB.id == contract.federation_id
+                ).first()
+                fed_name = (fed.short_name or fed.name) if fed else "Unknown"
+                self._log_event(
+                    "contract_expired",
+                    f"{wrestler.name}'s contract with {fed_name} has expired — now a free agent!",
+                    [wrestler.id, contract.federation_id],
+                    importance=6,
+                )
+                self.events.append(f"Contract expired: {wrestler.name} is now a free agent")
 
     # ------------------------------------------------------------------
     # Phase 8: Recovery
@@ -1167,6 +1444,100 @@ class WorldTicker:
             return 0
 
     # ------------------------------------------------------------------
+    # Tag team name generation
+    # ------------------------------------------------------------------
+
+    _TAG_TEAM_NAMES = {
+        "power": [
+            "The Wrecking Crew", "Heavy Artillery", "The Demolition Squad",
+            "Iron Curtain", "The Juggernaut Express", "Total Destruction",
+            "The War Machine", "Brute Force", "The Colossus Connection",
+        ],
+        "highflyer": [
+            "Air Raid", "Terminal Velocity", "Sky High",
+            "The Shooting Stars", "Double Vision", "The Aerials",
+            "Freefall", "Altitude Sickness", "The High Wire",
+        ],
+        "technical": [
+            "The Submission Squad", "Chain Reaction", "The Technicians",
+            "Master Class", "Precision Strike", "The Chess Club",
+            "Clinical Finish", "The Hold Exchange", "Mat Generals",
+        ],
+        "brawler": [
+            "Street Justice", "The Pitfighters", "Knuckle Up",
+            "Bar Room Blitz", "The Enforcers", "Concrete Justice",
+            "The Roughnecks", "Violent Tendencies", "The Brawl Brothers",
+        ],
+        "mixed": [
+            "Brains & Brawn", "The Odd Couple", "Chaos Theory",
+            "Yin & Yang", "The Contrast", "Unlikely Alliance",
+            "Controlled Chaos", "Thunder & Lightning", "The Paradox",
+        ],
+        "generic": [
+            "The Alliance", "Double Trouble", "The Partnership",
+            "Tandem", "The Foundation", "The Coalition",
+            "Second Wind", "The Union", "Full Circle",
+        ],
+    }
+
+    _TEAM_FINISHER_TEMPLATES = [
+        "Double {move}", "The {adj} Bomb", "{adj} Annihilation",
+        "Total {move}", "The Grand Finale", "Doomsday {move}",
+        "Double Down", "The Crescendo", "Curtain Call",
+    ]
+    _FINISHER_MOVES = ["Powerbomb", "Suplex", "Slam", "Piledriver", "Cutter", "DDT"]
+    _FINISHER_ADJS = ["Midnight", "Thunderous", "Final", "Atomic", "Devastating", "Crimson"]
+
+    def _generate_tag_team_name(self, w1: "GameWrestlerDB", w2: "GameWrestlerDB") -> tuple:
+        """Generate a creative tag team name and finisher based on wrestler styles."""
+        from models.game_models import GimmickHistoryDB
+
+        # Determine style category for each wrestler from stats
+        stats1 = self.db.query(WrestlerStatsDB).filter(WrestlerStatsDB.wrestler_id == w1.id).first()
+        stats2 = self.db.query(WrestlerStatsDB).filter(WrestlerStatsDB.wrestler_id == w2.id).first()
+
+        def _classify(stats):
+            if not stats:
+                return "generic"
+            top = max(
+                ("power", stats.power), ("highflyer", stats.aerial + stats.speed),
+                ("technical", stats.technical + stats.submission),
+                ("brawler", stats.brawling + stats.toughness),
+                key=lambda x: x[1],
+            )
+            return top[0]
+
+        cat1, cat2 = _classify(stats1), _classify(stats2)
+        if cat1 == cat2:
+            pool_key = cat1
+        else:
+            pool_key = "mixed"
+
+        # Pick from pool, avoiding names already used in this world
+        existing_names = {
+            t.name for t in self.db.query(TagTeamDB).filter(
+                TagTeamDB.world_id == self.world.id
+            ).all()
+        }
+        pool = [n for n in self._TAG_TEAM_NAMES.get(pool_key, []) if n not in existing_names]
+        if not pool:
+            pool = [n for n in self._TAG_TEAM_NAMES["generic"] if n not in existing_names]
+        if not pool:
+            # Absolute fallback
+            team_name = f"{w1.name} & {w2.name}"
+        else:
+            team_name = random.choice(pool)
+
+        # Generate team finisher name
+        template = random.choice(self._TEAM_FINISHER_TEMPLATES)
+        finisher_name = template.format(
+            move=random.choice(self._FINISHER_MOVES),
+            adj=random.choice(self._FINISHER_ADJS),
+        )
+
+        return team_name, finisher_name
+
+    # ------------------------------------------------------------------
     # Phase 10: Tag team management
     # ------------------------------------------------------------------
 
@@ -1228,10 +1599,11 @@ class WorldTicker:
             if w1.alignment != w2.alignment and "tweener" not in (w1.alignment, w2.alignment):
                 continue
 
-            team_name = f"{w1.name} & {w2.name}"
+            team_name, finisher_name = self._generate_tag_team_name(w1, w2)
             self.db.add(TagTeamDB(
                 world_id=self.world.id,
                 name=team_name,
+                team_finisher_name=finisher_name,
                 wrestler1_id=rel.wrestler1_id,
                 wrestler2_id=rel.wrestler2_id,
                 formed_date=game_date,
@@ -1527,7 +1899,7 @@ class WorldTicker:
             news_svc = _get_news_service()
             news_svc.generate_weekly_dirt_sheet(self.db, self.world.id, game_date)
         except Exception as e:
-            logger.warning(f"Weekly news generation failed: {e}")
+            logger.error("Weekly news generation failed: %s", e, exc_info=True)
 
     # ------------------------------------------------------------------
     # Phase 13: Wrestler lifecycle (Groups 1-6)
@@ -1543,16 +1915,54 @@ class WorldTicker:
         )
 
         # --- Annual events ---
-        # Jan 1: Age all wrestlers (Group 1)
+        # Jan 1: Age all wrestlers (Group 1) + PPV calendar rollover
         if game_date.endswith("-01-01"):
             age_wrestlers(self.db, self.world.id, game_date)
             self.events.append("Annual aging applied to all wrestlers")
+
+            # Generate next year's PPV calendars for all active federations
+            from game_service.ppv_calendar_service import rollover_ppv_calendar
+            all_feds = self.db.query(GameFederationDB).filter(
+                GameFederationDB.world_id == self.world.id,
+                GameFederationDB.is_active == True,
+            ).all()
+            for fed in all_feds:
+                new_ppvs = rollover_ppv_calendar(self.db, fed, game_date)
+                if new_ppvs:
+                    self.events.append(
+                        f"{fed.short_name or fed.name}: {len(new_ppvs)} PPVs scheduled for new year"
+                    )
 
         # April 1: Hall of Fame ceremony (Group 5)
         if game_date.endswith("-04-01"):
             inductee = hall_of_fame_ceremony(self.db, self.world.id, game_date)
             if inductee:
                 self.events.append(f"HALL OF FAME: {inductee.name} inducted!")
+
+        # --- Quarterly seasonal events ---
+        # Q1 (Jan): New Year's Resolution — wrestlers with unmet goals get morale boost
+        if game_date.endswith("-01-07"):
+            self._seasonal_new_year_resolution(game_date)
+
+        # Q2 (June): King of the Ring tournament
+        if game_date.endswith("-06-01"):
+            self._seasonal_king_of_the_ring(game_date)
+
+        # Q3 (Jul-Sep): Summer Slam month — attendance boost
+        month = game_date[5:7]
+        if month in ("07", "08") and get_day_of_week(game_date) == 0:
+            # Summer boost: all federations get a momentum nudge
+            npc_feds = self.db.query(GameFederationDB).filter(
+                GameFederationDB.world_id == self.world.id,
+                GameFederationDB.is_active == True,
+            ).all()
+            for fed in npc_feds:
+                old_m = fed.momentum or 50
+                fed.momentum = min(100, old_m + 2)
+
+        # Dec 31: Year-end summary and awards
+        if game_date.endswith("-12-31"):
+            self._generate_year_end_summary(game_date)
 
         # --- Weekly events (Thursdays) ---
         if get_day_of_week(game_date) == 3:
@@ -1619,7 +2029,7 @@ class WorldTicker:
                 tick_persona(self.db, self.world.id, game_date)
                 self.events.append("Persona lifecycle tick processed")
             except Exception as e:
-                logger.warning(f"Persona tick failed: {e}")
+                logger.error("Persona tick failed: %s", e, exc_info=True)
 
             # Check for worked-shoot storylines from life events
             try:
@@ -1639,7 +2049,7 @@ class WorldTicker:
                 for sl in coll_storylines:
                     self.events.append(f"Collision storyline '{sl.name}' created!")
             except Exception as e:
-                logger.warning(f"Kayfabe collision check failed: {e}")
+                logger.error("Kayfabe collision check failed: %s", e, exc_info=True)
 
         # Daily social media tick
         try:
@@ -1648,7 +2058,7 @@ class WorldTicker:
                 self.db, self.world.id, game_date
             )
         except Exception as e:
-            logger.warning(f"Social media tick failed: {e}")
+            logger.error("Social media tick failed: %s", e, exc_info=True)
 
     def _stable_dynamics_tick(self, game_date: str):
         """Process internal faction politics for all active stables.
@@ -1671,7 +2081,7 @@ class WorldTicker:
             if stables:
                 self.events.append(f"Faction dynamics processed for {len(stables)} stable(s)")
         except Exception as e:
-            logger.warning("Stable dynamics tick failed: %s", e)
+            logger.error("Stable dynamics tick failed: %s", e, exc_info=True)
 
     def _manager_tick(self, game_date: str):
         """Track manager effectiveness and bond evolution.
@@ -1698,7 +2108,224 @@ class WorldTicker:
             if bonds:
                 self.events.append(f"Manager bonds updated for {len(bonds)} pairing(s)")
         except Exception as e:
-            logger.warning("Manager tick failed: %s", e)
+            logger.error("Manager tick failed: %s", e, exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Phase 17: Character agency — LLM-driven wrestler decisions
+    # ------------------------------------------------------------------
+
+    def _character_agency_tick(self, game_date: str):
+        """LLM-driven characters make autonomous decisions.
+
+        This is the core of 'LLMFed' — wrestlers are LLM-driven agents that
+        call out rivals, propose alliances, demand title shots, react to events,
+        and generate in-character content. When LLMFED_USE_LLM is not set,
+        template-based fallbacks drive the same mechanical effects.
+        """
+        try:
+            from game_service.character_agent import tick_character_agency
+            agent_events = tick_character_agency(
+                self.db, self.world.id, game_date,
+            )
+            for evt in agent_events:
+                self.events.append(f"[CHARACTER] {evt}")
+        except Exception as e:
+            logger.error("Character agency tick failed: %s", e, exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Seasonal events
+    # ------------------------------------------------------------------
+
+    def _seasonal_new_year_resolution(self, game_date: str):
+        """Q1 event: Wrestlers with unmet goals get a fresh-start morale boost."""
+        wrestlers = self.db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.world_id == self.world.id,
+            GameWrestlerDB.is_active == True,
+        ).all()
+
+        boosted = 0
+        for w in wrestlers:
+            if (w.morale or 50) < 60:
+                w.morale = min(100, (w.morale or 50) + 5)
+                boosted += 1
+
+        if boosted:
+            self._log_event(
+                "seasonal_event",
+                f"New Year's Resolution: {boosted} wrestlers start the year with renewed motivation!",
+                importance=5,
+            )
+            self.events.append(f"New Year's Resolution: {boosted} wrestlers got a morale boost")
+
+    def _seasonal_king_of_the_ring(self, game_date: str):
+        """Q2 event: King of the Ring tournament across all NPC feds.
+
+        Picks top 8 by popularity per federation, announces a tournament via
+        narrative log, and crowns a winner with +10 popularity.
+        """
+        npc_feds = self.db.query(GameFederationDB).filter(
+            GameFederationDB.world_id == self.world.id,
+            GameFederationDB.is_npc == True,
+            GameFederationDB.is_active == True,
+        ).all()
+
+        for fed in npc_feds:
+            contracts = self.db.query(ContractDB).filter(
+                ContractDB.federation_id == fed.id,
+                ContractDB.status == "active",
+            ).all()
+            wrestler_ids = [c.wrestler_id for c in contracts]
+            wrestlers = self.db.query(GameWrestlerDB).filter(
+                GameWrestlerDB.id.in_(wrestler_ids),
+                GameWrestlerDB.is_active == True,
+                GameWrestlerDB.is_injured == False,
+            ).order_by(GameWrestlerDB.popularity.desc()).limit(8).all()
+
+            if len(wrestlers) < 4:
+                continue
+
+            # Simulate single-elimination tournament (simplified)
+            bracket = list(wrestlers)
+            round_num = 1
+            while len(bracket) > 1:
+                next_round = []
+                for i in range(0, len(bracket) - 1, 2):
+                    w1, w2 = bracket[i], bracket[i + 1]
+                    # Higher popularity + randomness wins
+                    w1_score = w1.popularity + random.randint(-20, 20)
+                    w2_score = w2.popularity + random.randint(-20, 20)
+                    winner = w1 if w1_score >= w2_score else w2
+                    next_round.append(winner)
+                # Handle odd bracket
+                if len(bracket) % 2 == 1:
+                    next_round.append(bracket[-1])
+                bracket = next_round
+                round_num += 1
+
+            king = bracket[0]
+            old_pop = king.popularity
+            king.popularity = min(100, king.popularity + 10)
+
+            self._log_event(
+                "seasonal_event",
+                f"KING OF THE RING: {king.name} wins the {fed.short_name or fed.name} "
+                f"King of the Ring tournament! (Pop {old_pop} → {king.popularity})",
+                [king.id], importance=8,
+            )
+            self.events.append(
+                f"King of the Ring: {king.name} crowned in {fed.short_name or fed.name}!"
+            )
+
+    # ------------------------------------------------------------------
+    # Year-end summary
+    # ------------------------------------------------------------------
+
+    def _generate_year_end_summary(self, game_date: str):
+        """Generate year-end awards and summary news. Fires on Dec 31."""
+        news_svc = _get_news_service()
+        year = game_date[:4]
+
+        # Find all completed shows this year
+        year_start = f"{year}-01-01"
+        shows = self.db.query(ShowDB).filter(
+            ShowDB.world_id == self.world.id,
+            ShowDB.is_completed == True,
+            ShowDB.game_date >= year_start,
+            ShowDB.game_date <= game_date,
+        ).all()
+
+        # Best show of the year
+        best_show = max(shows, key=lambda s: s.overall_rating or 0) if shows else None
+
+        # Most popular wrestler (current popularity)
+        wrestlers = self.db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.world_id == self.world.id,
+            GameWrestlerDB.is_active == True,
+        ).order_by(GameWrestlerDB.popularity.desc()).all()
+        wrestler_of_year = wrestlers[0] if wrestlers else None
+
+        # Best match of the year
+        best_match = self.db.query(MatchDB).filter(
+            MatchDB.world_id == self.world.id,
+            MatchDB.is_completed == True,
+            MatchDB.match_rating != None,
+            MatchDB.game_date >= year_start,
+        ).order_by(MatchDB.match_rating.desc()).first()
+
+        # Most dominant (highest win count)
+        from sqlalchemy import func
+        win_counts = (
+            self.db.query(
+                MatchParticipantDB.wrestler_id,
+                func.count(MatchParticipantDB.id).label("wins"),
+            )
+            .join(MatchDB)
+            .filter(
+                MatchParticipantDB.is_winner == True,
+                MatchDB.is_completed == True,
+                MatchDB.game_date >= year_start,
+                MatchDB.game_date <= game_date,
+            )
+            .group_by(MatchParticipantDB.wrestler_id)
+            .order_by(func.count(MatchParticipantDB.id).desc())
+            .first()
+        )
+
+        most_wins_wrestler = None
+        most_wins_count = 0
+        if win_counts:
+            most_wins_wrestler = self.db.query(GameWrestlerDB).filter(
+                GameWrestlerDB.id == win_counts[0]
+            ).first()
+            most_wins_count = win_counts[1]
+
+        # Federation of the year (highest momentum)
+        feds = self.db.query(GameFederationDB).filter(
+            GameFederationDB.world_id == self.world.id,
+            GameFederationDB.is_active == True,
+        ).order_by(GameFederationDB.momentum.desc()).all()
+        fed_of_year = feds[0] if feds else None
+
+        # Build summary
+        awards = []
+        if wrestler_of_year:
+            awards.append(f"Wrestler of the Year: {wrestler_of_year.name} (Popularity: {wrestler_of_year.popularity})")
+        if best_show:
+            fed = self.db.query(GameFederationDB).filter(
+                GameFederationDB.id == best_show.federation_id
+            ).first()
+            fed_name = (fed.short_name or fed.name) if fed else "Unknown"
+            awards.append(f"Show of the Year: {best_show.name} by {fed_name} ({best_show.overall_rating:.1f} stars)")
+        if best_match and best_match.match_rating:
+            awards.append(f"Match of the Year: {best_match.match_rating:.1f}-star classic")
+        if most_wins_wrestler:
+            awards.append(f"Most Dominant: {most_wins_wrestler.name} ({most_wins_count} wins)")
+        if fed_of_year:
+            awards.append(f"Federation of the Year: {fed_of_year.short_name or fed_of_year.name} (Momentum: {fed_of_year.momentum})")
+
+        summary = f"YEAR IN REVIEW {year}\n" + "\n".join(f"  - {a}" for a in awards)
+
+        self._log_event(
+            "year_end_awards",
+            summary,
+            [],
+            importance=10,
+        )
+
+        # Generate news article
+        self.db.add(WorldNewsDB(
+            world_id=self.world.id,
+            headline=f"YEAR IN REVIEW: The {year} Wrestling Awards!",
+            body="\n\n".join(awards),
+            category="year_end",
+            game_date=game_date,
+            is_kayfabe=False,
+            source="Wrestling Observer Year-End Issue",
+        ))
+
+        self.events.append(f"Year-end awards generated for {year}")
+        for award in awards:
+            self.events.append(f"AWARD: {award}")
 
     # ------------------------------------------------------------------
     # Helpers

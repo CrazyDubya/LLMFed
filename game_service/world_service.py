@@ -4,6 +4,7 @@ World management service - creating worlds, players, and managing game state.
 
 import logging
 import random
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from models.game_models import (
@@ -64,6 +65,65 @@ REGIONS = ["Northeast", "Southeast", "Midwest", "Southwest", "West Coast", "Inte
 STYLES = ["Sports Entertainment", "Strong Style", "Lucha Libre", "Technical", "Hardcore", "Old School"]
 WEIGHT_CLASSES = ["lightweight", "cruiserweight", "middleweight", "heavyweight", "super_heavyweight"]
 
+# Named venue pools by region — gives shows real character
+VENUES = {
+    "Northeast": {
+        "club": ["The Hammerstein Ballroom", "The ECW Arena", "The Manhattan Center",
+                  "Webster Hall", "The Palladium"],
+        "arena": ["Madison Square Garden Theater", "Boardwalk Hall", "The Prudential Center",
+                   "Nassau Coliseum", "Barclays Center", "TD Garden"],
+        "stadium": ["MetLife Stadium", "Yankee Stadium", "Gillette Stadium"],
+    },
+    "Southeast": {
+        "club": ["Center Stage Theater", "The Impact Zone", "The Sportatorium",
+                  "The Cajun Dome Club", "The Warehouse"],
+        "arena": ["The Omni", "Greensboro Coliseum", "The Civic Center",
+                   "Amway Center", "Bridgestone Arena", "FedExForum"],
+        "stadium": ["The Georgia Dome", "Raymond James Stadium", "Bank of America Stadium"],
+    },
+    "Midwest": {
+        "club": ["The Odeum", "Davis Arena", "The Rave",
+                  "Harley Race Arena", "The Coliseum Club"],
+        "arena": ["Allstate Arena", "Rupp Arena", "The Kiel Center",
+                   "Joe Louis Arena", "The Bradley Center", "Bankers Life Fieldhouse"],
+        "stadium": ["Soldier Field", "Ford Field", "Lucas Oil Stadium"],
+    },
+    "Southwest": {
+        "club": ["The Bomb Factory", "The Aztec Theater", "The Pavilion",
+                  "South Side Ballroom", "The Pit"],
+        "arena": ["The Alamodome Theater", "American Airlines Center", "Dickies Arena",
+                   "The Toyota Center", "Desert Diamond Arena", "Moody Center"],
+        "stadium": ["AT&T Stadium", "NRG Stadium", "The Alamodome"],
+    },
+    "West Coast": {
+        "club": ["The Grand Olympic Auditorium", "The Shrine Expo", "The Cow Palace Club",
+                  "The Hollywood Palladium", "The Showbox"],
+        "arena": ["The Staples Center", "Oracle Arena", "The Forum",
+                   "T-Mobile Arena", "Moda Center", "Climate Pledge Arena"],
+        "stadium": ["SoFi Stadium", "Levi's Stadium", "Allegiant Stadium"],
+    },
+    "International": {
+        "club": ["The Budokan Hall", "York Hall", "Korakuen Hall",
+                  "Arena Mexico", "Wembley Arena Club"],
+        "arena": ["Tokyo Dome City Hall", "Manchester Arena", "The O2 Arena",
+                   "Osaka-Jo Hall", "Ryogoku Kokugikan", "Wembley Arena"],
+        "stadium": ["Tokyo Dome", "Wembley Stadium", "Melbourne Cricket Ground"],
+    },
+}
+
+
+def pick_venue(region: str, capacity: int) -> str:
+    """Pick a named venue appropriate for the capacity and region."""
+    region_venues = VENUES.get(region, VENUES["Northeast"])
+    if capacity <= 1500:
+        tier = "club"
+    elif capacity <= 15000:
+        tier = "arena"
+    else:
+        tier = "stadium"
+    pool = region_venues.get(tier, region_venues["arena"])
+    return random.choice(pool)
+
 
 def _random_stat(base: int = 50, variance: int = 25) -> int:
     """Generate a random stat with a normal distribution around base."""
@@ -98,6 +158,40 @@ def _generate_career_goals(age: int) -> list:
     return goals
 
 
+def _pick_archetype(alignment: str, stats_dict: dict) -> str:
+    """Pick a gimmick archetype based on alignment and dominant stats."""
+    # Determine dominant style from stats
+    style_scores = {
+        "power": stats_dict.get("power", 50) + stats_dict.get("toughness", 50),
+        "aerial": stats_dict.get("aerial", 50) + stats_dict.get("speed", 50),
+        "technical": stats_dict.get("technical", 50) + stats_dict.get("submission", 50),
+        "brawling": stats_dict.get("brawling", 50) + stats_dict.get("toughness", 50),
+        "charisma": stats_dict.get("charisma", 50) + stats_dict.get("mic_skill", 50),
+    }
+    dominant = max(style_scores, key=style_scores.get)
+
+    # Map dominant style + alignment to likely archetypes
+    archetype_map = {
+        ("power", "heel"): ["monster_heel", "cult_leader"],
+        ("power", "face"): ["patriot", "legacy"],
+        ("power", "tweener"): ["anti_hero", "silent_assassin"],
+        ("aerial", "heel"): ["cocky_technician", "daredevil"],
+        ("aerial", "face"): ["daredevil", "underdog_face"],
+        ("aerial", "tweener"): ["daredevil", "anti_hero"],
+        ("technical", "heel"): ["cocky_technician", "silent_assassin"],
+        ("technical", "face"): ["legacy", "underdog_face"],
+        ("technical", "tweener"): ["anti_hero", "cocky_technician"],
+        ("brawling", "heel"): ["monster_heel", "cult_leader"],
+        ("brawling", "face"): ["patriot", "underdog_face"],
+        ("brawling", "tweener"): ["anti_hero", "silent_assassin"],
+        ("charisma", "heel"): ["cult_leader", "cocky_technician"],
+        ("charisma", "face"): ["comedy_act", "underdog_face"],
+        ("charisma", "tweener"): ["anti_hero", "comedy_act"],
+    }
+    options = archetype_map.get((dominant, alignment), ["anti_hero"])
+    return random.choice(options)
+
+
 def _generate_npc_wrestler(world_id: str) -> tuple:
     """Generate a random NPC wrestler with stats."""
     name = f"{random.choice(WRESTLER_FIRST_NAMES)} {random.choice(WRESTLER_LAST_NAMES)}"
@@ -110,24 +204,60 @@ def _generate_npc_wrestler(world_id: str) -> tuple:
     phys = generate_physical_attributes()
     peak_age = random.randint(26, 32)
 
+    # Generate stats first so we can derive archetype
+    exp_bonus = min(exp * 2, 30)
+    stats_raw = {
+        "power": _random_stat(45 + exp_bonus // 2),
+        "speed": _random_stat(55 - age // 4),
+        "technical": _random_stat(40 + exp_bonus),
+        "aerial": _random_stat(50 - age // 3),
+        "brawling": _random_stat(45 + exp_bonus // 2),
+        "submission": _random_stat(40 + exp_bonus // 2),
+        "stamina": _random_stat(55 - age // 5),
+        "toughness": _random_stat(50 + exp_bonus // 3),
+        "charisma": _random_stat(50),
+        "mic_skill": _random_stat(45),
+        "psychology": _random_stat(35 + exp_bonus),
+        "selling": _random_stat(40 + exp_bonus // 2),
+        "backstage_politics": _random_stat(40),
+        "loyalty": _random_stat(50),
+        "work_ethic": _random_stat(60),
+        "injury_prone": _random_stat(30, 15),
+    }
+
+    alignment = random.choice(["face", "heel", "tweener"])
+    charisma_style = random.choice(["cocky", "humble", "intense", "funny", "mysterious"])
+
+    # Pick archetype and generate archetype-specific finisher + signatures
+    archetype = _pick_archetype(alignment, stats_raw)
+
+    from core_engine.match_engine import ARCHETYPE_FINISHERS, SIGNATURE_MOVE_POOLS
+    finisher_pool = ARCHETYPE_FINISHERS.get(archetype, ARCHETYPE_FINISHERS["anti_hero"])
+    finisher_name, finisher_type = random.choice(finisher_pool)
+
+    sig_pool = SIGNATURE_MOVE_POOLS.get(archetype, SIGNATURE_MOVE_POOLS["anti_hero"])
+    signature_moves = [list(sig) for sig in random.sample(sig_pool, min(3, len(sig_pool)))]
+
     wrestler = GameWrestlerDB(
         world_id=world_id,
         name=name,
         is_npc=True,
         gimmick=random.choice(GIMMICKS),
-        alignment=random.choice(["face", "heel", "tweener"]),
+        alignment=alignment,
         popularity=random.randint(20, 80),
         condition=random.randint(80, 100),
         morale=random.randint(50, 90),
         age=age,
         experience_years=exp,
         weight_class=random.choice(WEIGHT_CLASSES),
-        finisher_name=f"The {random.choice(['Devastator', 'Annihilator', 'Showstopper', 'Final Cut', 'Endgame', 'Lights Out', 'Total Eclipse', 'Death Drop'])}",
-        finisher_type=random.choice(["power", "submission", "aerial", "technical"]),
+        finisher_name=finisher_name,
+        finisher_type=finisher_type,
+        signature_moves=signature_moves,
         personality_traits={
             "aggression": random.randint(20, 90),
-            "charisma_style": random.choice(["cocky", "humble", "intense", "funny", "mysterious"]),
+            "charisma_style": charisma_style,
             "risk_tolerance": random.randint(20, 90),
+            "archetype": archetype,
         },
         career_goals=_generate_career_goals(age),
         # Group 1: Aging
@@ -140,26 +270,7 @@ def _generate_npc_wrestler(world_id: str) -> tuple:
     )
     update_career_phase(wrestler)
 
-    # Scale stats by experience
-    exp_bonus = min(exp * 2, 30)
-    stats = WrestlerStatsDB(
-        power=_random_stat(45 + exp_bonus // 2),
-        speed=_random_stat(55 - age // 4),
-        technical=_random_stat(40 + exp_bonus),
-        aerial=_random_stat(50 - age // 3),
-        brawling=_random_stat(45 + exp_bonus // 2),
-        submission=_random_stat(40 + exp_bonus // 2),
-        stamina=_random_stat(55 - age // 5),
-        toughness=_random_stat(50 + exp_bonus // 3),
-        charisma=_random_stat(50),
-        mic_skill=_random_stat(45),
-        psychology=_random_stat(35 + exp_bonus),
-        selling=_random_stat(40 + exp_bonus // 2),
-        backstage_politics=_random_stat(40),
-        loyalty=_random_stat(50),
-        work_ethic=_random_stat(60),
-        injury_prone=_random_stat(30, 15),
-    )
+    stats = WrestlerStatsDB(**stats_raw)
 
     return wrestler, stats
 
@@ -238,6 +349,10 @@ def create_world(db: Session, name: str, description: str = None,
         # 80% chance of being signed to a federation
         if random.random() < 0.8 and federations:
             fed = random.choice(federations)
+            # Contract length: 26-78 weeks (6-18 months)
+            contract_weeks = random.randint(26, 78)
+            start = datetime.strptime(world.current_game_date, "%Y-%m-%d")
+            end_date = (start + timedelta(weeks=contract_weeks)).strftime("%Y-%m-%d")
             db.add(ContractDB(
                 world_id=world.id,
                 wrestler_id=wrestler.id,
@@ -245,6 +360,7 @@ def create_world(db: Session, name: str, description: str = None,
                 status="active",
                 salary_weekly=random.uniform(500, 10000),
                 start_date=world.current_game_date,
+                end_date=end_date,
                 is_exclusive=random.random() < 0.7,
             ))
         else:

@@ -5,6 +5,7 @@ Generates in-character, shoot, and worked-shoot posts. Handles viral moments,
 feud exchanges, and fan engagement tracking.
 """
 
+import os
 import random
 import logging
 from sqlalchemy.orm import Session
@@ -119,7 +120,7 @@ def generate_social_post(db: Session, wrestler_id: str, world_id: str,
         post_type = "worked_shoot"
 
     # Generate content
-    content = _generate_post_content(wrestler, gimmick, backstory, post_type)
+    content = _generate_post_content(wrestler, gimmick, backstory, post_type, db=db)
 
     # Platform selection
     platform = random.choices(
@@ -187,22 +188,43 @@ def generate_social_post(db: Session, wrestler_id: str, world_id: str,
     return post
 
 
-def _generate_post_content(wrestler, gimmick, backstory, post_type):
+def _generate_post_content(wrestler, gimmick, backstory, post_type, db=None):
     """Generate post content based on type and persona."""
     hometown = wrestler.hometown or "the road"
 
+    # Template-based fallback
     if post_type == "kayfabe":
         if wrestler.alignment == "heel":
-            return random.choice(KAYFABE_HEEL_POSTS)
-        return random.choice(KAYFABE_FACE_POSTS)
+            fallback = random.choice(KAYFABE_HEEL_POSTS)
+        else:
+            fallback = random.choice(KAYFABE_FACE_POSTS)
     elif post_type == "shoot":
         template = random.choice(SHOOT_POSTS)
-        return template.format(hometown=hometown)
+        fallback = template.format(hometown=hometown)
     elif post_type == "worked_shoot":
-        return random.choice(WORKED_SHOOT_POSTS)
+        fallback = random.choice(WORKED_SHOOT_POSTS)
     elif post_type == "personal":
-        return random.choice(PERSONAL_POSTS)
-    return "..."
+        fallback = random.choice(PERSONAL_POSTS)
+    else:
+        fallback = "..."
+
+    # LLM-as-character: the wrestler posts as themselves
+    import os
+    if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes") and db:
+        try:
+            from game_service.character_agent import character_social_media_post
+            result = character_social_media_post(
+                db=db,
+                wrestler_id=wrestler.id,
+                platform="twitter",
+                post_type=post_type,
+            )
+            if result and len(result.strip()) > 10:
+                return result
+        except Exception:
+            pass
+
+    return fallback
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +300,13 @@ def check_viral_moment(post: SocialMediaPostDB) -> bool:
 
 
 def process_viral_fallout(db: Session, post: SocialMediaPostDB, game_date: str):
-    """Handle the effects of a viral post."""
+    """Handle the effects of a viral post.
+
+    Viral posts now feed back into the gameplay loop:
+    - Popularity changes (existing)
+    - Storyline heat boosts when the post involves a rival
+    - Narrative log events for high-controversy viral moments
+    """
     wrestler = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.id == post.wrestler_id,
     ).first()
@@ -296,6 +324,38 @@ def process_viral_fallout(db: Session, post: SocialMediaPostDB, game_date: str):
     wrestler.social_media_following = (wrestler.social_media_following or 1000) + random.randint(500, 5000)
     post.popularity_impact = pop_change
 
+    # --- NEW: Storyline heat boost from viral posts ---
+    # If the wrestler is in an active storyline, viral buzz heats the feud
+    storyline_participants = db.query(StorylineParticipantDB).filter(
+        StorylineParticipantDB.wrestler_id == wrestler.id,
+    ).all()
+    for sp in storyline_participants:
+        storyline = db.query(StorylineDB).filter(
+            StorylineDB.id == sp.storyline_id,
+            StorylineDB.status.in_(["active", "climax", "brewing"]),
+        ).first()
+        if storyline:
+            heat_boost = random.randint(3, 5)
+            if post.controversy_level >= 40:
+                heat_boost += 2
+            storyline.heat = min(100, storyline.heat + heat_boost)
+            logger.info("Viral post boosted storyline %s heat by +%d to %d",
+                        storyline.id[:8], heat_boost, storyline.heat)
+
+    # --- NEW: Narrative log for high-controversy viral moments ---
+    if post.controversy_level >= 7:
+        from models.game_models import GameNarrativeLogDB
+        db.add(GameNarrativeLogDB(
+            world_id=post.world_id,
+            game_date=game_date,
+            tick=0,
+            event_type="social_media_viral",
+            description=f"{wrestler.name}'s viral post is causing a stir backstage! "
+                        f"(controversy: {post.controversy_level}, engagement: {post.engagement_score})",
+            involved_entities=[wrestler.id],
+            importance=6,
+        ))
+
     # Generate news
     try:
         from game_service.news_service import generate_social_media_news
@@ -304,6 +364,35 @@ def process_viral_fallout(db: Session, post: SocialMediaPostDB, game_date: str):
         logger.warning("Failed to generate social media news: %s", e)
 
     logger.info("Viral post by %s! Pop change: %+d", wrestler.name, pop_change)
+
+
+# ---------------------------------------------------------------------------
+# Buzz bonus for card draw
+# ---------------------------------------------------------------------------
+
+def get_viral_buzz_bonus(db: Session, world_id: str, game_date: str,
+                         wrestler_ids: list) -> float:
+    """Return a card draw multiplier bonus based on recent viral posts.
+
+    Checks the last 7 game days for viral posts by wrestlers on the card.
+    Each viral post adds 0.1 to the bonus (capped at 0.5).
+    """
+    from datetime import datetime, timedelta
+    try:
+        current = datetime.strptime(game_date, "%Y-%m-%d")
+        week_ago = (current - timedelta(days=7)).strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        return 0.0
+
+    viral_count = db.query(SocialMediaPostDB).filter(
+        SocialMediaPostDB.world_id == world_id,
+        SocialMediaPostDB.is_viral == True,
+        SocialMediaPostDB.game_date >= week_ago,
+        SocialMediaPostDB.game_date <= game_date,
+        SocialMediaPostDB.wrestler_id.in_(wrestler_ids),
+    ).count()
+
+    return min(0.5, viral_count * 0.1)
 
 
 # ---------------------------------------------------------------------------
@@ -322,8 +411,19 @@ def generate_feud_exchange(db: Session, wrestler1_id: str, wrestler2_id: str,
     posts = []
     platform = random.choice(["twitter", "twitter", "instagram"])
 
-    # First salvo
+    # First salvo — LLM-as-character or template
     content1 = random.choice(CHALLENGE_POSTS).format(target=w2.name)
+    if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
+        try:
+            from game_service.character_agent import character_social_media_post
+            llm_content = character_social_media_post(
+                db, w1.id, platform, "kayfabe",
+                recent_event=f"feuding with {w2.name}",
+            )
+            if llm_content and len(llm_content.strip()) > 10:
+                content1 = llm_content
+        except Exception:
+            pass
     post1 = SocialMediaPostDB(
         wrestler_id=w1.id, world_id=world_id, game_date=game_date,
         content=content1, post_type="kayfabe", platform=platform,
@@ -335,8 +435,19 @@ def generate_feud_exchange(db: Session, wrestler1_id: str, wrestler2_id: str,
     db.add(post1)
     posts.append(post1)
 
-    # Response
+    # Response — LLM-as-character or template
     content2 = random.choice(RESPONSE_POSTS).format(target=w1.name)
+    if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
+        try:
+            from game_service.character_agent import character_social_media_post
+            llm_content = character_social_media_post(
+                db, w2.id, platform, "kayfabe",
+                recent_event=f"responding to {w1.name}'s callout",
+            )
+            if llm_content and len(llm_content.strip()) > 10:
+                content2 = llm_content
+        except Exception:
+            pass
     post2 = SocialMediaPostDB(
         wrestler_id=w2.id, world_id=world_id, game_date=game_date,
         content=content2, post_type="kayfabe", platform=platform,

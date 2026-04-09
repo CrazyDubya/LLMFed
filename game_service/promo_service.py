@@ -418,9 +418,36 @@ def _determine_emotional_state(life_events, kayfabe_commitment):
 def _generate_persona_promo(wrestler, stats, target_id, db, promo_type):
     """Generate a promo using the persona duality system.
 
-    Priority: archetype voice > emotional state > alignment fallback.
+    Priority: LLM (if enabled) > archetype voice > emotional state > alignment fallback.
     """
     gimmick = _get_current_gimmick(db, wrestler.id)
+
+    # LLM-as-character: the wrestler speaks for themselves
+    import os
+    if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
+        try:
+            from game_service.character_agent import character_speak
+            target_name = ""
+            if target_id:
+                target = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == target_id).first()
+                target_name = target.name if target else ""
+
+            # Build context that tells the character what the promo situation is
+            context = f"You are cutting a {promo_type} promo in the ring."
+            if target_name:
+                context += f" You are calling out {target_name}."
+            if wrestler.morale < 30:
+                tone = "desperate"
+            elif wrestler.popularity > 80:
+                tone = "cocky"
+            else:
+                tone = "default"
+
+            result = character_speak(db, wrestler.id, context, tone=tone)
+            if result and len(result.strip()) > 20:
+                return result
+        except Exception:
+            pass  # Fall through to template system
 
     # If no gimmick data, fall back to legacy system
     if not gimmick or gimmick.archetype not in ARCHETYPE_OPENERS:
