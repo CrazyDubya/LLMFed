@@ -5,6 +5,7 @@ Generates in-character, shoot, and worked-shoot posts. Handles viral moments,
 feud exchanges, and fan engagement tracking.
 """
 
+import os
 import random
 import logging
 from sqlalchemy.orm import Session
@@ -119,7 +120,7 @@ def generate_social_post(db: Session, wrestler_id: str, world_id: str,
         post_type = "worked_shoot"
 
     # Generate content
-    content = _generate_post_content(wrestler, gimmick, backstory, post_type)
+    content = _generate_post_content(wrestler, gimmick, backstory, post_type, db=db)
 
     # Platform selection
     platform = random.choices(
@@ -187,7 +188,7 @@ def generate_social_post(db: Session, wrestler_id: str, world_id: str,
     return post
 
 
-def _generate_post_content(wrestler, gimmick, backstory, post_type):
+def _generate_post_content(wrestler, gimmick, backstory, post_type, db=None):
     """Generate post content based on type and persona."""
     hometown = wrestler.hometown or "the road"
 
@@ -207,21 +208,19 @@ def _generate_post_content(wrestler, gimmick, backstory, post_type):
     else:
         fallback = "..."
 
-    # Try LLM-enhanced post if enabled
+    # LLM-as-character: the wrestler posts as themselves
     import os
-    if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
+    if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes") and db:
         try:
-            from llm_abstraction.provider import get_llm
-            archetype = gimmick.archetype if gimmick else "wrestler"
-            prompt = (
-                f"Write a short social media post (1-2 sentences, under 280 chars) "
-                f"for {wrestler.name}, a {wrestler.alignment or 'face'} wrestler "
-                f"with a {archetype} persona. Post type: {post_type}. "
-                f"No hashtags unless it fits the character."
+            from game_service.character_agent import character_social_media_post
+            result = character_social_media_post(
+                db=db,
+                wrestler_id=wrestler.id,
+                platform="twitter",
+                post_type=post_type,
             )
-            response = get_llm().generate(prompt, max_tokens=80)
-            if response and response.content and len(response.content.strip()) > 10:
-                return response.content.strip()
+            if result and len(result.strip()) > 10:
+                return result
         except Exception:
             pass
 
@@ -412,8 +411,19 @@ def generate_feud_exchange(db: Session, wrestler1_id: str, wrestler2_id: str,
     posts = []
     platform = random.choice(["twitter", "twitter", "instagram"])
 
-    # First salvo
+    # First salvo — LLM-as-character or template
     content1 = random.choice(CHALLENGE_POSTS).format(target=w2.name)
+    if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
+        try:
+            from game_service.character_agent import character_social_media_post
+            llm_content = character_social_media_post(
+                db, w1.id, platform, "kayfabe",
+                recent_event=f"feuding with {w2.name}",
+            )
+            if llm_content and len(llm_content.strip()) > 10:
+                content1 = llm_content
+        except Exception:
+            pass
     post1 = SocialMediaPostDB(
         wrestler_id=w1.id, world_id=world_id, game_date=game_date,
         content=content1, post_type="kayfabe", platform=platform,
@@ -425,8 +435,19 @@ def generate_feud_exchange(db: Session, wrestler1_id: str, wrestler2_id: str,
     db.add(post1)
     posts.append(post1)
 
-    # Response
+    # Response — LLM-as-character or template
     content2 = random.choice(RESPONSE_POSTS).format(target=w1.name)
+    if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
+        try:
+            from game_service.character_agent import character_social_media_post
+            llm_content = character_social_media_post(
+                db, w2.id, platform, "kayfabe",
+                recent_event=f"responding to {w1.name}'s callout",
+            )
+            if llm_content and len(llm_content.strip()) > 10:
+                content2 = llm_content
+        except Exception:
+            pass
     post2 = SocialMediaPostDB(
         wrestler_id=w2.id, world_id=world_id, game_date=game_date,
         content=content2, post_type="kayfabe", platform=platform,

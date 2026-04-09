@@ -422,32 +422,30 @@ def _generate_persona_promo(wrestler, stats, target_id, db, promo_type):
     """
     gimmick = _get_current_gimmick(db, wrestler.id)
 
-    # Try LLM-enhanced promo generation if enabled
+    # LLM-as-character: the wrestler speaks for themselves
     import os
     if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
-        template_fallback = None  # Will be generated below if needed
         try:
-            from llm_abstraction.provider import get_llm
-            archetype = gimmick.archetype if gimmick else "anti_hero"
-            alignment = wrestler.alignment or "face"
+            from game_service.character_agent import character_speak
             target_name = ""
             if target_id:
                 target = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == target_id).first()
                 target_name = target.name if target else ""
 
-            prompt = (
-                f"Write a short wrestling promo (3-4 sentences) for {wrestler.name}, "
-                f"a {alignment} with a {archetype} gimmick. "
-                f"{'They are calling out their rival ' + target_name + '. ' if target_name else ''}"
-                f"Match the tone to the archetype. Keep it dramatic and in-character."
-            )
-            response = get_llm().generate(
-                prompt,
-                system_message="You are a wrestling promo writer. Write in-character promos only.",
-                max_tokens=150,
-            )
-            if response and response.content and len(response.content.strip()) > 20:
-                return response.content.strip()
+            # Build context that tells the character what the promo situation is
+            context = f"You are cutting a {promo_type} promo in the ring."
+            if target_name:
+                context += f" You are calling out {target_name}."
+            if wrestler.morale < 30:
+                tone = "desperate"
+            elif wrestler.popularity > 80:
+                tone = "cocky"
+            else:
+                tone = "default"
+
+            result = character_speak(db, wrestler.id, context, tone=tone)
+            if result and len(result.strip()) > 20:
+                return result
         except Exception:
             pass  # Fall through to template system
 

@@ -1274,20 +1274,23 @@ class MatchSimulator:
         narrative_parts = [s.description for s in highlights[-5:]]  # Last 5 highlights
         narrative = " ".join(narrative_parts)
 
-        # Try LLM-enhanced match summary if enabled
+        # LLM-as-journalist: generate a vivid match narrative
         import os
         if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
             try:
-                from llm_abstraction.provider import get_llm
-                prompt = (
-                    f"Write a 2-3 sentence wrestling match summary. "
-                    f"{attacker.name} defeated {defender.name} via {finish_spot.finish_type or 'pinfall'}. "
-                    f"Key spots: {', '.join(narrative_parts[-3:])}. "
-                    f"Match rating: {self._calculate_rating(participants):.1f} stars."
+                from game_service.character_agent import generate_match_narrative
+                llm_narrative = generate_match_narrative(
+                    winner_name=attacker.name,
+                    loser_name=defender.name,
+                    finish_type=finish_spot.finish_type or "pinfall",
+                    finish_description=finish_spot.description,
+                    rating=self._calculate_rating(participants),
+                    key_spots=narrative_parts,
+                    stipulation=self.stipulation or "",
+                    is_title_match=self.is_title_match,
                 )
-                response = get_llm().generate(prompt, max_tokens=100)
-                if response and response.content and len(response.content.strip()) > 20:
-                    narrative = response.content.strip()
+                if llm_narrative and len(llm_narrative.strip()) > 20:
+                    narrative = llm_narrative
             except Exception:
                 pass  # Keep template narrative
 

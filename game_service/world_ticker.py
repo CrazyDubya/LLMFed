@@ -216,6 +216,9 @@ class WorldTicker:
         # 16. Manager effectiveness tracking (Thursdays)
         self._manager_tick(new_date)
 
+        # 17. Character agency — LLM-driven wrestler decisions
+        self._character_agency_tick(new_date)
+
         self.db.commit()
 
         return {
@@ -985,6 +988,28 @@ class WorldTicker:
                         aftermath.process_match_aftermath(
                             self.db, match, self.world.current_game_date
                         )
+
+                        # Character reactions — LLM-driven wrestlers react to match results
+                        if USE_LLM:
+                            try:
+                                from game_service.character_agent import character_react
+                                winner = self.db.query(GameWrestlerDB).filter(
+                                    GameWrestlerDB.id == result.winner_id
+                                ).first()
+                                if winner:
+                                    event_type = "title_win" if match.is_title_match else "win"
+                                    reaction = character_react(
+                                        self.db, winner.id, event_type,
+                                        f"Defeated opponent via {result.finish_type}. "
+                                        f"Match rating: {result.match_rating:.1f} stars.",
+                                    )
+                                    if reaction:
+                                        self._log_event(
+                                            "character_reaction", reaction,
+                                            [winner.id], importance=4,
+                                        )
+                            except Exception:
+                                pass  # Character reactions are optional
 
                         # Process stable effects from match result
                         try:
@@ -2084,6 +2109,28 @@ class WorldTicker:
                 self.events.append(f"Manager bonds updated for {len(bonds)} pairing(s)")
         except Exception as e:
             logger.error("Manager tick failed: %s", e, exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Phase 17: Character agency — LLM-driven wrestler decisions
+    # ------------------------------------------------------------------
+
+    def _character_agency_tick(self, game_date: str):
+        """LLM-driven characters make autonomous decisions.
+
+        This is the core of 'LLMFed' — wrestlers are LLM-driven agents that
+        call out rivals, propose alliances, demand title shots, react to events,
+        and generate in-character content. When LLMFED_USE_LLM is not set,
+        template-based fallbacks drive the same mechanical effects.
+        """
+        try:
+            from game_service.character_agent import tick_character_agency
+            agent_events = tick_character_agency(
+                self.db, self.world.id, game_date,
+            )
+            for evt in agent_events:
+                self.events.append(f"[CHARACTER] {evt}")
+        except Exception as e:
+            logger.error("Character agency tick failed: %s", e, exc_info=True)
 
     # ------------------------------------------------------------------
     # Seasonal events

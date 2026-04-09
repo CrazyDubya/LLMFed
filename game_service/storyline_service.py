@@ -131,21 +131,26 @@ def create_storyline(db: Session, world_id: str, federation_id: str,
         else:
             description = f"A new {storyline_type} storyline unfolds."
 
-    # Try LLM-enhanced storyline description if enabled
+    # LLM-as-booker: the head booker AI crafts the storyline
     import os
     if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
         try:
-            from llm_abstraction.provider import get_llm
+            from game_service.character_agent import booker_decide_storyline
             names = [w_names.get(wid, "Unknown") for wid in wrestler_ids[:2]]
-            prompt = (
-                f"Write a 1-2 sentence wrestling storyline description for a {storyline_type} "
-                f"between {' and '.join(names)}. Make it dramatic and concise."
+            booker_result = booker_decide_storyline(
+                db, federation_id,
+                names[0] if names else "Unknown",
+                names[1] if len(names) > 1 else "Unknown",
+                context=f"Creating a {storyline_type} storyline.",
             )
-            response = get_llm().generate(prompt, max_tokens=100)
-            if response and response.content and len(response.content.strip()) > 15:
-                description = response.content.strip()
+            if booker_result.get("name"):
+                name = booker_result["name"]
+            if booker_result.get("description"):
+                description = booker_result["description"]
+            if booker_result.get("storyline_type"):
+                storyline_type = booker_result["storyline_type"]
         except Exception:
-            pass  # Keep template description
+            pass  # Keep template values
 
     storyline = StorylineDB(
         world_id=world_id,
