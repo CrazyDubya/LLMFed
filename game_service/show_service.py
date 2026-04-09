@@ -301,16 +301,34 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
                 w1_rank = PUSH_TIERS.index(w1_push.push_tier) if w1_push and w1_push.push_tier in PUSH_TIERS else 2
                 w2_rank = PUSH_TIERS.index(w2_push.push_tier) if w2_push and w2_push.push_tier in PUSH_TIERS else 2
                 planned_winner = w1 if w1_rank <= w2_rank else w2
-                # Climax storylines get gimmick finishes
+                # Climax storylines get gimmick finishes — more variety
                 finish = "pinfall"
                 stipulation = None
-                if sl.status == "climax" and random.random() < 0.4:
-                    stipulation = random.choice(["No DQ", "Steel Cage", "Last Man Standing"])
+                match_type = "singles"
+                if sl.status == "climax" and random.random() < 0.5:
+                    gimmick_choice = random.choices(
+                        ["Steel Cage", "Ladder", "Tables", "Hell in a Cell",
+                         "No DQ", "Last Man Standing", "Iron Man"],
+                        weights=[20, 15, 15, 10, 20, 15, 5], k=1,
+                    )[0]
+                    stipulation = gimmick_choice
+                    if gimmick_choice == "Steel Cage":
+                        match_type = "cage"
+                    elif gimmick_choice == "Ladder":
+                        match_type = "ladder"
+                        finish = "stipulation"
+                    elif gimmick_choice == "Tables":
+                        match_type = "tables"
+                        finish = "stipulation"
+                    elif gimmick_choice == "Hell in a Cell":
+                        match_type = "hell_in_a_cell"
+                    elif gimmick_choice == "Iron Man":
+                        match_type = "iron_man"
 
                 seg = book_match(
                     db, show.id, show.world_id,
                     wrestler_ids=[w1.id, w2.id],
-                    match_type="singles",
+                    match_type=match_type,
                     stipulation=stipulation,
                     planned_winner_id=planned_winner.id,
                     planned_finish=finish,
@@ -497,11 +515,12 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
                 is_title = True
                 champ_id = champ.id
 
-        # Hardcore booking style adds stipulations
+        # Hardcore booking style adds stipulations and gimmick matches
         stipulation = None
         if booking_style == "hardcore" and random.random() < 0.4:
             stipulation = random.choice([
-                "No DQ", "Falls Count Anywhere", "Street Fight", "Extreme Rules"
+                "No DQ", "Falls Count Anywhere", "Street Fight", "Extreme Rules",
+                "Tables", "Steel Cage", "Ladder",
             ])
 
         finish = random.choices(

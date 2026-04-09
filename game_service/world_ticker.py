@@ -796,12 +796,18 @@ class WorldTicker:
     def _npc_book_ppv_show(self, fed: GameFederationDB, ppv):
         """Book and create a PPV show from the PPV calendar."""
         show_svc = _get_show_service()
+        ppv_capacity = ppv.capacity or 15000
+        if not ppv.venue:
+            from game_service.world_service import pick_venue
+            ppv_venue = pick_venue(fed.home_region or "Northeast", ppv_capacity)
+        else:
+            ppv_venue = ppv.venue
         show = show_svc.create_show(
             self.db, self.world.id, fed.id,
             name=ppv.name,
             show_type="ppv",
-            venue=ppv.venue or f"{fed.home_region} Arena",
-            capacity=ppv.capacity or 15000,
+            venue=ppv_venue,
+            capacity=ppv_capacity,
             game_date=self.world.current_game_date,
         )
         ppv.show_id = show.id
@@ -835,12 +841,15 @@ class WorldTicker:
             else:
                 show_name = f"{fed.short_name or fed.name} Weekly (Building to {next_ppv.name})"
 
+        weekly_cap = random.randint(2000, 10000)
+        from game_service.world_service import pick_venue
+        weekly_venue = pick_venue(fed.home_region or "Northeast", weekly_cap)
         show = show_svc.create_show(
             self.db, self.world.id, fed.id,
             name=show_name,
             show_type="weekly",
-            venue=f"{fed.home_region} Arena",
-            capacity=random.randint(2000, 10000),
+            venue=weekly_venue,
+            capacity=weekly_cap,
             game_date=self.world.current_game_date,
         )
         segments = show_svc.npc_book_card(self.db, show, next_ppv=next_ppv)
