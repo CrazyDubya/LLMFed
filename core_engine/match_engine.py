@@ -393,6 +393,9 @@ class MatchSpot:
     crowd_reaction: str = ""
     heat_change: int = 0
     description: str = ""
+    is_botch: bool = False  # Move went wrong
+    botch_severity: int = 0  # 0=none, 1=minor (stumble), 2=bad (sloppy), 3=dangerous (injury risk)
+    is_shoot: bool = False  # Wrestler went into business for themselves
 
 
 @dataclass
@@ -419,6 +422,10 @@ class MatchResult:
     narrative_summary: str = ""
     interference_occurred: bool = False
     post_match_angle: Optional[Dict[str, Any]] = None
+    botch_count: int = 0  # How many botches occurred
+    botch_events: List[Dict[str, Any]] = field(default_factory=list)  # [{attacker, victim, severity, move}]
+    went_into_business: bool = False  # Someone deviated from the planned finish
+    shoot_wrestler_id: Optional[str] = None  # Who went into business
 
 
 # ---------------------------------------------------------------------------
@@ -452,6 +459,9 @@ class MatchSimulator:
         self.tick = 0
         self._interference_happened = False
         self._dq_triggered = False
+        self._shoot_occurred = False
+        self._shoot_wrestler_id = None
+        self._trust_penalty = 0.0  # Set by caller from relationship trust_level
 
     def simulate(self, participants: List[MatchParticipantState]) -> MatchResult:
         """Run the full match simulation."""
@@ -858,6 +868,39 @@ class MatchSimulator:
         if attacker.hometown_bonus:
             damage = int(damage * 1.1)
 
+        # --- BOTCH CHECK: moves can go wrong ---
+        # Higher-damage moves are riskier. Fatigue, low skill, and low trust increase botch chance.
+        is_botch = False
+        botch_severity = 0
+        move_difficulty = base_damage / 15.0  # 0.0-1.0 scale; power moves = harder to execute
+        if category == "aerial":
+            move_difficulty += 0.15  # Aerial moves are inherently riskier
+        fatigue_factor = max(0, (100 - attacker.stamina) / 200)  # Tired = sloppy
+        skill_factor = max(0, (100 - attack_stat) / 300)  # Low skill = more botches
+        trust_factor = getattr(self, '_trust_penalty', 0.0)  # Low trust with opponent
+
+        botch_chance = (move_difficulty * 0.04) + fatigue_factor + skill_factor + trust_factor
+        botch_chance = min(0.12, botch_chance)  # Cap at 12%
+
+        if random.random() < botch_chance:
+            is_botch = True
+            severity_roll = random.random()
+            if severity_roll < 0.6:
+                botch_severity = 1  # Minor: stumble, awkward landing
+            elif severity_roll < 0.9:
+                botch_severity = 2  # Bad: sloppy execution, crowd notices
+            else:
+                botch_severity = 3  # Dangerous: potential injury
+
+            # Botch modifies damage and description
+            if botch_severity == 1:
+                damage = max(1, damage // 2)
+            elif botch_severity == 2:
+                damage = max(1, damage // 3)
+            elif botch_severity == 3:
+                # Dangerous botch can hurt the DEFENDER more than intended
+                damage = int(damage * 1.3)
+
         # Check for reversal
         was_reversed = False
         reversal_move = None
@@ -868,14 +911,33 @@ class MatchSimulator:
         ) / 500
         reversal_chance *= (defender.momentum / 100)
 
-        if random.random() < reversal_chance:
+        if not is_botch and random.random() < reversal_chance:
             was_reversed = True
             rev_cat = self._pick_move_category(defender)
             reversal_move, rev_dmg, _ = random.choice(MOVES[rev_cat])
             damage = int(rev_dmg * 0.7)  # Reversals do less damage
 
         # Build description
-        if was_reversed:
+        if is_botch:
+            botch_descs = {
+                1: [
+                    f"{attacker.name} goes for {move_name} but stumbles slightly — lands it awkwardly on {defender.name}.",
+                    f"{attacker.name} nearly misses the {move_name} — sloppier than usual.",
+                    f"Slight miscommunication — {attacker.name}'s {move_name} doesn't connect cleanly.",
+                ],
+                2: [
+                    f"{attacker.name} BOTCHES the {move_name}! That looked BAD. {defender.name} barely protected themselves.",
+                    f"That {move_name} went wrong! {attacker.name} and {defender.name} are both shaken up.",
+                    f"Ugly execution on the {move_name} — the crowd groans. {attacker.name} looks frustrated.",
+                ],
+                3: [
+                    f"DANGEROUS BOTCH! {attacker.name}'s {move_name} drops {defender.name} RIGHT on their head!",
+                    f"OH NO! {attacker.name}'s {move_name} goes horribly wrong — {defender.name} lands neck-first!",
+                    f"SCARY MOMENT! The {move_name} from {attacker.name} was NOT supposed to land like that!",
+                ],
+            }
+            desc = random.choice(botch_descs.get(botch_severity, botch_descs[1]))
+        elif was_reversed:
             desc = f"{attacker.name} goes for {move_name}, but {defender.name} {random.choice(REVERSAL_DESCRIPTIONS)} {reversal_move}!"
         else:
             desc = f"{attacker.name} hits {defender.name} with a devastating {move_name}!"
@@ -883,7 +945,14 @@ class MatchSimulator:
         # Crowd reaction
         heat_change = 0
         crowd = ""
-        if damage >= 10 or was_reversed:
+        if is_botch:
+            if botch_severity >= 2:
+                crowd = "The crowd goes quiet... that didn't look right."
+                heat_change = -3  # Botches kill crowd heat
+            elif botch_severity == 1:
+                crowd = "A slight stumble there..."
+                heat_change = -1
+        elif damage >= 10 or was_reversed:
             crowd = random.choice(CROWD_REACTIONS)
             heat_change = random.randint(1, 3)
             if attacker.alignment == "face" and not was_reversed:
@@ -903,6 +972,8 @@ class MatchSimulator:
             crowd_reaction=crowd,
             heat_change=heat_change,
             description=desc,
+            is_botch=is_botch,
+            botch_severity=botch_severity,
         )
 
     def _generate_stipulation_spot(self, attacker: MatchParticipantState,
@@ -1057,12 +1128,63 @@ class MatchSimulator:
 
     def _attempt_finish(self, attacker: MatchParticipantState,
                         defender: MatchParticipantState) -> Optional[MatchSpot]:
-        """Attempt to finish the match."""
+        """Attempt to finish the match.
+
+        Includes "going into business" mechanic: a wrestler with high ego,
+        high frustration, and low morale may refuse to lose as planned,
+        shooting on their opponent to win when they were supposed to lose.
+        """
         # Determine if this is the right person to win
         should_win = True
         if self.planned_winner_id and attacker.wrestler_id != self.planned_winner_id:
             # Not the planned winner — much less likely to hit finish
             should_win = random.random() < 0.08  # 8% chance of upset
+
+            # --- GOING INTO BUSINESS: wrestler refuses to do the job ---
+            # Check if this wrestler has the ego/frustration to go into business
+            ego = attacker.stats.get("ego", 50)
+            frustration = getattr(attacker, '_frustration', 0)
+            morale_mod = getattr(attacker, '_morale', 50)
+
+            # Conditions: high ego + high frustration + low morale + title match stakes
+            shoot_chance = 0.0
+            if ego > 70:
+                shoot_chance += (ego - 70) / 300  # Up to ~0.10
+            if frustration > 60:
+                shoot_chance += (frustration - 60) / 400  # Up to ~0.10
+            if morale_mod < 30:
+                shoot_chance += (30 - morale_mod) / 300  # Up to ~0.10
+            if self.is_title_match:
+                shoot_chance *= 1.5  # Higher stakes = higher temptation
+
+            shoot_chance = min(0.06, shoot_chance)  # Cap at 6% — this is rare and dramatic
+
+            if shoot_chance > 0 and random.random() < shoot_chance:
+                # GOING INTO BUSINESS — wrestler refuses to lose
+                self._shoot_occurred = True
+                self._shoot_wrestler_id = attacker.wrestler_id
+                should_win = True  # They're going to win whether planned or not
+
+                desc = (
+                    f"{attacker.name} was supposed to lose — but they're NOT going down! "
+                    f"{attacker.name} hits the {attacker.finisher_name} with REAL intent! "
+                    f"This was NOT in the script!"
+                )
+                return MatchSpot(
+                    tick=self.tick,
+                    attacker_id=attacker.wrestler_id,
+                    defender_id=defender.wrestler_id,
+                    move_name=attacker.finisher_name,
+                    move_type="finisher",
+                    damage=25,  # Extra damage — they're not protecting their opponent
+                    is_finisher=True,
+                    is_finish=True,
+                    finish_type="pinfall",
+                    crowd_reaction="The crowd doesn't know what just happened... something felt WRONG.",
+                    heat_change=8,
+                    description=desc,
+                    is_shoot=True,
+                )
 
         if not should_win:
             return None
@@ -1294,16 +1416,44 @@ class MatchSimulator:
             except Exception:
                 pass  # Keep template narrative
 
+        # Collect botch events for post-match processing
+        botch_events = []
+        botch_count = 0
+        for s in self.spots:
+            if s.is_botch:
+                botch_count += 1
+                botch_events.append({
+                    "attacker_id": s.attacker_id,
+                    "victim_id": s.defender_id,
+                    "severity": s.botch_severity,
+                    "move": s.move_name,
+                    "tick": s.tick,
+                })
+
+        # Botches hurt match rating
+        rating = self._calculate_rating(participants)
+        if botch_count > 0:
+            botch_penalty = botch_count * 0.15
+            for be in botch_events:
+                if be["severity"] >= 3:
+                    botch_penalty += 0.3  # Dangerous botches tank the rating
+            rating = max(0.5, rating - botch_penalty)
+            rating = round(rating, 1)
+
         return MatchResult(
             winner_id=finish_spot.attacker_id,
             finish_type=finish_spot.finish_type or "pinfall",
             finish_description=finish_spot.description,
-            match_rating=self._calculate_rating(participants),
+            match_rating=rating,
             crowd_heat=self._calculate_heat(),
             duration_ticks=self.tick,
             spots=self.spots,
             narrative_summary=narrative,
             interference_occurred=self._interference_happened,
+            botch_count=botch_count,
+            botch_events=botch_events,
+            went_into_business=self._shoot_occurred,
+            shoot_wrestler_id=self._shoot_wrestler_id,
         )
 
 
@@ -1410,8 +1560,9 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None) -
     except Exception:
         pass  # Manager integration is optional
 
-    # Calculate rivalry heat between participants
+    # Calculate rivalry heat and trust between participants
     rivalry_heat = 0
+    trust_penalty = 0.0
     try:
         from models.game_models import WrestlerRelationshipDB
         if len(participant_states) >= 2 and match.world_id:
@@ -1426,8 +1577,37 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None) -
             ).first()
             if rel:
                 rivalry_heat = rel.rivalry_heat or 0
+                # Low trust = higher botch chance (wrestlers don't protect each other)
+                trust = rel.trust_level if rel.trust_level is not None else 50
+                if trust < 30:
+                    trust_penalty = (30 - trust) / 300  # Up to +0.10 botch chance
     except Exception:
         pass  # Rivalry heat is optional
+
+    # Load frustration and morale for going-into-business checks
+    try:
+        from models.game_models import WrestlerGoalDB
+        for p_state in participant_states:
+            wrestler = db.query(GameWrestlerDB).filter(
+                GameWrestlerDB.id == p_state.wrestler_id
+            ).first()
+            if wrestler:
+                p_state._morale = wrestler.morale or 50
+                # Get max frustration from active goals
+                max_frust = db.query(WrestlerGoalDB).filter(
+                    WrestlerGoalDB.wrestler_id == p_state.wrestler_id,
+                    WrestlerGoalDB.status == "active",
+                ).all()
+                p_state._frustration = max((g.frustration for g in max_frust), default=0)
+                # Get ego from backstory
+                from models.game_models import WrestlerBackstoryDB
+                backstory = db.query(WrestlerBackstoryDB).filter(
+                    WrestlerBackstoryDB.wrestler_id == p_state.wrestler_id
+                ).first()
+                if backstory and backstory.real_personality:
+                    p_state.stats["ego"] = backstory.real_personality.get("ego", 50)
+    except Exception:
+        pass  # Frustration/ego loading is optional
 
     # Show momentum passed via match attribute (set by world_ticker)
     show_momentum = getattr(match, "_show_momentum", 50)
@@ -1443,6 +1623,7 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None) -
         rivalry_heat=rivalry_heat,
         show_momentum=show_momentum,
     )
+    simulator._trust_penalty = trust_penalty
     result = simulator.simulate(participant_states)
 
     # Apply chemistry bonus from wrestler relationships
@@ -1479,6 +1660,9 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None) -
             "highlight_tier": (3 if s.is_finisher or s.is_finish else
                                2 if s.is_near_fall or s.was_reversed or s.damage >= 10 else 1),
             "description": s.description,
+            "is_botch": s.is_botch,
+            "botch_severity": s.botch_severity,
+            "is_shoot": s.is_shoot,
         }
         for s in result.spots
     ]

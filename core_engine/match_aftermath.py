@@ -65,6 +65,12 @@ def process_match_aftermath(db: Session, match: MatchDB, game_date: str):
     # 9. Career highlights (Group 5) and specialization growth (Group 6)
     _post_match_lifecycle(db, match, participants, game_date)
 
+    # 10. Botch consequences — trust degradation, injury, history entries
+    _process_botch_consequences(db, match, game_date)
+
+    # 11. Going-into-business consequences — discipline, locker room heat, trust destruction
+    _process_shoot_consequences(db, match, game_date)
+
 
 def _handle_title_result(db: Session, match: MatchDB,
                          winners: list, losers: list, game_date: str):
@@ -458,3 +464,239 @@ def compute_win_loss(db: Session, wrestler_id: str) -> dict:
 
     losses = total - wins - draws
     return {"wins": wins, "losses": losses, "draws": draws}
+
+
+# ---------------------------------------------------------------------------
+# Botch consequences
+# ---------------------------------------------------------------------------
+
+def _process_botch_consequences(db: Session, match: MatchDB, game_date: str):
+    """Handle the aftermath of botched moves.
+
+    Dangerous botches (severity 3):
+    - Victim may be injured
+    - Trust between wrestlers degrades
+    - History entry recorded for both wrestlers (memory for character agent)
+    - Locker room standing drops for the botcher
+
+    Bad botches (severity 2):
+    - Minor trust degradation
+    - History entry for the botcher
+    """
+    # The match result's botch_events are stored in simulation_log
+    sim_log = match.simulation_log or []
+    botch_events = [s for s in sim_log if s.get("is_botch")]
+    if not botch_events:
+        return
+
+    for botch in botch_events:
+        severity = botch.get("botch_severity", 0)
+        if severity < 2:
+            continue  # Minor stumbles don't have lasting consequences
+
+        attacker_id = botch.get("attacker")
+        victim_id = botch.get("defender")
+        move_name = botch.get("move", "unknown move")
+
+        attacker = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == attacker_id).first()
+        victim = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == victim_id).first()
+        if not attacker or not victim:
+            continue
+
+        # --- Trust degradation between these wrestlers ---
+        rel = db.query(WrestlerRelationshipDB).filter(
+            WrestlerRelationshipDB.world_id == match.world_id,
+            WrestlerRelationshipDB.wrestler1_id.in_([attacker_id, victim_id]),
+            WrestlerRelationshipDB.wrestler2_id.in_([attacker_id, victim_id]),
+        ).first()
+        if rel:
+            trust_drop = 5 if severity == 2 else 15  # Dangerous botch = big trust hit
+            rel.trust_level = max(0, (rel.trust_level or 50) - trust_drop)
+            logger.info("Trust between %s and %s dropped by %d to %d (botch on %s)",
+                        attacker.name, victim.name, trust_drop, rel.trust_level, move_name)
+
+        # --- History entries: both wrestlers remember ---
+        if severity >= 3:
+            # Dangerous botch — victim remembers being hurt
+            db.add(WrestlerHistoryDB(
+                wrestler_id=victim_id,
+                game_date=game_date,
+                event_type="botch_victim",
+                description=f"Was hurt by a botched {move_name} from {attacker.name}",
+                details={"caused_by": attacker_id, "caused_by_name": attacker.name,
+                         "move": move_name, "severity": severity, "match_id": match.id},
+            ))
+            # Attacker remembers hurting someone
+            db.add(WrestlerHistoryDB(
+                wrestler_id=attacker_id,
+                game_date=game_date,
+                event_type="botch_perpetrator",
+                description=f"Botched {move_name} and hurt {victim.name}",
+                details={"victim": victim_id, "victim_name": victim.name,
+                         "move": move_name, "severity": severity, "match_id": match.id},
+            ))
+
+            # Injury check from dangerous botch
+            stats = db.query(WrestlerStatsDB).filter(
+                WrestlerStatsDB.wrestler_id == victim_id
+            ).first()
+            injury_risk = 0.25 + (stats.injury_prone if stats else 30) / 200
+            if random.random() < injury_risk:
+                weeks_out = random.randint(1, 8)
+                from game_service.world_ticker import advance_game_date
+                victim.is_injured = True
+                victim.injury_return_date = advance_game_date(game_date, weeks_out * 7)
+                victim.condition = max(0, victim.condition - random.randint(15, 35))
+
+                db.add(GameNarrativeLogDB(
+                    world_id=match.world_id,
+                    game_date=game_date, tick=0,
+                    event_type="botch_injury",
+                    description=f"{victim.name} injured by botched {move_name} from {attacker.name}! Out {weeks_out} weeks.",
+                    involved_entities=[victim_id, attacker_id],
+                    importance=8,
+                ))
+                logger.info("BOTCH INJURY: %s hurt by %s's %s, out %d weeks",
+                            victim.name, attacker.name, move_name, weeks_out)
+
+            # Locker room standing drops for the botcher
+            if attacker.locker_room_standing in ("leader", "respected"):
+                attacker.locker_room_standing = "neutral"
+            elif attacker.locker_room_standing == "neutral":
+                attacker.locker_room_standing = "disliked"
+
+        elif severity == 2:
+            # Bad botch — attacker remembers
+            db.add(WrestlerHistoryDB(
+                wrestler_id=attacker_id,
+                game_date=game_date,
+                event_type="botch_perpetrator",
+                description=f"Botched {move_name} against {victim.name}",
+                details={"victim": victim_id, "victim_name": victim.name,
+                         "move": move_name, "severity": severity, "match_id": match.id},
+            ))
+
+
+# ---------------------------------------------------------------------------
+# Going-into-business consequences
+# ---------------------------------------------------------------------------
+
+def _process_shoot_consequences(db: Session, match: MatchDB, game_date: str):
+    """Handle consequences when a wrestler goes into business for themselves.
+
+    This is the nuclear option — a wrestler refused to do the planned job.
+    Consequences are severe and long-lasting:
+    - Trust with opponent DESTROYED
+    - Locker room standing tanks
+    - Federation may fine/suspend
+    - History entry creates a permanent memory
+    - Morale impact on the victim (humiliated, angry)
+    - The shooter gets a temporary popularity boost (controversy sells)
+    """
+    sim_log = match.simulation_log or []
+    shoot_spots = [s for s in sim_log if s.get("is_shoot")]
+    if not shoot_spots:
+        return
+
+    shoot_spot = shoot_spots[0]
+    shooter_id = shoot_spot.get("attacker")
+    victim_id = shoot_spot.get("defender")
+
+    shooter = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == shooter_id).first()
+    victim = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == victim_id).first()
+    if not shooter or not victim:
+        return
+
+    # --- Trust DESTROYED between these wrestlers ---
+    rel = db.query(WrestlerRelationshipDB).filter(
+        WrestlerRelationshipDB.world_id == match.world_id,
+        WrestlerRelationshipDB.wrestler1_id.in_([shooter_id, victim_id]),
+        WrestlerRelationshipDB.wrestler2_id.in_([shooter_id, victim_id]),
+    ).first()
+    if rel:
+        rel.trust_level = max(0, min(10, (rel.trust_level or 50) - 40))  # Near-zero
+        rel.rivalry_heat = min(100, (rel.rivalry_heat or 0) + 30)  # Real heat
+        rel.real_relationship = "enemies"  # This is personal now
+        logger.info("SHOOT: Trust between %s and %s DESTROYED (now %d)",
+                    shooter.name, victim.name, rel.trust_level)
+
+    # --- Locker room standing tanks for the shooter ---
+    shooter.locker_room_standing = "toxic"
+
+    # --- Federation discipline ---
+    from models.game_models import ContractDB, GameFederationDB
+    contract = db.query(ContractDB).filter(
+        ContractDB.wrestler_id == shooter_id,
+        ContractDB.status == "active",
+    ).first()
+    if contract:
+        fed = db.query(GameFederationDB).filter(
+            GameFederationDB.id == contract.federation_id
+        ).first()
+        if fed:
+            # Fine: 2 weeks salary
+            fine = contract.salary_weekly * 2
+            fed.budget += fine  # Federation collects the fine
+            db.add(GameNarrativeLogDB(
+                world_id=match.world_id,
+                game_date=game_date, tick=0,
+                event_type="discipline_fine",
+                description=f"{shooter.name} fined ${fine:,.0f} for going into business for themselves!",
+                involved_entities=[shooter_id, fed.id],
+                importance=9,
+            ))
+
+            # Strict federations may also suspend
+            if (fed.kayfabe_strictness or 50) > 60:
+                from game_service.world_ticker import advance_game_date
+                suspension_weeks = random.randint(2, 6)
+                shooter.is_injured = True  # Use injury system for suspension
+                shooter.injury_return_date = advance_game_date(game_date, suspension_weeks * 7)
+                db.add(GameNarrativeLogDB(
+                    world_id=match.world_id,
+                    game_date=game_date, tick=0,
+                    event_type="discipline_suspension",
+                    description=f"{shooter.name} SUSPENDED for {suspension_weeks} weeks! Management is furious!",
+                    involved_entities=[shooter_id, fed.id],
+                    importance=9,
+                ))
+
+    # --- History entries: permanent memory for both wrestlers ---
+    db.add(WrestlerHistoryDB(
+        wrestler_id=shooter_id,
+        game_date=game_date,
+        event_type="went_into_business",
+        description=f"Went into business for themselves against {victim.name} — refused to do the job",
+        details={"victim": victim_id, "victim_name": victim.name,
+                 "match_id": match.id, "was_title_match": match.is_title_match},
+    ))
+    db.add(WrestlerHistoryDB(
+        wrestler_id=victim_id,
+        game_date=game_date,
+        event_type="business_victim",
+        description=f"{shooter.name} went into business for themselves — refused to lose to you",
+        details={"shooter": shooter_id, "shooter_name": shooter.name,
+                 "match_id": match.id},
+    ))
+
+    # --- Morale impact ---
+    victim.morale = max(0, victim.morale - random.randint(10, 20))
+    shooter.morale = max(0, min(100, shooter.morale + random.randint(-5, 5)))  # Mixed feelings
+
+    # --- Controversial popularity boost for shooter (controversy sells) ---
+    shooter.popularity = min(100, shooter.popularity + random.randint(2, 8))
+
+    # --- Narrative log for the world ---
+    db.add(GameNarrativeLogDB(
+        world_id=match.world_id,
+        game_date=game_date, tick=0,
+        event_type="went_into_business",
+        description=(
+            f"BACKSTAGE CHAOS: {shooter.name} went into business for themselves against {victim.name}! "
+            f"The planned finish was thrown out the window. Management is LIVID."
+        ),
+        involved_entities=[shooter_id, victim_id],
+        importance=10,  # Maximum importance — this is a defining event
+    ))
+
+    logger.info("SHOOT: %s went into business against %s!", shooter.name, victim.name)

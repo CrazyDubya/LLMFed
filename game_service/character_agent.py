@@ -238,6 +238,101 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
         if stats.mic_skill > 80:
             parts.append("You are one of the best talkers in the business.")
 
+    # --- MEMORY: Past events that shape who you are ---
+    try:
+        from models.game_models import WrestlerHistoryDB, CareerHighlightDB
+        # Recent significant events (last 15)
+        history = db.query(WrestlerHistoryDB).filter(
+            WrestlerHistoryDB.wrestler_id == wrestler_id,
+        ).order_by(WrestlerHistoryDB.game_date.desc()).limit(15).all()
+
+        memory_lines = []
+        for evt in reversed(history):  # Chronological order
+            if evt.event_type == "betrayal_victim":
+                memory_lines.append(f"You were BETRAYED: {evt.description}")
+            elif evt.event_type == "betrayal_perpetrator":
+                memory_lines.append(f"You turned on someone: {evt.description}")
+            elif evt.event_type == "title_win":
+                memory_lines.append(f"Career high — you won a title: {evt.description}")
+            elif evt.event_type == "title_loss":
+                memory_lines.append(f"You lost your championship: {evt.description}")
+            elif evt.event_type == "injury":
+                memory_lines.append(f"You were injured: {evt.description}")
+            elif evt.event_type == "botch_victim":
+                details = evt.details or {}
+                culprit = details.get("caused_by_name", "someone")
+                memory_lines.append(f"You were hurt by a botched move from {culprit}. You remember this.")
+            elif evt.event_type == "botch_perpetrator":
+                details = evt.details or {}
+                victim = details.get("victim_name", "someone")
+                memory_lines.append(f"You botched a move and hurt {victim}. This weighs on you.")
+            elif evt.event_type == "went_into_business":
+                memory_lines.append(f"You went into business for yourself: {evt.description}")
+            elif evt.event_type == "business_victim":
+                details = evt.details or {}
+                shooter = details.get("shooter_name", "someone")
+                memory_lines.append(f"{shooter} went into business for themselves against you. You don't forget.")
+            elif evt.event_type == "goal_completed":
+                memory_lines.append(f"Achievement unlocked: {evt.description}")
+            elif evt.event_type in ("match_win", "match_loss"):
+                # Only include notable ones
+                details = evt.details or {}
+                if details.get("notable"):
+                    memory_lines.append(evt.description)
+
+        if memory_lines:
+            parts.append("YOUR MEMORIES (these shape how you think and feel):")
+            for ml in memory_lines[-10:]:  # Cap at 10 most recent
+                parts.append(f"- {ml}")
+
+        # Career highlights — the defining moments
+        highlights = db.query(CareerHighlightDB).filter(
+            CareerHighlightDB.wrestler_id == wrestler_id,
+            CareerHighlightDB.significance >= 7,
+        ).order_by(CareerHighlightDB.significance.desc()).limit(3).all()
+        if highlights:
+            parts.append("YOUR DEFINING MOMENTS:")
+            for h in highlights:
+                parts.append(f"- {h.highlight_type}: {h.description or 'A moment that defined your career.'}")
+    except Exception:
+        pass  # Memory is optional enrichment
+
+    # --- GOALS: What drives you ---
+    try:
+        from models.game_models import WrestlerGoalDB
+        goals = db.query(WrestlerGoalDB).filter(
+            WrestlerGoalDB.wrestler_id == wrestler_id,
+            WrestlerGoalDB.status == "active",
+        ).all()
+        if goals:
+            parts.append("YOUR CURRENT GOALS (these drive your decisions):")
+            for g in goals[:4]:
+                frustration_note = ""
+                if g.frustration > 60:
+                    frustration_note = " — you are FRUSTRATED this hasn't happened yet"
+                elif g.frustration > 30:
+                    frustration_note = " — you're getting impatient"
+                parts.append(f"- {g.goal_type.replace('_', ' ')} (progress: {g.progress}%){frustration_note}")
+    except Exception:
+        pass  # Goals are optional enrichment
+
+    # --- GRUDGES & TRUST: Who you trust and who you don't ---
+    try:
+        for rel in rels[:6]:
+            other_id = rel.wrestler2_id if rel.wrestler1_id == wrestler_id else rel.wrestler1_id
+            other = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == other_id).first()
+            if not other:
+                continue
+            trust = rel.trust_level or 50
+            if trust < 20:
+                parts.append(f"You deeply DISTRUST {other.name}. Something happened between you two.")
+            elif trust < 35:
+                parts.append(f"You are wary of {other.name}. Trust has been broken.")
+            elif trust > 80 and rel.real_relationship == "friends":
+                parts.append(f"You trust {other.name} completely — a true friend in this business.")
+    except Exception:
+        pass  # Trust context is optional
+
     parts.append(
         "Stay in character at all times. Never break the fourth wall. "
         "Keep responses concise (2-4 sentences unless asked for more)."
