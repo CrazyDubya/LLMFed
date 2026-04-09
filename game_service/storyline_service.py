@@ -131,6 +131,22 @@ def create_storyline(db: Session, world_id: str, federation_id: str,
         else:
             description = f"A new {storyline_type} storyline unfolds."
 
+    # Try LLM-enhanced storyline description if enabled
+    import os
+    if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
+        try:
+            from llm_abstraction.provider import get_llm
+            names = [w_names.get(wid, "Unknown") for wid in wrestler_ids[:2]]
+            prompt = (
+                f"Write a 1-2 sentence wrestling storyline description for a {storyline_type} "
+                f"between {' and '.join(names)}. Make it dramatic and concise."
+            )
+            response = get_llm().generate(prompt, max_tokens=100)
+            if response and response.content and len(response.content.strip()) > 15:
+                description = response.content.strip()
+        except Exception:
+            pass  # Keep template description
+
     storyline = StorylineDB(
         world_id=world_id,
         federation_id=federation_id,
@@ -297,6 +313,24 @@ def check_match_storyline_triggers(db: Session, match: MatchDB, game_date: str):
         quality_bonus = max(0, int((rating - 3.0) * 3))  # +3 per star above 3.0
         card_bonus = 3 if getattr(match, 'card_position', '') == 'main_event' else 0
         heat_delta = base_heat + quality_bonus + card_bonus
+
+        # Seasonal heat multiplier: storylines get a boost during PPV build windows
+        try:
+            from game_service.ppv_calendar_service import get_next_ppv, is_build_window
+            from models.game_models import ShowDB, ShowSegmentDB
+            seg = match.segment
+            if seg:
+                show = db.query(ShowDB).filter(ShowDB.id == seg.show_id).first()
+                if show:
+                    next_ppv = get_next_ppv(db, show.federation_id, show.game_date)
+                    if next_ppv and is_build_window(show.game_date, next_ppv.scheduled_date):
+                        if getattr(next_ppv, 'is_crown_jewel', False):
+                            heat_delta = int(heat_delta * 2.0)  # Crown Jewel build: +100%
+                        else:
+                            heat_delta = int(heat_delta * 1.5)  # Regular PPV build: +50%
+        except Exception:
+            pass  # PPV calendar system is optional
+
         progress_storyline(
             db, existing, "match_result", heat_delta,
             description=f"Their rivalry intensified after a {rating:.1f}-star match!",

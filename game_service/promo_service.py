@@ -418,9 +418,38 @@ def _determine_emotional_state(life_events, kayfabe_commitment):
 def _generate_persona_promo(wrestler, stats, target_id, db, promo_type):
     """Generate a promo using the persona duality system.
 
-    Priority: archetype voice > emotional state > alignment fallback.
+    Priority: LLM (if enabled) > archetype voice > emotional state > alignment fallback.
     """
     gimmick = _get_current_gimmick(db, wrestler.id)
+
+    # Try LLM-enhanced promo generation if enabled
+    import os
+    if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
+        template_fallback = None  # Will be generated below if needed
+        try:
+            from llm_abstraction.provider import get_llm
+            archetype = gimmick.archetype if gimmick else "anti_hero"
+            alignment = wrestler.alignment or "face"
+            target_name = ""
+            if target_id:
+                target = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == target_id).first()
+                target_name = target.name if target else ""
+
+            prompt = (
+                f"Write a short wrestling promo (3-4 sentences) for {wrestler.name}, "
+                f"a {alignment} with a {archetype} gimmick. "
+                f"{'They are calling out their rival ' + target_name + '. ' if target_name else ''}"
+                f"Match the tone to the archetype. Keep it dramatic and in-character."
+            )
+            response = get_llm().generate(
+                prompt,
+                system_message="You are a wrestling promo writer. Write in-character promos only.",
+                max_tokens=150,
+            )
+            if response and response.content and len(response.content.strip()) > 20:
+                return response.content.strip()
+        except Exception:
+            pass  # Fall through to template system
 
     # If no gimmick data, fall back to legacy system
     if not gimmick or gimmick.archetype not in ARCHETYPE_OPENERS:

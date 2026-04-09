@@ -232,6 +232,10 @@ class MatchSimulator:
         if len(teams) >= 2 and len(participants) >= 4:
             return self._simulate_tag_match(participants)
 
+        # Multi-person match (triple threat, fatal four way, battle royal)
+        if len(participants) > 2:
+            return self._simulate_multi_person(participants)
+
         return self._simulate_singles(participants)
 
     def _simulate_singles(self, participants: List[MatchParticipantState]) -> MatchResult:
@@ -282,6 +286,93 @@ class MatchSimulator:
             winner_id=None,
             finish_type="time_limit_draw",
             finish_description="The match ends in a time limit draw!",
+            match_rating=self._calculate_rating(participants),
+            crowd_heat=self._calculate_heat(),
+            duration_ticks=self.tick,
+            spots=self.spots,
+        )
+
+    def _simulate_multi_person(self, participants: List[MatchParticipantState]) -> MatchResult:
+        """Simulate a multi-person match (triple threat, fatal four way, battle royal).
+
+        Uses elimination logic: when a participant's endurance drops low, they can
+        be eliminated. The last two standing get a proper finishing sequence.
+        """
+        min_len, max_len = self.MATCH_LENGTH.get(self.card_position, (10, 20))
+        # Multi-person matches run a bit longer
+        target_length = random.randint(min_len + 3, max_len + 5)
+
+        active = list(participants)
+        eliminated = []
+
+        while self.tick < target_length + 15 and len(active) >= 2:
+            self.tick += 1
+
+            # Pick a random attacker/defender pair from active participants
+            attacker = random.choice(active)
+            defender = random.choice([p for p in active if p is not attacker])
+
+            spot = self._generate_spot(attacker, defender)
+            self.spots.append(spot)
+            self._apply_spot(spot, attacker, defender)
+
+            if not attacker.finisher_available and attacker.momentum > 75:
+                attacker.finisher_available = True
+
+            # Elimination check: participants with very low endurance can be pinned
+            if len(active) > 2 and self.tick > target_length * 0.3:
+                for p in list(active):
+                    if p is attacker:
+                        continue
+                    if p.endurance < 15 and random.random() < 0.35:
+                        eliminated.append(p)
+                        active.remove(p)
+                        elim_spot = MatchSpot(
+                            tick=self.tick,
+                            attacker_id=attacker.wrestler_id,
+                            defender_id=p.wrestler_id,
+                            move_name="Elimination",
+                            move_type="power",
+                            damage=0,
+                            description=f"{p.name} has been eliminated!",
+                            crowd_reaction="pop",
+                        )
+                        self.spots.append(elim_spot)
+
+            # Near-falls add drama
+            if self.tick > target_length * 0.5 and random.random() < 0.2:
+                near_fall = self._near_fall(attacker, defender)
+                if near_fall:
+                    self.spots.append(near_fall)
+
+            # When down to 2, try for a finish
+            if len(active) == 2 and self.tick >= target_length - 3:
+                finish_spot = self._attempt_finish(attacker, defender)
+                if finish_spot:
+                    self.spots.append(finish_spot)
+                    return self._build_result(finish_spot, attacker, defender, participants)
+
+            if self._should_switch_control(attacker, defender):
+                pass  # In multi-person, control is already random each tick
+
+        # Time limit: pick the participant with the highest momentum as winner
+        if len(active) >= 2:
+            winner = max(active, key=lambda p: p.momentum)
+            loser = [p for p in active if p is not winner][0]
+            return MatchResult(
+                winner_id=winner.wrestler_id,
+                finish_type="pinfall",
+                finish_description=f"{winner.name} pins {loser.name} after a grueling multi-person match!",
+                match_rating=self._calculate_rating(participants),
+                crowd_heat=self._calculate_heat(),
+                duration_ticks=self.tick,
+                spots=self.spots,
+            )
+
+        return MatchResult(
+            winner_id=active[0].wrestler_id if active else None,
+            finish_type="last_person_standing",
+            finish_description="Last person standing wins!",
             match_rating=self._calculate_rating(participants),
             crowd_heat=self._calculate_heat(),
             duration_ticks=self.tick,
@@ -755,6 +846,23 @@ class MatchSimulator:
         highlights = [s for s in self.spots if s.damage >= 10 or s.is_near_fall or s.is_finisher]
         narrative_parts = [s.description for s in highlights[-5:]]  # Last 5 highlights
         narrative = " ".join(narrative_parts)
+
+        # Try LLM-enhanced match summary if enabled
+        import os
+        if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
+            try:
+                from llm_abstraction.provider import get_llm
+                prompt = (
+                    f"Write a 2-3 sentence wrestling match summary. "
+                    f"{attacker.name} defeated {defender.name} via {finish_spot.finish_type or 'pinfall'}. "
+                    f"Key spots: {', '.join(narrative_parts[-3:])}. "
+                    f"Match rating: {self._calculate_rating(participants):.1f} stars."
+                )
+                response = get_llm().generate(prompt, max_tokens=100)
+                if response and response.content and len(response.content.strip()) > 20:
+                    narrative = response.content.strip()
+            except Exception:
+                pass  # Keep template narrative
 
         return MatchResult(
             winner_id=finish_spot.attacker_id,

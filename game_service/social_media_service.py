@@ -191,18 +191,41 @@ def _generate_post_content(wrestler, gimmick, backstory, post_type):
     """Generate post content based on type and persona."""
     hometown = wrestler.hometown or "the road"
 
+    # Template-based fallback
     if post_type == "kayfabe":
         if wrestler.alignment == "heel":
-            return random.choice(KAYFABE_HEEL_POSTS)
-        return random.choice(KAYFABE_FACE_POSTS)
+            fallback = random.choice(KAYFABE_HEEL_POSTS)
+        else:
+            fallback = random.choice(KAYFABE_FACE_POSTS)
     elif post_type == "shoot":
         template = random.choice(SHOOT_POSTS)
-        return template.format(hometown=hometown)
+        fallback = template.format(hometown=hometown)
     elif post_type == "worked_shoot":
-        return random.choice(WORKED_SHOOT_POSTS)
+        fallback = random.choice(WORKED_SHOOT_POSTS)
     elif post_type == "personal":
-        return random.choice(PERSONAL_POSTS)
-    return "..."
+        fallback = random.choice(PERSONAL_POSTS)
+    else:
+        fallback = "..."
+
+    # Try LLM-enhanced post if enabled
+    import os
+    if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
+        try:
+            from llm_abstraction.provider import get_llm
+            archetype = gimmick.archetype if gimmick else "wrestler"
+            prompt = (
+                f"Write a short social media post (1-2 sentences, under 280 chars) "
+                f"for {wrestler.name}, a {wrestler.alignment or 'face'} wrestler "
+                f"with a {archetype} persona. Post type: {post_type}. "
+                f"No hashtags unless it fits the character."
+            )
+            response = get_llm().generate(prompt, max_tokens=80)
+            if response and response.content and len(response.content.strip()) > 10:
+                return response.content.strip()
+        except Exception:
+            pass
+
+    return fallback
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +301,13 @@ def check_viral_moment(post: SocialMediaPostDB) -> bool:
 
 
 def process_viral_fallout(db: Session, post: SocialMediaPostDB, game_date: str):
-    """Handle the effects of a viral post."""
+    """Handle the effects of a viral post.
+
+    Viral posts now feed back into the gameplay loop:
+    - Popularity changes (existing)
+    - Storyline heat boosts when the post involves a rival
+    - Narrative log events for high-controversy viral moments
+    """
     wrestler = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.id == post.wrestler_id,
     ).first()
@@ -296,6 +325,38 @@ def process_viral_fallout(db: Session, post: SocialMediaPostDB, game_date: str):
     wrestler.social_media_following = (wrestler.social_media_following or 1000) + random.randint(500, 5000)
     post.popularity_impact = pop_change
 
+    # --- NEW: Storyline heat boost from viral posts ---
+    # If the wrestler is in an active storyline, viral buzz heats the feud
+    storyline_participants = db.query(StorylineParticipantDB).filter(
+        StorylineParticipantDB.wrestler_id == wrestler.id,
+    ).all()
+    for sp in storyline_participants:
+        storyline = db.query(StorylineDB).filter(
+            StorylineDB.id == sp.storyline_id,
+            StorylineDB.status.in_(["active", "climax", "brewing"]),
+        ).first()
+        if storyline:
+            heat_boost = random.randint(3, 5)
+            if post.controversy_level >= 40:
+                heat_boost += 2
+            storyline.heat = min(100, storyline.heat + heat_boost)
+            logger.info("Viral post boosted storyline %s heat by +%d to %d",
+                        storyline.id[:8], heat_boost, storyline.heat)
+
+    # --- NEW: Narrative log for high-controversy viral moments ---
+    if post.controversy_level >= 7:
+        from models.game_models import GameNarrativeLogDB
+        db.add(GameNarrativeLogDB(
+            world_id=post.world_id,
+            game_date=game_date,
+            tick=0,
+            event_type="social_media_viral",
+            description=f"{wrestler.name}'s viral post is causing a stir backstage! "
+                        f"(controversy: {post.controversy_level}, engagement: {post.engagement_score})",
+            involved_entities=[wrestler.id],
+            importance=6,
+        ))
+
     # Generate news
     try:
         from game_service.news_service import generate_social_media_news
@@ -304,6 +365,35 @@ def process_viral_fallout(db: Session, post: SocialMediaPostDB, game_date: str):
         logger.warning("Failed to generate social media news: %s", e)
 
     logger.info("Viral post by %s! Pop change: %+d", wrestler.name, pop_change)
+
+
+# ---------------------------------------------------------------------------
+# Buzz bonus for card draw
+# ---------------------------------------------------------------------------
+
+def get_viral_buzz_bonus(db: Session, world_id: str, game_date: str,
+                         wrestler_ids: list) -> float:
+    """Return a card draw multiplier bonus based on recent viral posts.
+
+    Checks the last 7 game days for viral posts by wrestlers on the card.
+    Each viral post adds 0.1 to the bonus (capped at 0.5).
+    """
+    from datetime import datetime, timedelta
+    try:
+        current = datetime.strptime(game_date, "%Y-%m-%d")
+        week_ago = (current - timedelta(days=7)).strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        return 0.0
+
+    viral_count = db.query(SocialMediaPostDB).filter(
+        SocialMediaPostDB.world_id == world_id,
+        SocialMediaPostDB.is_viral == True,
+        SocialMediaPostDB.game_date >= week_ago,
+        SocialMediaPostDB.game_date <= game_date,
+        SocialMediaPostDB.wrestler_id.in_(wrestler_ids),
+    ).count()
+
+    return min(0.5, viral_count * 0.1)
 
 
 # ---------------------------------------------------------------------------

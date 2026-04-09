@@ -17,6 +17,7 @@ from models.game_models import (
     ShowDB, ShowSegmentDB, MatchDB, MatchParticipantDB,
     GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
     ContractDB, ChampionshipDB, TagTeamDB, PromoDB,
+    WorldDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -354,6 +355,71 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
                 used.add(wid)
             booked_tag = True
 
+    # --- Player match requests and dark matches ---
+    # Check if any player wrestler on this roster has a pending match request
+    world = db.query(WorldDB).filter(WorldDB.id == show.world_id).first()
+    player_match_booked = False
+    if world and world.world_config:
+        pending_requests = (world.world_config or {}).get("pending_match_requests", [])
+        for req in list(pending_requests):
+            if req.get("federation_id") != fed.id:
+                continue
+            pw_id = req.get("wrestler_id")
+            pw = next((w for w in wrestlers if w.id == pw_id and w.id not in used), None)
+            if not pw:
+                continue
+
+            if req.get("type") == "open_challenge" and req.get("opponent_id"):
+                opp = next((w for w in wrestlers if w.id == req["opponent_id"] and w.id not in used), None)
+            else:
+                # Pick a random opponent close in popularity
+                candidates = [w for w in wrestlers if w.id not in used and w.id != pw_id and not w.is_injured]
+                opp = random.choice(candidates) if candidates else None
+
+            if opp:
+                seg = book_match(
+                    db, show.id, show.world_id,
+                    wrestler_ids=[pw.id, opp.id],
+                    match_type="singles",
+                    planned_winner_id=pw.id if random.random() < 0.50 else opp.id,
+                    planned_finish="pinfall",
+                    position=1,  # Opening match — gets the player on TV
+                )
+                segments.append(seg)
+                used.add(pw.id)
+                used.add(opp.id)
+                player_match_booked = True
+
+            # Remove fulfilled request
+            pending_requests = [r for r in pending_requests if r.get("wrestler_id") != pw_id]
+            break  # One player match per show
+
+        # Update metadata
+        meta = world.world_config or {}
+        meta["pending_match_requests"] = pending_requests
+        world.world_config = meta
+
+    # Dark match: if any player wrestler (is_npc=False) is on the roster
+    # and hasn't been booked this show, give them a dark match for exposure
+    if not player_match_booked:
+        for w in wrestlers:
+            if not w.is_npc and w.id not in used and not w.is_injured:
+                candidates = [o for o in wrestlers if o.id not in used and o.id != w.id and not o.is_injured]
+                if candidates:
+                    opp = random.choice(candidates)
+                    seg = book_match(
+                        db, show.id, show.world_id,
+                        wrestler_ids=[w.id, opp.id],
+                        match_type="singles",
+                        planned_winner_id=w.id if random.random() < 0.55 else opp.id,
+                        planned_finish="pinfall",
+                        position=0,  # Dark match — position 0, before the card
+                    )
+                    segments.append(seg)
+                    used.add(w.id)
+                    used.add(opp.id)
+                break  # One dark match max
+
     num_matches = min(len(wrestlers) // 2, len(CARD_POSITIONS))
     if booked_tag:
         num_matches = max(1, num_matches - 1)  # Already booked one
@@ -363,10 +429,45 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
     # Put lower-ranked first (they'll be openers), higher-ranked last (main event)
     match_wrestlers.reverse()
 
+    triple_threat_booked = False
     for i in range(num_matches):
         available = [w for w in match_wrestlers if w.id not in used]
         if len(available) < 2:
             break
+
+        # 15% chance for a triple threat on weekly TV (once per show, not main event)
+        actual_pos = i + (1 if booked_tag else 0)
+        is_main_event_slot = (actual_pos == num_matches + (1 if booked_tag else 0) - 1)
+        match_type = "singles"
+        if (not triple_threat_booked and not is_main_event_slot
+                and len(available) >= 3 and random.random() < 0.15):
+            w1, w2, w3 = available[0], available[1], available[2]
+            used.add(w1.id)
+            used.add(w2.id)
+            used.add(w3.id)
+            match_type = "triple_threat"
+            triple_threat_booked = True
+            # Winner is the highest-pushed of the three
+            all_w = [w1, w2, w3]
+            scores = {}
+            for w in all_w:
+                wp = push_map.get(w.id)
+                tier_rank = PUSH_TIERS.index(wp.push_tier) if wp and wp.push_tier in PUSH_TIERS else 2
+                scores[w.id] = (5 - tier_rank) * 20 + w.popularity + random.randint(-15, 15)
+                if wp and wp.protected:
+                    scores[w.id] += 30
+            planned_winner = max(all_w, key=lambda w: scores[w.id])
+            position = actual_pos + 1
+            seg = book_match(
+                db, show.id, show.world_id,
+                wrestler_ids=[w1.id, w2.id, w3.id],
+                match_type=match_type,
+                planned_winner_id=planned_winner.id,
+                planned_finish="pinfall",
+                position=position,
+            )
+            segments.append(seg)
+            continue
 
         w1, w2 = available[0], available[1]
         used.add(w1.id)
@@ -390,8 +491,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
         # Title match for main event if champion is available
         is_title = False
         champ_id = None
-        actual_pos = i + (1 if booked_tag else 0)
-        if actual_pos == num_matches + (1 if booked_tag else 0) - 1 and championships:
+        if is_main_event_slot and championships:
             champ = championships[0]
             if champ.current_holder_id in (w1.id, w2.id):
                 is_title = True
@@ -548,8 +648,51 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
         segments.append(seg)
         position += 1
 
-    # Fill remaining slots with available wrestlers
-    remaining = [w for w in wrestlers if w.id not in used]
+    # Multi-person match for PPVs — fatal four way or battle royal
+    remaining = [w for w in wrestlers if w.id not in used and not w.is_injured]
+
+    is_crown_jewel = getattr(ppv_event, 'is_crown_jewel', False)
+    if is_crown_jewel and len(remaining) >= 6:
+        # Crown Jewel battle royal with 6-10 participants
+        br_count = min(len(remaining), 10)
+        br_wrestlers = remaining[:br_count]
+        br_ids = [w.id for w in br_wrestlers]
+        for wid in br_ids:
+            used.add(wid)
+        # Winner is most popular
+        winner = max(br_wrestlers, key=lambda w: w.popularity + random.randint(-10, 10))
+        seg = book_match(
+            db, show.id, show.world_id,
+            wrestler_ids=br_ids,
+            match_type="battle_royal",
+            planned_winner_id=winner.id,
+            planned_finish="last_person_standing",
+            position=position,
+        )
+        segments.append(seg)
+        position += 1
+        remaining = [w for w in remaining if w.id not in used]
+    elif len(remaining) >= 4:
+        # Fatal four way on non-crown-jewel PPVs (60% chance)
+        if random.random() < 0.60:
+            ffw = remaining[:4]
+            ffw_ids = [w.id for w in ffw]
+            for wid in ffw_ids:
+                used.add(wid)
+            winner = max(ffw, key=lambda w: w.popularity + random.randint(-10, 10))
+            seg = book_match(
+                db, show.id, show.world_id,
+                wrestler_ids=ffw_ids,
+                match_type="fatal_four_way",
+                planned_winner_id=winner.id,
+                planned_finish="pinfall",
+                position=position,
+            )
+            segments.append(seg)
+            position += 1
+            remaining = [w for w in remaining if w.id not in used]
+
+    # Fill remaining slots with singles matches
     for i in range(0, min(len(remaining) - 1, 4), 2):
         w1, w2 = remaining[i], remaining[i + 1]
         used.add(w1.id)

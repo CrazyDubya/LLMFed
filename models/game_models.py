@@ -835,6 +835,7 @@ class TagTeamDB(Base):
     wrestler1_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
     wrestler2_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
     team_chemistry = Column(Integer, default=30)  # 0-100
+    team_finisher_name = Column(String(100), nullable=True)
     wins = Column(Integer, default=0)
     losses = Column(Integer, default=0)
     formed_date = Column(String(10), nullable=True)
