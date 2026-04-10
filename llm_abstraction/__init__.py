@@ -1,7 +1,8 @@
 """
 LLM Abstraction Layer
 
-Provides a unified interface for different LLM providers with automatic fallback.
+Provides a unified interface for different LLM providers with automatic fallback,
+retry logic, circuit breaking, streaming, and cost tracking.
 """
 
 from .provider import (
@@ -11,7 +12,14 @@ from .provider import (
     LLMProviderBase,
     OpenAIProvider,
     OllamaProvider,
-    get_llm
+    AnthropicProvider,
+    GeminiProvider,
+    StreamChunk,
+    CircuitBreaker,
+    TokenBudget,
+    estimate_cost,
+    get_llm,
+    reset_llm,
 )
 
 __all__ = [
@@ -21,6 +29,12 @@ __all__ = [
     "LLMProviderBase",
     "OpenAIProvider",
     "OllamaProvider",
-    "get_llm"
+    "AnthropicProvider",
+    "GeminiProvider",
+    "StreamChunk",
+    "CircuitBreaker",
+    "TokenBudget",
+    "estimate_cost",
+    "get_llm",
+    "reset_llm",
 ]
-
