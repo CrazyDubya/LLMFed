@@ -8,6 +8,8 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/game': 'http://localhost:8091',
+      '/scheduler': 'http://localhost:8091',
+      '/worlds': 'http://localhost:8091',
       '/ws': {
         target: 'ws://localhost:8091',
         ws: true,

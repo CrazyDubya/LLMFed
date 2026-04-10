@@ -35,6 +35,7 @@ from api_gateway.error_handlers import register_error_handlers, ResourceNotFound
 from api_gateway.validation import ValidationError
 from api_gateway.logging_config import setup_logging, logging_middleware, performance_monitor
 from api_gateway.game_routes import router as game_router
+from game_service.auto_scheduler import scheduler as auto_scheduler
 
 # Configure logging
 log_level = os.getenv("LOG_LEVEL", "INFO")
@@ -565,6 +566,91 @@ def list_proxy_models():
     except Exception as e:
         logging.error(f"Error fetching models from {url}: {e}")
         raise HTTPException(status_code=500, detail=f"Error fetching models: {e}")
+
+# ---------------------------------------------------------------------------
+# Auto-Scheduler endpoints
+# ---------------------------------------------------------------------------
+
+class SchedulerConfig(BaseModel):
+    interval_seconds: float = 60.0
+
+@app.get("/scheduler/status", summary="Get auto-scheduler status", tags=["engine"])
+def scheduler_status():
+    """Return current state of the auto-ticker scheduler."""
+    return auto_scheduler.status()
+
+@app.post("/scheduler/start", summary="Start auto-scheduler", tags=["engine"])
+async def scheduler_start(config: SchedulerConfig = SchedulerConfig()):
+    """Start the auto-ticker. Worlds advance automatically each interval."""
+    await auto_scheduler.start(interval_seconds=config.interval_seconds)
+    return auto_scheduler.status()
+
+@app.post("/scheduler/stop", summary="Stop auto-scheduler", tags=["engine"])
+async def scheduler_stop():
+    """Stop the auto-ticker."""
+    await auto_scheduler.stop()
+    return auto_scheduler.status()
+
+@app.post("/scheduler/interval", summary="Change tick interval", tags=["engine"])
+def scheduler_set_interval(config: SchedulerConfig):
+    """Change the auto-tick interval (minimum 10 seconds)."""
+    auto_scheduler.set_interval(config.interval_seconds)
+    return auto_scheduler.status()
+
+@app.post("/scheduler/pause/{world_id}", summary="Pause a world", tags=["engine"])
+def scheduler_pause_world(world_id: str):
+    """Pause auto-ticking for a specific world."""
+    auto_scheduler.pause_world(world_id)
+    return {"paused": world_id}
+
+@app.post("/scheduler/resume/{world_id}", summary="Resume a world", tags=["engine"])
+def scheduler_resume_world(world_id: str):
+    """Resume auto-ticking for a specific world."""
+    auto_scheduler.resume_world(world_id)
+    return {"resumed": world_id}
+
+
+# ---------------------------------------------------------------------------
+# Public shows endpoints (for ShowsHub - no auth required)
+# ---------------------------------------------------------------------------
+
+@app.get("/worlds/{world_id}/shows", summary="List all shows in a world", tags=["engine"])
+def list_world_shows(
+    world_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    completed_only: bool = False,
+    db: Session = Depends(get_db),
+):
+    """List all shows across all federations in a world."""
+    from models.game_models import ShowDB, GameFederationDB
+    query = db.query(ShowDB).filter(ShowDB.world_id == world_id)
+    if completed_only:
+        query = query.filter(ShowDB.is_completed == True)
+    shows = query.order_by(ShowDB.game_date.desc()).limit(limit).all()
+
+    results = []
+    for show in shows:
+        fed = db.query(GameFederationDB).filter(
+            GameFederationDB.id == show.federation_id
+        ).first()
+        results.append({
+            "id": show.id,
+            "name": show.name,
+            "show_type": show.show_type,
+            "venue": show.venue,
+            "capacity": show.capacity,
+            "attendance": show.attendance,
+            "game_date": show.game_date,
+            "is_completed": show.is_completed,
+            "overall_rating": show.overall_rating,
+            "tv_rating": show.tv_rating,
+            "gate_revenue": show.gate_revenue,
+            "ppv_buys": show.ppv_buys,
+            "federation_id": show.federation_id,
+            "federation_name": fed.name if fed else "Unknown",
+        })
+    return results
+
 
 if __name__ == "__main__":
     import uvicorn

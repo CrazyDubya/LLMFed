@@ -35,31 +35,28 @@ def _llm_generate(prompt: str, fallback: str, system_msg: str = None) -> str:
 
 from models.game_models import (
     WorldDB, WorldStateDB, PlayerActionDB, GameFederationDB,
-    GameWrestlerDB, WrestlerStatsDB, ContractDB, ShowDB, ShowSegmentDB,
+    GameWrestlerDB, WrestlerStatsDB, ContractDB, ShowDB,
     MatchDB, MatchParticipantDB,
     StorylineDB, StorylineParticipantDB, GameNarrativeLogDB,
     WorldNewsDB, WrestlerHistoryDB, ChampionshipDB,
     WrestlerRelationshipDB, TagTeamDB, TalentOfferDB,
-    PromoDB,
 )
+from game_service.player_action_handler import PlayerActionHandler, get_active_contract
+from game_service import inter_federation_service
+from game_service.ticker_query_helpers import (
+    get_active_wrestlers, get_npc_federations, get_active_federations,
+)
+from game_service.tag_team_data import generate_tag_team_name
+from game_service.show_simulation_service import simulate_show
 
 logger = logging.getLogger(__name__)
 
 # Lazy imports to avoid circular dependencies
-_match_engine = None
 _show_service = None
 _storyline_service = None
-_match_aftermath = None
 _news_service = None
-_viewership_service = None
-
-
-def _get_match_engine():
-    global _match_engine
-    if _match_engine is None:
-        from core_engine import match_engine as _me
-        _match_engine = _me
-    return _match_engine
+_stable_service = None
+_manager_service = None
 
 
 def _get_show_service():
@@ -78,32 +75,12 @@ def _get_storyline_service():
     return _storyline_service
 
 
-def _get_match_aftermath():
-    global _match_aftermath
-    if _match_aftermath is None:
-        from core_engine import match_aftermath as _ma
-        _match_aftermath = _ma
-    return _match_aftermath
-
-
 def _get_news_service():
     global _news_service
     if _news_service is None:
         from game_service import news_service as _ns
         _news_service = _ns
     return _news_service
-
-
-def _get_viewership_service():
-    global _viewership_service
-    if _viewership_service is None:
-        from game_service import viewership_service as _vs
-        _viewership_service = _vs
-    return _viewership_service
-
-
-_stable_service = None
-_manager_service = None
 
 
 def _get_stable_service():
@@ -233,6 +210,8 @@ class WorldTicker:
 
     def _process_player_actions(self):
         """Process pending player actions."""
+        handler = PlayerActionHandler(self.db, self.world, self._log_event)
+
         pending = self.db.query(PlayerActionDB).filter(
             PlayerActionDB.world_id == self.world.id,
             PlayerActionDB.status == "pending",
@@ -241,7 +220,7 @@ class WorldTicker:
         for action in pending:
             try:
                 action.status = "processing"
-                result = self._execute_player_action(action)
+                result = handler.execute(action)
                 action.status = "completed"
                 action.result = result
                 action.processed_at = datetime.utcnow()
@@ -250,505 +229,6 @@ class WorldTicker:
                 action.status = "failed"
                 action.result = {"error": str(e)}
                 logger.warning(f"Player action {action.id} failed: {e}")
-
-    def _execute_player_action(self, action: PlayerActionDB) -> dict:
-        """Execute a single player action. Returns result dict."""
-        action_type = action.action_type
-        data = action.action_data
-
-        if action_type == "sign_wrestler":
-            return self._action_sign_wrestler(data)
-        elif action_type == "book_show":
-            return self._action_book_show(data)
-        elif action_type == "train":
-            return self._action_train(data)
-        elif action_type == "cut_promo":
-            return self._action_cut_promo(data)
-        elif action_type == "form_stable":
-            return self._action_form_stable(data)
-        elif action_type == "join_stable":
-            return self._action_join_stable(data)
-        elif action_type == "leave_stable":
-            return self._action_leave_stable(data)
-        elif action_type == "dissolve_stable":
-            return self._action_dissolve_stable(data)
-        elif action_type == "assign_manager":
-            return self._action_assign_manager(data)
-        elif action_type == "create_manager":
-            return self._action_create_manager(data)
-        elif action_type == "remove_manager":
-            return self._action_remove_manager(data)
-        elif action_type == "create_storyline":
-            return self._action_create_storyline(data)
-        elif action_type == "advance_storyline":
-            return self._action_advance_storyline(data)
-        elif action_type == "request_match":
-            return self._action_request_match(data)
-        elif action_type == "open_challenge":
-            return self._action_open_challenge(data)
-        else:
-            return {"message": f"Action '{action_type}' acknowledged"}
-
-    def _action_sign_wrestler(self, data: dict) -> dict:
-        """Promoter signs a free agent."""
-        wrestler_id = data.get("wrestler_id")
-        federation_id = data.get("federation_id")
-        salary = data.get("salary_weekly", 1000)
-
-        wrestler = self.db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == wrestler_id
-        ).first()
-        if not wrestler:
-            raise ValueError("Wrestler not found")
-
-        # Check not already signed
-        active_contract = self.db.query(ContractDB).filter(
-            ContractDB.wrestler_id == wrestler_id,
-            ContractDB.status == "active",
-        ).first()
-        if active_contract:
-            raise ValueError("Wrestler already under contract")
-
-        contract = ContractDB(
-            world_id=self.world.id,
-            wrestler_id=wrestler_id,
-            federation_id=federation_id,
-            salary_weekly=salary,
-            start_date=self.world.current_game_date,
-            is_exclusive=True,
-        )
-        self.db.add(contract)
-        self._log_event("signing", f"{wrestler.name} signed with federation", [wrestler_id, federation_id])
-        return {"contract_id": contract.id, "wrestler": wrestler.name}
-
-    def _action_book_show(self, data: dict) -> dict:
-        """Promoter books a show."""
-        show = ShowDB(
-            world_id=self.world.id,
-            federation_id=data["federation_id"],
-            name=data.get("name", "Live Event"),
-            show_type=data.get("show_type", "weekly"),
-            venue=data.get("venue", "Local Arena"),
-            capacity=data.get("capacity", 5000),
-            game_date=data.get("game_date", self.world.current_game_date),
-        )
-        self.db.add(show)
-        self.db.flush()
-        return {"show_id": show.id, "name": show.name, "date": show.game_date}
-
-    def _action_train(self, data: dict) -> dict:
-        """Wrestler trains a stat."""
-        wrestler_id = data.get("wrestler_id")
-        stat_name = data.get("stat", "stamina")
-
-        stats = self.db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == wrestler_id
-        ).first()
-        if not stats:
-            raise ValueError("Wrestler stats not found")
-
-        if not hasattr(stats, stat_name):
-            raise ValueError(f"Invalid stat: {stat_name}")
-
-        current = getattr(stats, stat_name)
-        # Training gain decreases as stat gets higher
-        gain = max(1, random.randint(1, 3) - (current // 40))
-
-        # Mentor bonus (Group 4)
-        try:
-            from game_service.wrestler_lifecycle_service import training_with_mentor
-            gain += training_with_mentor(self.db, wrestler_id, stat_name)
-        except (ValueError, AttributeError) as e:
-            logger.debug("Mentor bonus skipped for %s: %s", wrestler_id, e)
-
-        new_val = min(100, current + gain)
-        setattr(stats, stat_name, new_val)
-
-        # Training fatigues the wrestler slightly
-        wrestler = self.db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == wrestler_id
-        ).first()
-        if wrestler:
-            wrestler.condition = max(0, wrestler.condition - random.randint(2, 5))
-
-        return {"stat": stat_name, "old": current, "new": new_val, "gain": new_val - current}
-
-    def _action_cut_promo(self, data: dict) -> dict:
-        """Wrestler cuts a promo — gains popularity, boosts storyline heat."""
-        wrestler_id = data.get("wrestler_id")
-        target_id = data.get("target_wrestler_id")
-        direction = data.get("direction", "")
-
-        wrestler = self.db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == wrestler_id
-        ).first()
-        if not wrestler:
-            raise ValueError("Wrestler not found")
-
-        stats = self.db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == wrestler_id
-        ).first()
-
-        # Promo quality based on charisma + mic skill
-        charisma = stats.charisma if stats else 50
-        mic = stats.mic_skill if stats else 50
-        base_quality = (charisma + mic) / 2
-        roll = random.randint(-15, 15)
-        quality = max(1, min(100, base_quality + roll))
-
-        # Popularity gain: 1-5 based on quality
-        pop_gain = 1
-        if quality >= 80:
-            pop_gain = random.randint(3, 5)
-        elif quality >= 60:
-            pop_gain = random.randint(2, 4)
-        elif quality >= 40:
-            pop_gain = random.randint(1, 3)
-
-        old_pop = wrestler.popularity
-        wrestler.popularity = min(100, wrestler.popularity + pop_gain)
-        wrestler.morale = min(100, (wrestler.morale or 50) + 2)
-
-        result = {
-            "quality": quality,
-            "popularity_gain": pop_gain,
-            "old_popularity": old_pop,
-            "new_popularity": wrestler.popularity,
-            "direction": direction,
-        }
-
-        # If targeting a rival, boost storyline heat
-        if target_id:
-            sl_svc = _get_storyline_service()
-            existing = sl_svc._find_storyline_between(self.db, wrestler_id, target_id)
-            if existing:
-                heat_boost = 5 if quality >= 60 else 3
-                sl_svc.progress_storyline(
-                    self.db, existing, "promo", heat_boost,
-                    description=f"{wrestler.name} cut a fiery promo targeting their rival!",
-                )
-                result["storyline_heat_boost"] = heat_boost
-
-        self._log_event(
-            "promo",
-            f"{wrestler.name} cuts a promo (quality: {quality}, pop +{pop_gain})",
-            [wrestler_id] + ([target_id] if target_id else []),
-            importance=5,
-        )
-        return result
-
-    # --- Match request / open challenge actions ---
-
-    def _action_request_match(self, data: dict) -> dict:
-        """Player requests a match on the next show for their federation.
-
-        Books the player into an opening slot on the next weekly show.
-        Win = +2-4 popularity, Loss = +1 popularity (exposure value).
-        Cooldown: 1 request per game week (7 ticks).
-        """
-        wrestler_id = data.get("wrestler_id")
-        wrestler = self.db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == wrestler_id
-        ).first()
-        if not wrestler:
-            raise ValueError("Wrestler not found")
-
-        # Find wrestler's federation
-        contract = self.db.query(ContractDB).filter(
-            ContractDB.wrestler_id == wrestler_id,
-            ContractDB.status == "active",
-        ).first()
-        if not contract:
-            raise ValueError("Wrestler has no active contract")
-
-        # Store the request in world metadata for the show booking phase to pick up
-        meta = self.world.world_config or {}
-        match_requests = meta.get("pending_match_requests", [])
-
-        # Check cooldown — only 1 request per 7 days
-        game_date = self.world.current_game_date
-        for req in match_requests:
-            if req.get("wrestler_id") == wrestler_id:
-                last_date = req.get("date", "")
-                try:
-                    days_since = (datetime.strptime(game_date, "%Y-%m-%d") -
-                                  datetime.strptime(last_date, "%Y-%m-%d")).days
-                    if days_since < 7:
-                        return {"message": f"Match request on cooldown ({7 - days_since} days remaining)"}
-                except (ValueError, TypeError):
-                    pass
-
-        # Remove old request for this wrestler if any, add new one
-        match_requests = [r for r in match_requests if r.get("wrestler_id") != wrestler_id]
-        match_requests.append({
-            "wrestler_id": wrestler_id,
-            "federation_id": contract.federation_id,
-            "date": game_date,
-            "type": "request_match",
-        })
-        meta["pending_match_requests"] = match_requests
-        self.world.world_config = meta
-
-        self._log_event(
-            "match_request",
-            f"{wrestler.name} has requested a match on the next show!",
-            [wrestler_id], importance=4,
-        )
-        return {"message": f"{wrestler.name} is booked for a match on the next show", "status": "pending"}
-
-    def _action_open_challenge(self, data: dict) -> dict:
-        """Player issues an open challenge — higher risk/reward than request_match.
-
-        Matched against someone ±10 popularity. Win = +4-6 pop, Loss = +0.
-        Can spark a storyline if player popularity > 40.
-        """
-        wrestler_id = data.get("wrestler_id")
-        wrestler = self.db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == wrestler_id
-        ).first()
-        if not wrestler:
-            raise ValueError("Wrestler not found")
-
-        contract = self.db.query(ContractDB).filter(
-            ContractDB.wrestler_id == wrestler_id,
-            ContractDB.status == "active",
-        ).first()
-        if not contract:
-            raise ValueError("Wrestler has no active contract")
-
-        # Find a suitable opponent: ±10 popularity from same federation
-        roster_contracts = self.db.query(ContractDB).filter(
-            ContractDB.federation_id == contract.federation_id,
-            ContractDB.status == "active",
-            ContractDB.wrestler_id != wrestler_id,
-        ).all()
-
-        candidates = []
-        for c in roster_contracts:
-            opp = self.db.query(GameWrestlerDB).filter(
-                GameWrestlerDB.id == c.wrestler_id,
-                GameWrestlerDB.is_injured == False,
-            ).first()
-            if opp and abs(opp.popularity - wrestler.popularity) <= 15:
-                candidates.append(opp)
-
-        if not candidates:
-            # Fallback: anyone on the roster who isn't injured
-            for c in roster_contracts:
-                opp = self.db.query(GameWrestlerDB).filter(
-                    GameWrestlerDB.id == c.wrestler_id,
-                    GameWrestlerDB.is_injured == False,
-                ).first()
-                if opp:
-                    candidates.append(opp)
-
-        if not candidates:
-            return {"message": "No suitable opponents available for an open challenge"}
-
-        opponent = random.choice(candidates)
-
-        # Store in metadata for show booking
-        meta = self.world.world_config or {}
-        match_requests = meta.get("pending_match_requests", [])
-        match_requests = [r for r in match_requests if r.get("wrestler_id") != wrestler_id]
-        match_requests.append({
-            "wrestler_id": wrestler_id,
-            "federation_id": contract.federation_id,
-            "opponent_id": opponent.id,
-            "date": self.world.current_game_date,
-            "type": "open_challenge",
-        })
-        meta["pending_match_requests"] = match_requests
-        self.world.world_config = meta
-
-        self._log_event(
-            "open_challenge",
-            f"{wrestler.name} issues an open challenge! {opponent.name} answers!",
-            [wrestler_id, opponent.id], importance=6,
-        )
-        return {
-            "message": f"{wrestler.name} issues an open challenge — {opponent.name} has accepted!",
-            "opponent": opponent.name,
-            "opponent_id": opponent.id,
-        }
-
-    # --- Faction / stable actions ---
-
-    def _action_form_stable(self, data: dict) -> dict:
-        """Promoter forms a new stable/faction."""
-        stable_svc = _get_stable_service()
-        name = data.get("name", "New Faction")
-        leader_id = data.get("leader_id")
-        member_ids = data.get("founding_member_ids", [])
-        if not leader_id:
-            raise ValueError("leader_id required")
-        if leader_id not in member_ids:
-            member_ids = [leader_id] + member_ids
-
-        # Find federation from leader's contract
-        contract = self.db.query(ContractDB).filter_by(
-            wrestler_id=leader_id, status="active"
-        ).first()
-        if not contract:
-            raise ValueError("Leader has no active contract")
-
-        stable = stable_svc.create_stable(
-            self.db, self.world.id, contract.federation_id,
-            name=name, leader_id=leader_id,
-            founding_member_ids=member_ids,
-            alignment=data.get("alignment", "heel"),
-            short_name=data.get("short_name"),
-            catchphrase=data.get("catchphrase"),
-            group_finisher_name=data.get("group_finisher_name"),
-            manager_id=data.get("manager_id"),
-            game_date=self.world.current_game_date,
-        )
-        self.events.append(f"Stable formed: {stable.name}")
-        return {"stable_id": stable.id, "name": stable.name}
-
-    def _action_join_stable(self, data: dict) -> dict:
-        """Add a wrestler to an existing stable."""
-        stable_svc = _get_stable_service()
-        stable_id = data.get("stable_id")
-        wrestler_id = data.get("wrestler_id")
-        role = data.get("role", "recruit")
-        if not stable_id or not wrestler_id:
-            raise ValueError("stable_id and wrestler_id required")
-        member = stable_svc.add_member(
-            self.db, stable_id, wrestler_id, role,
-            game_date=self.world.current_game_date,
-        )
-        wrestler = self.db.query(GameWrestlerDB).filter_by(id=wrestler_id).first()
-        self.events.append(f"{wrestler.name if wrestler else wrestler_id} joins stable")
-        return {"member_id": member.id, "role": member.role}
-
-    def _action_leave_stable(self, data: dict) -> dict:
-        """Remove a wrestler from a stable."""
-        stable_svc = _get_stable_service()
-        stable_id = data.get("stable_id")
-        wrestler_id = data.get("wrestler_id")
-        if not stable_id or not wrestler_id:
-            raise ValueError("stable_id and wrestler_id required")
-        result = stable_svc.remove_member(
-            self.db, stable_id, wrestler_id,
-            game_date=self.world.current_game_date,
-        )
-        if not result:
-            raise ValueError("Member not found in stable")
-        return {"removed": True}
-
-    def _action_dissolve_stable(self, data: dict) -> dict:
-        """Dissolve a stable entirely."""
-        stable_svc = _get_stable_service()
-        stable_id = data.get("stable_id")
-        if not stable_id:
-            raise ValueError("stable_id required")
-        from models.game_models import StableDB
-        stable = self.db.query(StableDB).filter_by(id=stable_id).first()
-        if not stable:
-            raise ValueError("Stable not found")
-        stable_svc.dissolve_stable(self.db, stable_id, game_date=self.world.current_game_date)
-        self.events.append(f"Stable dissolved: {stable.name}")
-        return {"dissolved": True, "name": stable.name}
-
-    # --- Manager actions ---
-
-    def _action_assign_manager(self, data: dict) -> dict:
-        """Assign a manager to a wrestler."""
-        mgr_svc = _get_manager_service()
-        manager_id = data.get("manager_id")
-        client_id = data.get("client_wrestler_id")
-        if not manager_id or not client_id:
-            raise ValueError("manager_id and client_wrestler_id required")
-        bond = mgr_svc.assign_manager(
-            self.db, self.world.id, manager_id, client_id,
-            role=data.get("role", "manager"),
-            specialization=data.get("specialization", "all_around"),
-            game_date=self.world.current_game_date,
-        )
-        return {"bond_id": bond.id, "effectiveness": bond.effectiveness}
-
-    def _action_create_manager(self, data: dict) -> dict:
-        """Create a new manager character."""
-        mgr_svc = _get_manager_service()
-        name = data.get("name")
-        if not name:
-            raise ValueError("name required")
-        mgr = mgr_svc.create_manager(
-            self.db, self.world.id, name=name,
-            alignment=data.get("alignment", "heel"),
-            archetype=data.get("archetype", "scheming_manager"),
-            federation_id=data.get("federation_id"),
-            catchphrase=data.get("catchphrase"),
-        )
-        self.events.append(f"Manager created: {mgr.name}")
-        return {"manager_id": mgr.id, "name": mgr.name}
-
-    def _action_remove_manager(self, data: dict) -> dict:
-        """End a manager-client bond."""
-        mgr_svc = _get_manager_service()
-        bond_id = data.get("bond_id")
-        if not bond_id:
-            raise ValueError("bond_id required")
-        result = mgr_svc.remove_manager(
-            self.db, bond_id, game_date=self.world.current_game_date,
-        )
-        if not result:
-            raise ValueError("Bond not found")
-        return {"removed": True}
-
-    # --- Storyline actions ---
-
-    def _action_create_storyline(self, data: dict) -> dict:
-        """Promoter creates a storyline between wrestlers."""
-        sl_svc = _get_storyline_service()
-        wrestler_ids = data.get("wrestler_ids", [])
-        if len(wrestler_ids) < 2:
-            raise ValueError("At least 2 wrestler_ids required")
-        federation_id = data.get("federation_id")
-        if not federation_id:
-            # Infer from first wrestler's contract
-            contract = self.db.query(ContractDB).filter_by(
-                wrestler_id=wrestler_ids[0], status="active"
-            ).first()
-            federation_id = contract.federation_id if contract else None
-        storyline = sl_svc.create_storyline(
-            self.db, self.world.id, federation_id,
-            wrestler_ids=wrestler_ids,
-            storyline_type=data.get("storyline_type", "feud"),
-            name=data.get("name"),
-            description=data.get("description"),
-            game_date=self.world.current_game_date,
-        )
-        self.events.append(f"Storyline created: {storyline.name}")
-        return {"storyline_id": storyline.id, "name": storyline.name}
-
-    def _action_advance_storyline(self, data: dict) -> dict:
-        """Promoter manually advances a storyline's status or heat."""
-        storyline_id = data.get("storyline_id")
-        if not storyline_id:
-            raise ValueError("storyline_id required")
-        storyline = self.db.query(StorylineDB).filter_by(id=storyline_id).first()
-        if not storyline:
-            raise ValueError("Storyline not found")
-
-        new_status = data.get("status")
-        heat_boost = data.get("heat_boost", 0)
-
-        if new_status and new_status in ("brewing", "active", "climax", "resolved"):
-            old_status = storyline.status
-            storyline.status = new_status
-            if new_status == "resolved":
-                storyline.end_date = self.world.current_game_date
-        if heat_boost:
-            storyline.heat = max(0, min(100, storyline.heat + heat_boost))
-
-        return {
-            "storyline_id": storyline.id,
-            "name": storyline.name,
-            "status": storyline.status,
-            "heat": storyline.heat,
-        }
 
     # ------------------------------------------------------------------
     # Phase 2: NPC AI decisions
@@ -766,11 +246,7 @@ class WorldTicker:
         day_of_week = get_day_of_week(self.world.current_game_date)
         game_date = self.world.current_game_date
 
-        npc_feds = self.db.query(GameFederationDB).filter(
-            GameFederationDB.world_id == self.world.id,
-            GameFederationDB.is_npc == True,
-            GameFederationDB.is_active == True,
-        ).all()
+        npc_feds = get_npc_federations(self.db, self.world.id)
 
         for fed in npc_feds:
             # Check if today is a PPV day
@@ -922,262 +398,8 @@ class WorldTicker:
         ).all()
 
         for show in shows:
-            self._simulate_show(show)
-
-    def _simulate_show(self, show: ShowDB):
-        """Simulate a single show, running each match through the match engine."""
-        me = _get_match_engine()
-        sl_svc = _get_storyline_service()
-        aftermath = _get_match_aftermath()
-
-        fed = self.db.query(GameFederationDB).filter(
-            GameFederationDB.id == show.federation_id
-        ).first()
-
-        prestige_factor = (fed.prestige if fed else 50) / 100
-
-        # Simulate each match segment through the engine
-        segments = self.db.query(ShowSegmentDB).filter(
-            ShowSegmentDB.show_id == show.id,
-        ).order_by(ShowSegmentDB.position).all()
-
-        match_segments = [s for s in segments if s.segment_type == "match" and s.match_id]
-        total_segments = len(match_segments)
-
-        match_ratings = []
-        # Show momentum flows between segments — hot crowd carries forward
-        show_momentum = 50  # Neutral start
-        for idx, seg in enumerate(segments):
-            if seg.segment_type == "match" and seg.match_id:
-                match = self.db.query(MatchDB).filter(
-                    MatchDB.id == seg.match_id
-                ).first()
-                if match and not match.is_completed:
-                    # Determine card position from segment index
-                    match_idx = match_segments.index(seg)
-                    if match_idx == 0:
-                        card_position = "opener"
-                    elif match_idx == total_segments - 1:
-                        card_position = "main_event"
-                    elif match_idx == total_segments - 2 and total_segments > 2:
-                        card_position = "semifinal"
-                    else:
-                        card_position = "midcard"
-                    match.card_position = card_position
-                    match.game_date = show.game_date
-
-                    # Pass show momentum to match engine
-                    match._show_momentum = show_momentum
-
-                    try:
-                        result = me.simulate_match_from_db(self.db, match, game_date=show.game_date)
-                        seg.is_completed = True
-                        seg.rating = result.match_rating
-                        seg.crowd_reaction = "pop" if result.crowd_heat > 60 else "mixed"
-                        seg.actual_duration_minutes = result.duration_ticks
-                        match_ratings.append(result.match_rating)
-
-                        # Update show momentum from this match's crowd heat
-                        # Good matches lift the crowd, bad ones cool them
-                        if result.crowd_heat > 60:
-                            show_momentum = min(80, show_momentum + 5)
-                        elif result.crowd_heat < 35:
-                            show_momentum = max(30, show_momentum - 5)
-
-                        # Process post-match consequences
-                        aftermath.process_match_aftermath(
-                            self.db, match, self.world.current_game_date
-                        )
-
-                        # Character reactions — LLM-driven wrestlers react to match results
-                        if USE_LLM:
-                            try:
-                                from game_service.character_agent import character_react
-                                winner = self.db.query(GameWrestlerDB).filter(
-                                    GameWrestlerDB.id == result.winner_id
-                                ).first()
-                                if winner:
-                                    event_type = "title_win" if match.is_title_match else "win"
-                                    reaction = character_react(
-                                        self.db, winner.id, event_type,
-                                        f"Defeated opponent via {result.finish_type}. "
-                                        f"Match rating: {result.match_rating:.1f} stars.",
-                                    )
-                                    if reaction:
-                                        self._log_event(
-                                            "character_reaction", reaction,
-                                            [winner.id], importance=4,
-                                        )
-                            except Exception:
-                                pass  # Character reactions are optional
-
-                        # Process stable effects from match result
-                        try:
-                            stable_svc = _get_stable_service()
-                            losers = [p.wrestler_id for p in self.db.query(MatchParticipantDB).filter(
-                                MatchParticipantDB.match_id == match.id,
-                                MatchParticipantDB.is_winner == False,
-                            ).all()]
-                            for loser_id in losers:
-                                stable_svc.process_match_result_for_stables(
-                                    self.db, result.winner_id, loser_id,
-                                    self.world.id, self.world.current_game_date,
-                                )
-                        except (ValueError, AttributeError) as e:
-                            logger.debug("Stable match processing skipped: %s", e)
-
-                        # Log post-match angle if one occurred
-                        if result.post_match_angle:
-                            angle = result.post_match_angle
-                            self._log_event(
-                                angle["type"],
-                                angle["description"],
-                                angle.get("attacker_ids", []) + [angle.get("victim_id") or angle.get("saved_id", "")],
-                                importance=7,
-                            )
-                            show_momentum = min(85, show_momentum + 8)  # Angles are hot
-
-                        # Check for storyline triggers from match result
-                        sl_svc.check_match_storyline_triggers(
-                            self.db, match, self.world.current_game_date
-                        )
-                    except Exception as e:
-                        logger.error(
-                            "Match simulation failed for match %s: %s",
-                            match.id, e, exc_info=True,
-                        )
-                        seg.is_completed = True
-                        seg.rating = round(random.uniform(2.0, 4.0), 1)
-                        match_ratings.append(seg.rating)
-            elif seg.segment_type == "promo":
-                seg.is_completed = True
-                promo_rating = self._evaluate_promo_segment(seg, show)
-                seg.rating = promo_rating
-                # Good promos build show momentum
-                if promo_rating >= 3.5:
-                    show_momentum = min(80, show_momentum + 4)
-                elif promo_rating < 2.0:
-                    show_momentum = max(30, show_momentum - 3)
-
-        # Calculate show overall rating
-        show.is_completed = True
-        card_bonus = self._calculate_card_psychology_bonus(match_ratings)
-
-        if match_ratings:
-            show.overall_rating = round(
-                sum(match_ratings) / len(match_ratings) + card_bonus, 1
-            )
-        else:
-            show.overall_rating = round(2.5 * prestige_factor, 1)
-
-        # --- Viewership model ---
-        vs = _get_viewership_service()
-        card_draw = vs.calculate_card_draw(self.db, show)
-
-        # Attendance & gate revenue
-        attendance, ticket_price, gate = vs.calculate_attendance(
-            self.db, show, fed, card_draw,
-        )
-        show.attendance = attendance
-        show.gate_revenue = gate
-
-        # TV rating (weekly shows only)
-        if show.show_type == "weekly" and fed:
-            show.tv_rating = vs.calculate_tv_rating(self.db, show, fed)
-
-        # PPV buys
-        if fed:
-            fed.weekly_revenue += gate
-            if show.show_type == "ppv":
-                ppv_buys = vs.calculate_ppv_buys(self.db, show, fed, card_draw)
-                show.ppv_buys = ppv_buys
-                fed.weekly_revenue += ppv_buys * 49.99
-
-        # Dynamic prestige adjustment based on show performance
-        if fed:
-            vs.update_federation_fanbase(self.db, fed, show)
-
-        # Update wrestler draw ratings for everyone on the card
-        for seg in segments:
-            if seg.segment_type == "match" and seg.match_id:
-                participants = self.db.query(MatchParticipantDB).filter(
-                    MatchParticipantDB.match_id == seg.match_id
-                ).all()
-                for p in participants:
-                    new_draw = vs.calculate_wrestler_draw(self.db, p.wrestler_id)
-                    wrestler = self.db.query(GameWrestlerDB).filter(
-                        GameWrestlerDB.id == p.wrestler_id
-                    ).first()
-                    if wrestler:
-                        wrestler.draw_rating = round(new_draw, 1)
-
-        # Generate news from show results
-        try:
-            news_svc = _get_news_service()
-            news_svc.generate_show_news(self.db, show, match_ratings, fed)
-        except Exception as e:
-            logger.error("News generation failed for show %s: %s", show.id, e, exc_info=True)
-
-        self._log_event(
-            "show",
-            f"{show.name} drew {attendance} fans, TV: {show.tv_rating} (Rating: {show.overall_rating})",
-            [show.federation_id],
-            importance=6,
-        )
-        self.events.append(f"Show completed: {show.name} ({attendance} attendance, TV: {show.tv_rating})")
-
-    def _evaluate_promo_segment(self, seg: ShowSegmentDB, show: ShowDB) -> float:
-        """Evaluate a promo segment rating using promo_service when a wrestler is identifiable."""
-        from game_service.promo_service import _evaluate_promo_quality
-
-        wrestler_id = None
-
-        # Try to get wrestler from linked promo
-        if seg.promo_id:
-            promo = self.db.query(PromoDB).filter(PromoDB.id == seg.promo_id).first()
-            if promo:
-                # If the promo already has a quality rating, use it
-                if promo.quality_rating is not None:
-                    return round(promo.quality_rating, 1)
-                wrestler_id = promo.wrestler_id
-
-        if wrestler_id:
-            stats = self.db.query(WrestlerStatsDB).filter(
-                WrestlerStatsDB.wrestler_id == wrestler_id
-            ).first()
-            # Use a placeholder content string for template promos
-            content = seg.description or "Generic promo segment"
-            return _evaluate_promo_quality(stats, content, is_player=False)
-
-        # No identifiable wrestler — fall back to random
-        return round(random.uniform(2.0, 4.5), 1)
-
-    def _calculate_card_psychology_bonus(self, ratings: list) -> float:
-        """Calculate show rating bonus based on card flow."""
-        if len(ratings) < 2:
-            return 0.0
-
-        bonus = 0.0
-
-        # Good opener bonus
-        if ratings[0] > 3.0:
-            bonus += 0.2
-
-        # Main event is highest rated
-        if ratings[-1] == max(ratings):
-            bonus += 0.3
-
-        # Build: ratings generally increase toward main event
-        if len(ratings) >= 3:
-            mid_avg = sum(ratings[1:-1]) / len(ratings[1:-1])
-            if ratings[-1] > mid_avg > ratings[0]:
-                bonus += 0.2
-
-        # Monotony penalty: all ratings within 0.5 of each other
-        if max(ratings) - min(ratings) < 0.5 and len(ratings) >= 3:
-            bonus -= 0.2
-
-        return round(bonus, 1)
+            result = simulate_show(self.db, show, self.world, self._log_event)
+            self.events.extend(result.get("events", []))
 
     # ------------------------------------------------------------------
     # Phase 4: Storyline advancement
@@ -1229,10 +451,7 @@ class WorldTicker:
         if get_day_of_week(self.world.current_game_date) != 6:  # Sunday
             return
 
-        feds = self.db.query(GameFederationDB).filter(
-            GameFederationDB.world_id == self.world.id,
-            GameFederationDB.is_active == True,
-        ).all()
+        feds = get_active_federations(self.db, self.world.id)
 
         for fed in feds:
             # Calculate weekly expenses (salaries)
@@ -1271,11 +490,10 @@ class WorldTicker:
 
     def _random_injury(self, game_date: str):
         """Random wrestler injury."""
-        wrestlers = self.db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.world_id == self.world.id,
-            GameWrestlerDB.is_active == True,
-            GameWrestlerDB.is_injured == False,
-        ).all()
+        wrestlers = [
+            w for w in get_active_wrestlers(self.db, self.world.id)
+            if not w.is_injured
+        ]
 
         if not wrestlers:
             return
@@ -1368,10 +586,7 @@ class WorldTicker:
 
     def _recover_conditions(self):
         """Wrestlers recover condition daily."""
-        wrestlers = self.db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.world_id == self.world.id,
-            GameWrestlerDB.is_active == True,
-        ).all()
+        wrestlers = get_active_wrestlers(self.db, self.world.id)
 
         for w in wrestlers:
             if w.is_injured:
@@ -1391,11 +606,10 @@ class WorldTicker:
 
     def _process_morale(self, game_date: str):
         """Update morale based on streaks, booking frequency, salary."""
-        wrestlers = self.db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.world_id == self.world.id,
-            GameWrestlerDB.is_active == True,
-            GameWrestlerDB.is_injured == False,
-        ).all()
+        wrestlers = [
+            w for w in get_active_wrestlers(self.db, self.world.id)
+            if not w.is_injured
+        ]
 
         for w in wrestlers:
             morale_change = 0
@@ -1415,10 +629,7 @@ class WorldTicker:
                     morale_change -= 3  # Feeling buried
 
             # Salary relative to popularity
-            contract = self.db.query(ContractDB).filter(
-                ContractDB.wrestler_id == w.id,
-                ContractDB.status == "active",
-            ).first()
+            contract = get_active_contract(self.db, w.id)
             if contract and w.popularity > 60 and contract.salary_weekly < 1500:
                 morale_change -= 2  # Underpaid
 
@@ -1444,100 +655,6 @@ class WorldTicker:
             return 0
 
     # ------------------------------------------------------------------
-    # Tag team name generation
-    # ------------------------------------------------------------------
-
-    _TAG_TEAM_NAMES = {
-        "power": [
-            "The Wrecking Crew", "Heavy Artillery", "The Demolition Squad",
-            "Iron Curtain", "The Juggernaut Express", "Total Destruction",
-            "The War Machine", "Brute Force", "The Colossus Connection",
-        ],
-        "highflyer": [
-            "Air Raid", "Terminal Velocity", "Sky High",
-            "The Shooting Stars", "Double Vision", "The Aerials",
-            "Freefall", "Altitude Sickness", "The High Wire",
-        ],
-        "technical": [
-            "The Submission Squad", "Chain Reaction", "The Technicians",
-            "Master Class", "Precision Strike", "The Chess Club",
-            "Clinical Finish", "The Hold Exchange", "Mat Generals",
-        ],
-        "brawler": [
-            "Street Justice", "The Pitfighters", "Knuckle Up",
-            "Bar Room Blitz", "The Enforcers", "Concrete Justice",
-            "The Roughnecks", "Violent Tendencies", "The Brawl Brothers",
-        ],
-        "mixed": [
-            "Brains & Brawn", "The Odd Couple", "Chaos Theory",
-            "Yin & Yang", "The Contrast", "Unlikely Alliance",
-            "Controlled Chaos", "Thunder & Lightning", "The Paradox",
-        ],
-        "generic": [
-            "The Alliance", "Double Trouble", "The Partnership",
-            "Tandem", "The Foundation", "The Coalition",
-            "Second Wind", "The Union", "Full Circle",
-        ],
-    }
-
-    _TEAM_FINISHER_TEMPLATES = [
-        "Double {move}", "The {adj} Bomb", "{adj} Annihilation",
-        "Total {move}", "The Grand Finale", "Doomsday {move}",
-        "Double Down", "The Crescendo", "Curtain Call",
-    ]
-    _FINISHER_MOVES = ["Powerbomb", "Suplex", "Slam", "Piledriver", "Cutter", "DDT"]
-    _FINISHER_ADJS = ["Midnight", "Thunderous", "Final", "Atomic", "Devastating", "Crimson"]
-
-    def _generate_tag_team_name(self, w1: "GameWrestlerDB", w2: "GameWrestlerDB") -> tuple:
-        """Generate a creative tag team name and finisher based on wrestler styles."""
-        from models.game_models import GimmickHistoryDB
-
-        # Determine style category for each wrestler from stats
-        stats1 = self.db.query(WrestlerStatsDB).filter(WrestlerStatsDB.wrestler_id == w1.id).first()
-        stats2 = self.db.query(WrestlerStatsDB).filter(WrestlerStatsDB.wrestler_id == w2.id).first()
-
-        def _classify(stats):
-            if not stats:
-                return "generic"
-            top = max(
-                ("power", stats.power), ("highflyer", stats.aerial + stats.speed),
-                ("technical", stats.technical + stats.submission),
-                ("brawler", stats.brawling + stats.toughness),
-                key=lambda x: x[1],
-            )
-            return top[0]
-
-        cat1, cat2 = _classify(stats1), _classify(stats2)
-        if cat1 == cat2:
-            pool_key = cat1
-        else:
-            pool_key = "mixed"
-
-        # Pick from pool, avoiding names already used in this world
-        existing_names = {
-            t.name for t in self.db.query(TagTeamDB).filter(
-                TagTeamDB.world_id == self.world.id
-            ).all()
-        }
-        pool = [n for n in self._TAG_TEAM_NAMES.get(pool_key, []) if n not in existing_names]
-        if not pool:
-            pool = [n for n in self._TAG_TEAM_NAMES["generic"] if n not in existing_names]
-        if not pool:
-            # Absolute fallback
-            team_name = f"{w1.name} & {w2.name}"
-        else:
-            team_name = random.choice(pool)
-
-        # Generate team finisher name
-        template = random.choice(self._TEAM_FINISHER_TEMPLATES)
-        finisher_name = template.format(
-            move=random.choice(self._FINISHER_MOVES),
-            adj=random.choice(self._FINISHER_ADJS),
-        )
-
-        return team_name, finisher_name
-
-    # ------------------------------------------------------------------
     # Phase 10: Tag team management
     # ------------------------------------------------------------------
 
@@ -1546,11 +663,7 @@ class WorldTicker:
         if get_day_of_week(game_date) != 1:  # Tuesday
             return
 
-        npc_feds = self.db.query(GameFederationDB).filter(
-            GameFederationDB.world_id == self.world.id,
-            GameFederationDB.is_npc == True,
-            GameFederationDB.is_active == True,
-        ).all()
+        npc_feds = get_npc_federations(self.db, self.world.id)
 
         for fed in npc_feds:
             self._npc_form_tag_teams(fed, game_date)
@@ -1599,7 +712,9 @@ class WorldTicker:
             if w1.alignment != w2.alignment and "tweener" not in (w1.alignment, w2.alignment):
                 continue
 
-            team_name, finisher_name = self._generate_tag_team_name(w1, w2)
+            team_name, finisher_name = generate_tag_team_name(
+                self.db, self.world.id, w1, w2,
+            )
             self.db.add(TagTeamDB(
                 world_id=self.world.id,
                 name=team_name,
@@ -1662,230 +777,24 @@ class WorldTicker:
     def _inter_federation_dynamics(self, game_date: str):
         """Market share, talent poaching, federation momentum."""
         # Daily: update federation momentum
-        self._update_federation_momentum(game_date)
+        inter_federation_service.update_federation_momentum(
+            self.db, self.world, self.events, self._log_event, game_date,
+        )
 
         # Weekly (Sundays): market share redistribution and talent offers
         if get_day_of_week(game_date) == 6:
-            self._redistribute_market_share()
-            self._process_talent_offers(game_date)
-            self._generate_talent_offers(game_date)
-            self._adjust_tv_deals()
-
-    def _update_federation_momentum(self, game_date: str):
-        """Daily federation momentum adjustment."""
-        feds = self.db.query(GameFederationDB).filter(
-            GameFederationDB.world_id == self.world.id,
-            GameFederationDB.is_active == True,
-        ).all()
-
-        for fed in feds:
-            momentum = fed.momentum or 50
-
-            # Recent show quality (check last show)
-            last_show = self.db.query(ShowDB).filter(
-                ShowDB.federation_id == fed.id,
-                ShowDB.is_completed == True,
-                ShowDB.game_date == game_date,
-            ).first()
-
-            if last_show and last_show.overall_rating:
-                if last_show.overall_rating >= 4.0:
-                    momentum += 3
-                elif last_show.overall_rating >= 3.0:
-                    momentum += 1
-                elif last_show.overall_rating < 2.0:
-                    momentum -= 2
-
-            # Roster morale check
-            contracts = self.db.query(ContractDB).filter(
-                ContractDB.federation_id == fed.id,
-                ContractDB.status == "active",
-            ).all()
-            if contracts:
-                wrestler_ids = [c.wrestler_id for c in contracts]
-                wrestlers = self.db.query(GameWrestlerDB).filter(
-                    GameWrestlerDB.id.in_(wrestler_ids),
-                ).all()
-                if wrestlers:
-                    avg_morale = sum(w.morale for w in wrestlers) / len(wrestlers)
-                    if avg_morale < 40:
-                        momentum -= 3  # Scandal/low morale
-
-            # Natural regression toward 50
-            if momentum > 50:
-                momentum -= 1
-            elif momentum < 50:
-                momentum += 1
-
-            fed.momentum = max(0, min(100, momentum))
-
-    def _redistribute_market_share(self):
-        """Redistribute market share based on momentum and show quality."""
-        feds = self.db.query(GameFederationDB).filter(
-            GameFederationDB.world_id == self.world.id,
-            GameFederationDB.is_active == True,
-        ).all()
-
-        if not feds:
-            return
-
-        total_momentum = sum(f.momentum or 50 for f in feds)
-        if total_momentum == 0:
-            return
-
-        for fed in feds:
-            # Market share proportional to momentum
-            target_share = ((fed.momentum or 50) / total_momentum) * 100
-            current = fed.market_share or 0
-            # Gradual shift toward target (10% per week)
-            fed.market_share = round(current + (target_share - current) * 0.1, 1)
-
-    def _generate_talent_offers(self, game_date: str):
-        """NPC feds make talent offers to rivals' wrestlers."""
-        npc_feds = self.db.query(GameFederationDB).filter(
-            GameFederationDB.world_id == self.world.id,
-            GameFederationDB.is_npc == True,
-            GameFederationDB.is_active == True,
-            GameFederationDB.budget > 50000,
-        ).all()
-
-        for fed in npc_feds:
-            if random.random() > 0.15:  # 15% chance per week
-                continue
-
-            # Find targets: popular wrestlers from other feds with low morale
-            targets = self.db.query(GameWrestlerDB).join(ContractDB).filter(
-                GameWrestlerDB.world_id == self.world.id,
-                GameWrestlerDB.is_active == True,
-                GameWrestlerDB.is_npc == True,
-                ContractDB.federation_id != fed.id,
-                ContractDB.status == "active",
-            ).filter(
-                (GameWrestlerDB.popularity > 60) | (GameWrestlerDB.morale < 40)
-            ).all()
-
-            if not targets:
-                continue
-
-            target = random.choice(targets)
-
-            # Check no existing pending offer
-            existing = self.db.query(TalentOfferDB).filter(
-                TalentOfferDB.wrestler_id == target.id,
-                TalentOfferDB.status == "pending",
-            ).first()
-            if existing:
-                continue
-
-            salary = max(1500, target.popularity * 30 + random.randint(-500, 500))
-            expires = advance_game_date(game_date, 14)
-
-            self.db.add(TalentOfferDB(
-                world_id=self.world.id,
-                federation_id=fed.id,
-                wrestler_id=target.id,
-                salary_offered=salary,
-                contract_length_weeks=52,
-                offered_date=game_date,
-                expires_date=expires,
-            ))
-            self._log_event(
-                "talent_offer",
-                f"{fed.short_name or fed.name} makes an offer to {target.name}",
-                [fed.id, target.id], importance=5,
+            inter_federation_service.redistribute_market_share(
+                self.db, self.world, self.events, self._log_event,
             )
-
-    def _process_talent_offers(self, game_date: str):
-        """Process pending talent offers — NPC wrestlers decide."""
-        offers = self.db.query(TalentOfferDB).filter(
-            TalentOfferDB.world_id == self.world.id,
-            TalentOfferDB.status == "pending",
-        ).all()
-
-        for offer in offers:
-            # Expired?
-            if offer.expires_date and offer.expires_date <= game_date:
-                offer.status = "expired"
-                continue
-
-            wrestler = self.db.query(GameWrestlerDB).filter(
-                GameWrestlerDB.id == offer.wrestler_id
-            ).first()
-            if not wrestler or not wrestler.is_npc:
-                continue
-
-            # Current contract
-            current = self.db.query(ContractDB).filter(
-                ContractDB.wrestler_id == wrestler.id,
-                ContractDB.status == "active",
-            ).first()
-
-            accept_chance = 0.1  # Base 10%
-            if wrestler.morale < 30:
-                accept_chance += 0.3
-            if current and offer.salary_offered > current.salary_weekly * 1.5:
-                accept_chance += 0.2
-            if wrestler.popularity > 70:
-                accept_chance -= 0.1  # Popular wrestlers are pickier
-
-            if random.random() < accept_chance:
-                # Accept: end old contract, create new one
-                if current:
-                    current.status = "terminated"
-                    current.end_date = game_date
-
-                new_contract = ContractDB(
-                    world_id=self.world.id,
-                    wrestler_id=wrestler.id,
-                    federation_id=offer.federation_id,
-                    salary_weekly=offer.salary_offered,
-                    start_date=game_date,
-                    is_exclusive=True,
-                )
-                self.db.add(new_contract)
-                offer.status = "accepted"
-
-                fed = self.db.query(GameFederationDB).filter(
-                    GameFederationDB.id == offer.federation_id
-                ).first()
-                fed_name = fed.short_name or fed.name if fed else "Unknown"
-                self._log_event(
-                    "talent_signing",
-                    f"BREAKING: {wrestler.name} signs with {fed_name}!",
-                    [wrestler.id, offer.federation_id], importance=8,
-                )
-                self.events.append(f"{wrestler.name} signs with {fed_name}!")
-                _get_news_service().generate_signing_news(
-                    self.db, self.world.id, wrestler.name, fed_name, game_date,
-                )
-
-                # Momentum shifts
-                if fed:
-                    fed.momentum = min(100, (fed.momentum or 50) + 3)
-            else:
-                offer.status = "rejected"
-
-    def _adjust_tv_deals(self):
-        """Quarterly TV deal adjustments based on performance."""
-        # Only adjust on first Sunday of each quarter-ish (every ~13 weeks)
-        if self.world.current_tick % 91 != 0:
-            return
-
-        feds = self.db.query(GameFederationDB).filter(
-            GameFederationDB.world_id == self.world.id,
-            GameFederationDB.is_active == True,
-        ).all()
-
-        for fed in feds:
-            momentum = fed.momentum or 50
-            if momentum > 70:
-                # Hot fed: TV deal increases
-                increase = fed.tv_deal_value * random.uniform(0.10, 0.20)
-                fed.tv_deal_value += increase
-            elif momentum < 30 and fed.tv_deal_value > 5000:
-                # Cold fed: TV deal shrinks
-                decrease = fed.tv_deal_value * random.uniform(0.05, 0.15)
-                fed.tv_deal_value = max(5000, fed.tv_deal_value - decrease)
+            inter_federation_service.process_talent_offers(
+                self.db, self.world, self.events, self._log_event, game_date,
+            )
+            inter_federation_service.generate_talent_offers(
+                self.db, self.world, self.events, self._log_event, game_date,
+            )
+            inter_federation_service.adjust_tv_deals(
+                self.db, self.world, self.events, self._log_event,
+            )
 
     # ------------------------------------------------------------------
     # Phase 12: Weekly news
@@ -1922,11 +831,7 @@ class WorldTicker:
 
             # Generate next year's PPV calendars for all active federations
             from game_service.ppv_calendar_service import rollover_ppv_calendar
-            all_feds = self.db.query(GameFederationDB).filter(
-                GameFederationDB.world_id == self.world.id,
-                GameFederationDB.is_active == True,
-            ).all()
-            for fed in all_feds:
+            for fed in get_active_federations(self.db, self.world.id):
                 new_ppvs = rollover_ppv_calendar(self.db, fed, game_date)
                 if new_ppvs:
                     self.events.append(
@@ -1952,11 +857,7 @@ class WorldTicker:
         month = game_date[5:7]
         if month in ("07", "08") and get_day_of_week(game_date) == 0:
             # Summer boost: all federations get a momentum nudge
-            npc_feds = self.db.query(GameFederationDB).filter(
-                GameFederationDB.world_id == self.world.id,
-                GameFederationDB.is_active == True,
-            ).all()
-            for fed in npc_feds:
+            for fed in get_active_federations(self.db, self.world.id):
                 old_m = fed.momentum or 50
                 fed.momentum = min(100, old_m + 2)
 
@@ -1967,10 +868,7 @@ class WorldTicker:
         # --- Weekly events (Thursdays) ---
         if get_day_of_week(game_date) == 3:
             # Goal evaluation (Group 2)
-            wrestlers = self.db.query(GameWrestlerDB).filter(
-                GameWrestlerDB.world_id == self.world.id,
-                GameWrestlerDB.is_active == True,
-            ).all()
+            wrestlers = get_active_wrestlers(self.db, self.world.id)
             for w in wrestlers:
                 # Ensure goals are created
                 create_wrestler_goals(self.db, w, game_date)
@@ -1979,10 +877,7 @@ class WorldTicker:
                     self.events.append(f"{w.name} achieved: {g}")
 
             # Locker room dynamics (Group 3)
-            npc_feds = self.db.query(GameFederationDB).filter(
-                GameFederationDB.world_id == self.world.id,
-                GameFederationDB.is_active == True,
-            ).all()
+            npc_feds = get_active_federations(self.db, self.world.id)
             for fed in npc_feds:
                 update_locker_room_dynamics(self.db, fed, game_date)
 
@@ -1996,10 +891,7 @@ class WorldTicker:
                 update_conditioning(self.db, w, game_date)
 
         # --- Daily: ring rust tracking (Group 1) ---
-        active = self.db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.world_id == self.world.id,
-            GameWrestlerDB.is_active == True,
-        ).all()
+        active = get_active_wrestlers(self.db, self.world.id)
         for w in active:
             if w.last_booked_date:
                 try:
@@ -2138,10 +1030,7 @@ class WorldTicker:
 
     def _seasonal_new_year_resolution(self, game_date: str):
         """Q1 event: Wrestlers with unmet goals get a fresh-start morale boost."""
-        wrestlers = self.db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.world_id == self.world.id,
-            GameWrestlerDB.is_active == True,
-        ).all()
+        wrestlers = get_active_wrestlers(self.db, self.world.id)
 
         boosted = 0
         for w in wrestlers:
@@ -2163,11 +1052,7 @@ class WorldTicker:
         Picks top 8 by popularity per federation, announces a tournament via
         narrative log, and crowns a winner with +10 popularity.
         """
-        npc_feds = self.db.query(GameFederationDB).filter(
-            GameFederationDB.world_id == self.world.id,
-            GameFederationDB.is_npc == True,
-            GameFederationDB.is_active == True,
-        ).all()
+        npc_feds = get_npc_federations(self.db, self.world.id)
 
         for fed in npc_feds:
             contracts = self.db.query(ContractDB).filter(

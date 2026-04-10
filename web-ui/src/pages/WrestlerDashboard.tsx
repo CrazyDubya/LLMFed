@@ -1,7 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useGame } from '../context/GameContext';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { useWorldSocket } from '../hooks/useWorldSocket';
+import LiveFeed from '../components/LiveFeed';
+import SchedulerControls from '../components/SchedulerControls';
 
 export default function WrestlerDashboard() {
   const { worldId, wrestlerId, clearGame } = useGame();
@@ -43,6 +46,13 @@ export default function WrestlerDashboard() {
   };
 
   useEffect(() => { loadData(); }, [worldId, wrestlerId]);
+
+  // WebSocket: auto-refresh on tick and show completion events
+  const handleTick = useCallback(() => { loadData(); }, [worldId, wrestlerId]);
+  const { connected: wsConnected, eventLog } = useWorldSocket(worldId, {
+    onTick: handleTick,
+    onShowCompleted: handleTick,
+  });
 
   const advanceDay = async (days: number = 1) => {
     if (!worldId) return;
@@ -97,6 +107,10 @@ export default function WrestlerDashboard() {
               Wrestler Mode | {worldData?.current_game_date || '...'} |
               Popularity: {wrestler?.popularity || 0} |
               {wrestler?.alignment && <span className={wrestler.alignment === 'face' ? ' text-blue-400' : wrestler.alignment === 'heel' ? ' text-red-400' : ' text-gray-400'}> {wrestler.alignment.toUpperCase()}</span>}
+              <span className={`ml-2 inline-flex items-center gap-1 ${wsConnected ? 'text-green-500' : 'text-red-500'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                {wsConnected ? 'LIVE' : 'OFFLINE'}
+              </span>
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -317,6 +331,22 @@ export default function WrestlerDashboard() {
             </div>
           </div>
         )}
+
+        {/* Live Feed & Scheduler Controls */}
+        <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-4 pb-8">
+          <div className="lg:col-span-2">
+            <LiveFeed events={eventLog} connected={wsConnected} />
+          </div>
+          <div className="space-y-4">
+            <SchedulerControls />
+            <button
+              onClick={() => navigate('/shows')}
+              className="w-full px-4 py-2.5 bg-[#1a1a24] border border-gray-800 hover:border-amber-800 text-amber-400 rounded-lg text-sm transition"
+            >
+              Shows Hub - View All Results
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
