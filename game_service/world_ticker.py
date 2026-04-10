@@ -51,52 +51,50 @@ from game_service.show_simulation_service import simulate_show
 
 logger = logging.getLogger(__name__)
 
-# Lazy imports to avoid circular dependencies
-_show_service = None
-_storyline_service = None
-_news_service = None
-_stable_service = None
-_manager_service = None
+# ---------------------------------------------------------------------------
+# Day-of-week constants
+# ---------------------------------------------------------------------------
+MONDAY = 0
+TUESDAY = 1
+WEDNESDAY = 2
+THURSDAY = 3
+FRIDAY = 4
+SATURDAY = 5
+SUNDAY = 6
+
+
+# ---------------------------------------------------------------------------
+# Lazy service loader — avoids circular imports
+# ---------------------------------------------------------------------------
+_service_cache = {}
+
+
+def _get_service(module_name: str):
+    """Lazy-load a game_service module by name, caching the result."""
+    if module_name not in _service_cache:
+        import importlib
+        _service_cache[module_name] = importlib.import_module(f"game_service.{module_name}")
+    return _service_cache[module_name]
 
 
 def _get_show_service():
-    global _show_service
-    if _show_service is None:
-        from game_service import show_service as _ss
-        _show_service = _ss
-    return _show_service
+    return _get_service("show_service")
 
 
 def _get_storyline_service():
-    global _storyline_service
-    if _storyline_service is None:
-        from game_service import storyline_service as _sls
-        _storyline_service = _sls
-    return _storyline_service
+    return _get_service("storyline_service")
 
 
 def _get_news_service():
-    global _news_service
-    if _news_service is None:
-        from game_service import news_service as _ns
-        _news_service = _ns
-    return _news_service
+    return _get_service("news_service")
 
 
 def _get_stable_service():
-    global _stable_service
-    if _stable_service is None:
-        from game_service import stable_service as _stbs
-        _stable_service = _stbs
-    return _stable_service
+    return _get_service("stable_service")
 
 
 def _get_manager_service():
-    global _manager_service
-    if _manager_service is None:
-        from game_service import manager_service as _mgrs
-        _manager_service = _mgrs
-    return _manager_service
+    return _get_service("manager_service")
 
 
 def advance_game_date(date_str: str, days: int = 1) -> str:
@@ -260,7 +258,7 @@ class WorldTicker:
                     self._npc_book_weekly_show(fed)
 
             # Weekly vision check: plan upcoming PPV cards, adapt to hot/cold acts
-            if day_of_week == 0:  # Mondays = planning day
+            if day_of_week == MONDAY:  # Planning day
                 self._npc_vision_check(fed, game_date)
 
     def _check_ppv_today(self, fed: GameFederationDB, game_date: str):
@@ -435,7 +433,7 @@ class WorldTicker:
                 sl_svc.resolve_storyline(self.db, storyline, "Fizzled out")
 
         # Weekly storyline generation (on Wednesdays)
-        if get_day_of_week(self.world.current_game_date) == 2:
+        if get_day_of_week(self.world.current_game_date) == WEDNESDAY:
             new_sls = sl_svc.auto_generate_storylines(
                 self.db, self.world.id, self.world.current_game_date
             )
@@ -448,7 +446,7 @@ class WorldTicker:
 
     def _economy_tick(self):
         """Weekly financial processing (on Sundays)."""
-        if get_day_of_week(self.world.current_game_date) != 6:  # Sunday
+        if get_day_of_week(self.world.current_game_date) != SUNDAY:
             return
 
         feds = get_active_federations(self.db, self.world.id)
@@ -654,13 +652,27 @@ class WorldTicker:
         except (ValueError, TypeError):
             return 0
 
+    def _is_long_term_injured(self, wrestler, game_date: str, weeks_threshold: int = 8) -> bool:
+        """Check if a wrestler is injured for more than threshold weeks."""
+        if not wrestler.is_injured or not wrestler.injury_return_date:
+            return False
+        return self._days_between(game_date, wrestler.injury_return_date) / 7 > weeks_threshold
+
+    def _get_fed_roster_ids(self, fed: GameFederationDB) -> list:
+        """Get all active wrestler IDs in a federation."""
+        contracts = self.db.query(ContractDB).filter(
+            ContractDB.federation_id == fed.id,
+            ContractDB.status == "active",
+        ).all()
+        return [c.wrestler_id for c in contracts]
+
     # ------------------------------------------------------------------
     # Phase 10: Tag team management
     # ------------------------------------------------------------------
 
     def _manage_tag_teams(self, game_date: str):
         """NPC feds form/dissolve tag teams (Tuesdays)."""
-        if get_day_of_week(game_date) != 1:  # Tuesday
+        if get_day_of_week(game_date) != TUESDAY:
             return
 
         npc_feds = get_npc_federations(self.db, self.world.id)
@@ -671,12 +683,7 @@ class WorldTicker:
 
     def _npc_form_tag_teams(self, fed: GameFederationDB, game_date: str):
         """Form tag teams from wrestlers with high chemistry."""
-        # Get roster
-        contracts = self.db.query(ContractDB).filter(
-            ContractDB.federation_id == fed.id,
-            ContractDB.status == "active",
-        ).all()
-        wrestler_ids = [c.wrestler_id for c in contracts]
+        wrestler_ids = self._get_fed_roster_ids(fed)
 
         if len(wrestler_ids) < 4:  # Need at least 4 for tag teams to make sense
             return
@@ -751,14 +758,8 @@ class WorldTicker:
             if w1.alignment != w2.alignment and "tweener" not in (w1.alignment, w2.alignment):
                 dissolve = True
             # One member injured for 8+ weeks
-            if w1.is_injured and w1.injury_return_date:
-                weeks_out = self._days_between(game_date, w1.injury_return_date) / 7
-                if weeks_out > 8:
-                    dissolve = True
-            if w2.is_injured and w2.injury_return_date:
-                weeks_out = self._days_between(game_date, w2.injury_return_date) / 7
-                if weeks_out > 8:
-                    dissolve = True
+            if self._is_long_term_injured(w1, game_date) or self._is_long_term_injured(w2, game_date):
+                dissolve = True
 
             if dissolve:
                 team.is_active = False
@@ -782,7 +783,7 @@ class WorldTicker:
         )
 
         # Weekly (Sundays): market share redistribution and talent offers
-        if get_day_of_week(game_date) == 6:
+        if get_day_of_week(game_date) == SUNDAY:
             inter_federation_service.redistribute_market_share(
                 self.db, self.world, self.events, self._log_event,
             )
@@ -802,7 +803,7 @@ class WorldTicker:
 
     def _generate_weekly_news(self, game_date: str):
         """Generate weekly dirt sheet news on Sundays."""
-        if get_day_of_week(game_date) != 6:  # Sunday
+        if get_day_of_week(game_date) != SUNDAY:
             return
         try:
             news_svc = _get_news_service()
@@ -855,7 +856,7 @@ class WorldTicker:
 
         # Q3 (Jul-Sep): Summer Slam month — attendance boost
         month = game_date[5:7]
-        if month in ("07", "08") and get_day_of_week(game_date) == 0:
+        if month in ("07", "08") and get_day_of_week(game_date) == MONDAY:
             # Summer boost: all federations get a momentum nudge
             for fed in get_active_federations(self.db, self.world.id):
                 old_m = fed.momentum or 50
@@ -866,7 +867,7 @@ class WorldTicker:
             self._generate_year_end_summary(game_date)
 
         # --- Weekly events (Thursdays) ---
-        if get_day_of_week(game_date) == 3:
+        if get_day_of_week(game_date) == THURSDAY:
             # Goal evaluation (Group 2)
             wrestlers = get_active_wrestlers(self.db, self.world.id)
             for w in wrestlers:
@@ -900,57 +901,47 @@ class WorldTicker:
                 except (ValueError, TypeError):
                     pass
 
-        # --- Daily: nostalgia pop on return from long absence (Group 5) ---
-        for w in active:
-            if w.last_booked_date and w.ring_rust_days and w.ring_rust_days > 90:
-                if (w.legacy_score or 0) >= 30:
-                    # Only apply once per return (when they get booked again,
-                    # ring_rust_days resets)
-                    pass  # Pop applied in match_aftermath when booked
+        # Nostalgia pop is applied in match_aftermath when a long-absent wrestler gets booked
 
     # ------------------------------------------------------------------
     # Phase 14: Persona & Social Media (Group 7)
     # ------------------------------------------------------------------
 
+    def _safe_tick(self, label: str, fn):
+        """Run a tick function safely, logging errors without raising."""
+        try:
+            fn()
+        except Exception as e:
+            logger.error("%s failed: %s", label, e, exc_info=True)
+
     def _persona_tick(self, game_date: str):
         """Persona duality processing: gimmick evolution, life events, social media."""
         # Weekly persona tick on Fridays
-        if get_day_of_week(game_date) == 4:  # Friday
-            try:
+        if get_day_of_week(game_date) == FRIDAY:
+            def _tick_persona():
                 from game_service.wrestler_lifecycle_service import tick_persona
                 tick_persona(self.db, self.world.id, game_date)
                 self.events.append("Persona lifecycle tick processed")
-            except Exception as e:
-                logger.error("Persona tick failed: %s", e, exc_info=True)
 
-            # Check for worked-shoot storylines from life events
-            try:
+            def _tick_kayfabe():
                 from game_service.storyline_service import (
                     check_life_event_storylines,
                     check_relationship_collision_storylines,
                 )
-                ws_storylines = check_life_event_storylines(
-                    self.db, self.world.id, game_date
-                )
-                for sl in ws_storylines:
+                for sl in check_life_event_storylines(self.db, self.world.id, game_date):
                     self.events.append(f"Worked-shoot storyline '{sl.name}' created!")
-
-                coll_storylines = check_relationship_collision_storylines(
-                    self.db, self.world.id, game_date
-                )
-                for sl in coll_storylines:
+                for sl in check_relationship_collision_storylines(self.db, self.world.id, game_date):
                     self.events.append(f"Collision storyline '{sl.name}' created!")
-            except Exception as e:
-                logger.error("Kayfabe collision check failed: %s", e, exc_info=True)
+
+            self._safe_tick("Persona tick", _tick_persona)
+            self._safe_tick("Kayfabe collision check", _tick_kayfabe)
 
         # Daily social media tick
-        try:
+        def _tick_social():
             from game_service import social_media_service
-            social_media_service.tick_social_media(
-                self.db, self.world.id, game_date
-            )
-        except Exception as e:
-            logger.error("Social media tick failed: %s", e, exc_info=True)
+            social_media_service.tick_social_media(self.db, self.world.id, game_date)
+
+        self._safe_tick("Social media tick", _tick_social)
 
     def _stable_dynamics_tick(self, game_date: str):
         """Process internal faction politics for all active stables.
@@ -959,7 +950,7 @@ class WorldTicker:
         loyalty drift, influence jockeying, and auto-generated drama.
         """
         day_of_week = get_day_of_week(game_date)
-        if day_of_week not in (2, 5):  # Wednesday, Saturday
+        if day_of_week not in (WEDNESDAY, SATURDAY):
             return
 
         try:
@@ -981,7 +972,7 @@ class WorldTicker:
         Runs on Thursdays — manager bonds slowly grow in effectiveness
         as the pairing builds chemistry.
         """
-        if get_day_of_week(game_date) != 3:  # Thursday
+        if get_day_of_week(game_date) != THURSDAY:
             return
 
         try:
@@ -1055,11 +1046,7 @@ class WorldTicker:
         npc_feds = get_npc_federations(self.db, self.world.id)
 
         for fed in npc_feds:
-            contracts = self.db.query(ContractDB).filter(
-                ContractDB.federation_id == fed.id,
-                ContractDB.status == "active",
-            ).all()
-            wrestler_ids = [c.wrestler_id for c in contracts]
+            wrestler_ids = self._get_fed_roster_ids(fed)
             wrestlers = self.db.query(GameWrestlerDB).filter(
                 GameWrestlerDB.id.in_(wrestler_ids),
                 GameWrestlerDB.is_active == True,

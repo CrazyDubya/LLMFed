@@ -6,17 +6,53 @@ archetype, voice style, character depth, and real-life emotional state.
 Falls back to alignment-based templates when persona data is unavailable.
 """
 
+import os
 import random
 import logging
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    PromoDB, GameWrestlerDB, WrestlerStatsDB, StorylineDB,
-    StorylineParticipantDB, GimmickHistoryDB, WrestlerBackstoryDB,
+    PromoDB, GameWrestlerDB, WrestlerStatsDB,
+    GimmickHistoryDB, WrestlerBackstoryDB,
     LifeEventDB,
 )
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Promo constants
+# ---------------------------------------------------------------------------
+
+HIGH_CHARISMA_THRESHOLD = 70
+LOW_CHARISMA_THRESHOLD = 30
+QUALITY_MIN = 0.5
+QUALITY_MAX = 5.0
+HEAT_MIN = 0
+HEAT_MAX = 50
+HIGH_POPULARITY_THRESHOLD = 70
+KAYFABE_BREAK_HEAT_CHANCE = 0.3
+CATCHPHRASE_CHANCE = 0.4
+WORKED_SHOOT_CHANCE = 0.15
+LOW_KAYFABE_THRESHOLD = 30
+EFFECTIVE_GIMMICK_THRESHOLD = 70
+STALE_GIMMICK_THRESHOLD = 70
+GOOD_CROWD_QUALITY = 3.0
+STABLE_HEAT_PER_PROMO = 2
+STAT_DEFAULT = 50
+
+
+def _get_stat(stats, attr: str, default: int = STAT_DEFAULT) -> int:
+    """Safely extract a stat value with default."""
+    if not stats:
+        return default
+    return getattr(stats, attr, default)
+
+
+def _get_target_wrestler(db, target_id):
+    """Fetch target wrestler by ID, or None."""
+    if not target_id:
+        return None
+    return db.query(GameWrestlerDB).filter(GameWrestlerDB.id == target_id).first()
 
 # ---------------------------------------------------------------------------
 # Legacy alignment-based templates (fallback)
@@ -423,14 +459,11 @@ def _generate_persona_promo(wrestler, stats, target_id, db, promo_type):
     gimmick = _get_current_gimmick(db, wrestler.id)
 
     # LLM-as-character: the wrestler speaks for themselves
-    import os
     if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
         try:
             from game_service.character_agent import character_speak
-            target_name = ""
-            if target_id:
-                target = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == target_id).first()
-                target_name = target.name if target else ""
+            target = _get_target_wrestler(db, target_id)
+            target_name = target.name if target else ""
 
             # Build context that tells the character what the promo situation is
             context = f"You are cutting a {promo_type} promo in the ring."
@@ -458,8 +491,8 @@ def _generate_persona_promo(wrestler, stats, target_id, db, promo_type):
 
     # Check for worked-shoot promo (low kayfabe commitment + high frustration/life events)
     if promo_type == "worked_shoot" or (
-        wrestler.kayfabe_commitment < 30
-        and random.random() < 0.15
+        wrestler.kayfabe_commitment < LOW_KAYFABE_THRESHOLD
+        and random.random() < WORKED_SHOOT_CHANCE
     ):
         return _generate_worked_shoot_promo(wrestler, gimmick, target_id, db)
 
@@ -482,14 +515,12 @@ def _generate_persona_promo(wrestler, stats, target_id, db, promo_type):
     # Catchphrase insertion if the gimmick has one
     voice = gimmick.voice_style or {}
     catchphrases = voice.get("catchphrases", [])
-    if catchphrases and random.random() < 0.4:
+    if catchphrases and random.random() < CATCHPHRASE_CHANCE:
         parts.append(random.choice(catchphrases))
 
     # Target callout — still uses the universal challenge lines but flavored
     if target_id:
-        target = db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == target_id
-        ).first()
+        target = _get_target_wrestler(db, target_id)
         if target:
             line = random.choice(CHALLENGE_LINES).format(target=target.name)
             parts.append(line)
@@ -523,9 +554,7 @@ def _generate_worked_shoot_promo(wrestler, gimmick, target_id, db):
         parts.append("I don't need this. I could walk out that door right now and every company in the world would be calling.")
 
     if target_id:
-        target = db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == target_id
-        ).first()
+        target = _get_target_wrestler(db, target_id)
         if target:
             parts.append(f"And {target.name} — forget the storyline. You and I both know what this is really about.")
 
@@ -548,18 +577,16 @@ def _generate_template_promo(wrestler, stats, target_id, db):
     else:
         parts.append(random.choice(FACE_OPENERS + HEEL_OPENERS))
 
-    charisma = stats.charisma if stats else 50
-    if charisma > 70:
+    charisma = _get_stat(stats, "charisma")
+    if charisma > HIGH_CHARISMA_THRESHOLD:
         parts.append(random.choice(BOAST_LINES))
-    elif charisma < 30:
+    elif charisma < LOW_CHARISMA_THRESHOLD:
         parts.append(random.choice(UNDERDOG_LINES))
     else:
         parts.append(random.choice(BOAST_LINES + UNDERDOG_LINES))
 
     if target_id:
-        target = db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == target_id
-        ).first()
+        target = _get_target_wrestler(db, target_id)
         if target:
             line = random.choice(CHALLENGE_LINES).format(target=target.name)
             parts.append(line)
@@ -572,8 +599,8 @@ def _generate_template_promo(wrestler, stats, target_id, db):
 def _evaluate_promo_quality(stats, content: str, is_player: bool,
                             gimmick=None) -> float:
     """Rate a promo 0.0 - 5.0 based on wrestler stats, content, and character depth."""
-    mic = stats.mic_skill if stats else 50
-    charisma = stats.charisma if stats else 50
+    mic = _get_stat(stats, "mic_skill")
+    charisma = _get_stat(stats, "charisma")
 
     # Base quality from stats
     base = ((mic + charisma) / 2) / 100 * 3.5  # 0 - 3.5
@@ -595,17 +622,17 @@ def _evaluate_promo_quality(stats, content: str, is_player: bool,
         base += depth_bonus
 
         # Effective gimmick bonus
-        if (gimmick.effectiveness or 0) > 70:
+        if (gimmick.effectiveness or 0) > EFFECTIVE_GIMMICK_THRESHOLD:
             base += 0.2
 
         # Stale gimmick penalty
-        if (gimmick.staleness or 0) > 70:
+        if (gimmick.staleness or 0) > STALE_GIMMICK_THRESHOLD:
             base -= 0.3
 
     # Randomness factor
     base += random.uniform(-0.3, 0.5)
 
-    return round(max(0.5, min(5.0, base)), 1)
+    return round(max(QUALITY_MIN, min(QUALITY_MAX, base)), 1)
 
 
 def _calculate_promo_heat(wrestler, quality: float, has_target: bool) -> int:
@@ -618,14 +645,14 @@ def _calculate_promo_heat(wrestler, quality: float, has_target: bool) -> int:
     if wrestler.alignment == "heel":
         base += 3
 
-    if wrestler.popularity > 70:
+    if wrestler.popularity > HIGH_POPULARITY_THRESHOLD:
         base += 5
 
     # Kayfabe breaks generate extra heat (pipe bomb effect)
-    if (wrestler.kayfabe_break_count or 0) > 0 and random.random() < 0.3:
+    if (wrestler.kayfabe_break_count or 0) > 0 and random.random() < KAYFABE_BREAK_HEAT_CHANCE:
         base += random.randint(5, 15)
 
-    return max(0, min(50, base + random.randint(-3, 3)))
+    return max(HEAT_MIN, min(HEAT_MAX, base + random.randint(-3, 3)))
 
 
 def _determine_crowd_reaction(wrestler, quality, promo_type, gimmick):
@@ -638,7 +665,7 @@ def _determine_crowd_reaction(wrestler, quality, promo_type, gimmick):
 
     # Anti-heroes always get mixed reactions
     if gimmick and gimmick.archetype == "anti_hero":
-        return "mixed" if quality < 3.0 else "electric"
+        return "mixed" if quality < GOOD_CROWD_QUALITY else "electric"
 
     # Comedy acts get unique reactions
     if gimmick and gimmick.archetype == "comedy_act":
@@ -646,9 +673,9 @@ def _determine_crowd_reaction(wrestler, quality, promo_type, gimmick):
 
     # Standard alignment-based reactions
     if wrestler.alignment == "face":
-        return "pop" if quality >= 3.0 else "mild_pop"
+        return "pop" if quality >= GOOD_CROWD_QUALITY else "mild_pop"
     elif wrestler.alignment == "heel":
-        return "heat" if quality >= 3.0 else "mild_heat"
+        return "heat" if quality >= GOOD_CROWD_QUALITY else "mild_heat"
     return "mixed"
 
 
@@ -677,9 +704,9 @@ def generate_faction_promo(
 
     stable_name = stable.name
 
-    opener = random.choice(FACTION_PROMO_OPENERS).replace("{stable}", stable_name)
-    body = random.choice(FACTION_PROMO_BODIES).replace("{stable}", stable_name)
-    closer = random.choice(FACTION_PROMO_CLOSERS).replace("{stable}", stable_name)
+    opener = random.choice(FACTION_PROMO_OPENERS).format(stable=stable_name)
+    body = random.choice(FACTION_PROMO_BODIES).format(stable=stable_name)
+    closer = random.choice(FACTION_PROMO_CLOSERS).format(stable=stable_name)
 
     # Add target stable reference
     target_line = ""
@@ -695,16 +722,16 @@ def generate_faction_promo(
 
     # Quality from speaker's stats
     stats = db.query(WrestlerStatsDB).filter_by(wrestler_id=speaker_wrestler_id).first()
-    mic = stats.mic_skill if stats else 50
-    charisma = stats.charisma if stats else 50
+    mic = _get_stat(stats, "mic_skill")
+    charisma = _get_stat(stats, "charisma")
     quality = round(((mic + charisma) / 2) / 100 * 4.0 + random.uniform(-0.3, 0.5), 1)
-    quality = max(0.5, min(5.0, quality))
+    quality = max(QUALITY_MIN, min(QUALITY_MAX, quality))
 
     heat = int(quality * 8 + stable.heat * 0.2 + random.randint(0, 10))
-    heat = min(50, heat)
+    heat = min(HEAT_MAX, heat)
 
     # Boost stable heat
-    stable.heat = min(100, stable.heat + 2)
+    stable.heat = min(100, stable.heat + STABLE_HEAT_PER_PROMO)
 
     return {
         "content": content,

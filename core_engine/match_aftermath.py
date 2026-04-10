@@ -17,6 +17,91 @@ from models.game_models import (
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Aftermath constants — tunable parameters for post-match effects
+# ---------------------------------------------------------------------------
+
+# Popularity / morale shifts
+POP_WINNER_BASE = 2
+POP_WINNER_RATING_SCALE = 3       # * rating_factor
+POP_CLEAN_FINISH_BONUS = 2
+MORALE_WINNER_RANGE = (3, 5)
+POP_LOSER_BASE = 3
+POP_LOSER_RATING_SCALE = 2        # * rating_factor
+MORALE_LOSER_RANGE = (2, 4)
+
+# Rivalry heat
+HEAT_OPPOSING_ALIGNMENT = 5
+HEAT_TITLE_MATCH = 3
+HEAT_STORYLINE_LINK = 2
+HEAT_MAX = 100
+HEAT_NATURAL_DECAY = 1
+
+# Tag team chemistry
+TAG_CHEM_WIN_BONUS = 5
+TAG_CHEM_LOSS_BONUS = 2
+TAG_CHEM_MAX = 100
+
+# Alignment momentum
+MOMENTUM_CLEAN_WIN = 2
+MOMENTUM_DIRTY_WIN = -3
+MOMENTUM_SYMPATHY = 1
+MOMENTUM_BITTER = -2
+MORALE_THRESHOLD_BITTER = 40
+MOMENTUM_MAX = 100
+
+# Alignment turn
+FACE_TO_HEEL_THRESHOLD = -60
+HEEL_TO_FACE_THRESHOLD = 60
+TURN_POPULARITY_BONUS = 5
+
+# Title change
+TITLE_WIN_POP_BONUS = 10
+TITLE_WIN_MORALE_BONUS = 10
+TITLE_LOSS_POP_PENALTY = 5
+TITLE_LOSS_MORALE_PENALTY = 8
+
+# Botch consequences
+BOTCH_TRUST_DROP_MINOR = 5
+BOTCH_TRUST_DROP_SEVERE = 15
+BOTCH_BASE_INJURY_RISK = 0.25
+BOTCH_INJURY_PRONE_DIVISOR = 200
+BOTCH_WEEKS_RANGE = (1, 8)
+BOTCH_CONDITION_LOSS_RANGE = (15, 35)
+
+# Shoot consequences
+SHOOT_TRUST_DROP = 40
+SHOOT_TRUST_MAX_AFTER = 10
+SHOOT_HEAT_INCREASE = 30
+SHOOT_FINE_MULTIPLIER = 2
+KAYFABE_STRICTNESS_THRESHOLD = 60
+SHOOT_SUSPENSION_WEEKS_RANGE = (2, 6)
+VICTIM_MORALE_LOSS_RANGE = (10, 20)
+SHOOTER_POP_BOOST_RANGE = (2, 8)
+
+# Locker room standing progression (downgrade order)
+STANDING_DOWNGRADE = {
+    "leader": "neutral",
+    "respected": "neutral",
+    "neutral": "disliked",
+    "disliked": "disliked",
+}
+
+
+def _get_wrestler(db: Session, wrestler_id: str):
+    """Fetch a wrestler by ID."""
+    return db.query(GameWrestlerDB).filter(GameWrestlerDB.id == wrestler_id).first()
+
+
+def _get_relationship(db: Session, world_id: str, id1: str, id2: str):
+    """Get a relationship between two wrestlers (order-independent)."""
+    w1, w2 = sorted([id1, id2])
+    return db.query(WrestlerRelationshipDB).filter(
+        WrestlerRelationshipDB.world_id == world_id,
+        WrestlerRelationshipDB.wrestler1_id == w1,
+        WrestlerRelationshipDB.wrestler2_id == w2,
+    ).first()
+
 
 def process_match_aftermath(db: Session, match: MatchDB, game_date: str):
     """Process all consequences of a completed match."""
@@ -46,7 +131,7 @@ def process_match_aftermath(db: Session, match: MatchDB, game_date: str):
 
     # 4. Record last booked date
     for p in participants:
-        w = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == p.wrestler_id).first()
+        w = _get_wrestler(db, p.wrestler_id)
         if w:
             w.last_booked_date = game_date
 
@@ -85,7 +170,7 @@ def _handle_title_result(db: Session, match: MatchDB,
     if not winner_id:
         return
 
-    winner = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == winner_id).first()
+    winner = _get_wrestler(db, winner_id)
     winner_name = winner.name if winner else "Unknown"
 
     if champ.current_holder_id == winner_id:
@@ -102,9 +187,7 @@ def _handle_title_result(db: Session, match: MatchDB,
     else:
         # Title change!
         old_holder_id = champ.current_holder_id
-        old_holder = db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == old_holder_id
-        ).first() if old_holder_id else None
+        old_holder = _get_wrestler(db, old_holder_id) if old_holder_id else None
 
         # End old reign
         if old_holder_id:
@@ -132,12 +215,12 @@ def _handle_title_result(db: Session, match: MatchDB,
 
         # Title change popularity/morale bonuses
         if winner:
-            winner.popularity = min(100, winner.popularity + 10)
-            winner.morale = min(100, winner.morale + 10)
+            winner.popularity = min(100, winner.popularity + TITLE_WIN_POP_BONUS)
+            winner.morale = min(100, winner.morale + TITLE_WIN_MORALE_BONUS)
 
         if old_holder:
-            old_holder.popularity = max(0, old_holder.popularity - 5)
-            old_holder.morale = max(0, old_holder.morale - 8)
+            old_holder.popularity = max(0, old_holder.popularity - TITLE_LOSS_POP_PENALTY)
+            old_holder.morale = max(0, old_holder.morale - TITLE_LOSS_MORALE_PENALTY)
 
         # History entries
         db.add(WrestlerHistoryDB(
@@ -172,26 +255,26 @@ def _update_popularity_morale(db: Session, match: MatchDB,
     rating_factor = rating / 5.0  # 0.0 - 1.0
 
     for wp in winners:
-        w = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == wp.wrestler_id).first()
+        w = _get_wrestler(db, wp.wrestler_id)
         if not w:
             continue
-        pop_gain = int(2 + 3 * rating_factor)  # 2-5
-        morale_gain = random.randint(3, 5)
+        pop_gain = int(POP_WINNER_BASE + POP_WINNER_RATING_SCALE * rating_factor)
+        morale_gain = random.randint(*MORALE_WINNER_RANGE)
 
         # Clean finish bonus
         if match.finish_type in ("pinfall", "submission"):
-            pop_gain += 2
+            pop_gain += POP_CLEAN_FINISH_BONUS
 
         w.popularity = min(100, w.popularity + pop_gain)
         w.morale = min(100, w.morale + morale_gain)
 
     for lp in losers:
-        w = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == lp.wrestler_id).first()
+        w = _get_wrestler(db, lp.wrestler_id)
         if not w:
             continue
         # Good matches soften the loss
-        pop_loss = max(1, int(3 - 2 * rating_factor))  # 1-3
-        morale_loss = random.randint(2, 4)
+        pop_loss = max(1, int(POP_LOSER_BASE - POP_LOSER_RATING_SCALE * rating_factor))
+        morale_loss = random.randint(*MORALE_LOSER_RANGE)
 
         w.popularity = max(0, w.popularity - pop_loss)
         w.morale = max(0, w.morale - morale_loss)
@@ -200,12 +283,12 @@ def _update_popularity_morale(db: Session, match: MatchDB,
 def _update_streaks(db: Session, winners: list, losers: list):
     """Update win/loss streak counters."""
     for wp in winners:
-        w = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == wp.wrestler_id).first()
+        w = _get_wrestler(db, wp.wrestler_id)
         if w:
             w.win_streak = max(0, w.win_streak) + 1  # Reset if was negative
 
     for lp in losers:
-        w = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == lp.wrestler_id).first()
+        w = _get_wrestler(db, lp.wrestler_id)
         if w:
             w.win_streak = min(0, w.win_streak) - 1  # Reset if was positive
 
@@ -214,7 +297,7 @@ def _record_history(db: Session, match: MatchDB, winners: list, losers: list,
                     game_date: str):
     """Create wrestler history entries for match results."""
     for wp in winners:
-        w = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == wp.wrestler_id).first()
+        w = _get_wrestler(db, wp.wrestler_id)
         if w:
             db.add(WrestlerHistoryDB(
                 wrestler_id=wp.wrestler_id, game_date=game_date,
@@ -224,7 +307,7 @@ def _record_history(db: Session, match: MatchDB, winners: list, losers: list,
             ))
 
     for lp in losers:
-        w = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == lp.wrestler_id).first()
+        w = _get_wrestler(db, lp.wrestler_id)
         if w:
             db.add(WrestlerHistoryDB(
                 wrestler_id=lp.wrestler_id, game_date=game_date,
@@ -276,19 +359,17 @@ def _update_relationships(db: Session, match: MatchDB,
             # --- rivalry_heat update ---
             heat_increase = 0
 
-            # +5 for opposing alignments (face vs heel)
             wr1 = wrestlers_by_id.get(w1)
             wr2 = wrestlers_by_id.get(w2)
             if wr1 and wr2:
                 alignments = {wr1.alignment, wr2.alignment}
                 if alignments == {"face", "heel"}:
-                    heat_increase += 5
+                    heat_increase += HEAT_OPPOSING_ALIGNMENT
 
-            # +3 for title match
             if match.is_title_match:
-                heat_increase += 3
+                heat_increase += HEAT_TITLE_MATCH
 
-            # +2 if an active storyline involves both wrestlers
+            # Active storyline involving both wrestlers
             if wr1 and wr2:
                 storyline_link = db.query(GameNarrativeLogDB).filter(
                     GameNarrativeLogDB.world_id == match.world_id,
@@ -296,14 +377,13 @@ def _update_relationships(db: Session, match: MatchDB,
                     GameNarrativeLogDB.involved_entities.contains(w2),
                 ).first()
                 if storyline_link:
-                    heat_increase += 2
+                    heat_increase += HEAT_STORYLINE_LINK
 
             current_heat = rel.rivalry_heat or 0
             if heat_increase > 0:
-                rel.rivalry_heat = min(100, current_heat + heat_increase)
+                rel.rivalry_heat = min(HEAT_MAX, current_heat + heat_increase)
             else:
-                # Natural decay: reduce by 1, minimum 0
-                rel.rivalry_heat = max(0, current_heat - 1)
+                rel.rivalry_heat = max(0, current_heat - HEAT_NATURAL_DECAY)
 
 
 def _update_tag_team_records(db: Session, match: MatchDB, participants: list):
@@ -326,10 +406,10 @@ def _update_tag_team_records(db: Session, match: MatchDB, participants: list):
         members = {team.wrestler1_id, team.wrestler2_id}
         if members <= winners:
             team.wins += 1
-            team.team_chemistry = min(100, team.team_chemistry + 5)
+            team.team_chemistry = min(TAG_CHEM_MAX, team.team_chemistry + TAG_CHEM_WIN_BONUS)
         elif members <= losers:
             team.losses += 1
-            team.team_chemistry = min(100, team.team_chemistry + 2)  # Still grow from working together
+            team.team_chemistry = min(TAG_CHEM_MAX, team.team_chemistry + TAG_CHEM_LOSS_BONUS)
 
 
 def _update_alignment_momentum(db: Session, match: MatchDB,
@@ -339,29 +419,55 @@ def _update_alignment_momentum(db: Session, match: MatchDB,
     is_clean = match.finish_type in ("pinfall", "submission")
 
     for wp in winners:
-        w = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == wp.wrestler_id).first()
+        w = _get_wrestler(db, wp.wrestler_id)
         if not w:
             continue
         if is_clean:
-            w.alignment_momentum = min(100, (w.alignment_momentum or 0) + 2)
+            w.alignment_momentum = min(MOMENTUM_MAX, (w.alignment_momentum or 0) + MOMENTUM_CLEAN_WIN)
         else:
-            w.alignment_momentum = max(-100, (w.alignment_momentum or 0) - 3)
+            w.alignment_momentum = max(-MOMENTUM_MAX, (w.alignment_momentum or 0) + MOMENTUM_DIRTY_WIN)
 
         _check_alignment_turn(db, w, game_date, match.world_id)
 
     for lp in losers:
-        w = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == lp.wrestler_id).first()
+        w = _get_wrestler(db, lp.wrestler_id)
         if not w:
             continue
         # Losing can push either way - sympathy (face) or bitterness (heel)
-        if w.morale and w.morale < 40:
-            # Bitter from losing → heel drift
-            w.alignment_momentum = max(-100, (w.alignment_momentum or 0) - 2)
+        if w.morale and w.morale < MORALE_THRESHOLD_BITTER:
+            w.alignment_momentum = max(-MOMENTUM_MAX, (w.alignment_momentum or 0) + MOMENTUM_BITTER)
         else:
-            # Sympathetic underdog → face drift
-            w.alignment_momentum = min(100, (w.alignment_momentum or 0) + 1)
+            w.alignment_momentum = min(MOMENTUM_MAX, (w.alignment_momentum or 0) + MOMENTUM_SYMPATHY)
 
         _check_alignment_turn(db, w, game_date, match.world_id)
+
+
+def _execute_alignment_turn(db: Session, wrestler: GameWrestlerDB,
+                            new_alignment: str, game_date: str, world_id: str):
+    """Execute an alignment turn — shared logic for face/heel transitions."""
+    old_alignment = wrestler.alignment
+    wrestler.alignment = new_alignment
+    wrestler.alignment_momentum = 0
+    wrestler.popularity = min(100, wrestler.popularity + TURN_POPULARITY_BONUS)
+
+    if new_alignment == "heel":
+        event_type = "heel_turn"
+        narrative = f"SHOCKING HEEL TURN! {wrestler.name} has turned their back on the fans!"
+    else:
+        event_type = "face_turn"
+        narrative = f"THE CROWD GOES WILD! {wrestler.name} has turned babyface!"
+
+    db.add(GameNarrativeLogDB(
+        world_id=world_id, game_date=game_date, tick=0,
+        event_type=event_type,
+        description=narrative,
+        involved_entities=[wrestler.id], importance=9,
+    ))
+    db.add(WrestlerHistoryDB(
+        wrestler_id=wrestler.id, game_date=game_date,
+        event_type=event_type,
+        description=f"{wrestler.name} turned {new_alignment}",
+    ))
 
 
 def _check_alignment_turn(db: Session, wrestler: GameWrestlerDB,
@@ -369,37 +475,10 @@ def _check_alignment_turn(db: Session, wrestler: GameWrestlerDB,
     """Check if alignment momentum has crossed the threshold for a turn."""
     momentum = wrestler.alignment_momentum or 0
 
-    if wrestler.alignment == "face" and momentum <= -60:
-        wrestler.alignment = "heel"
-        wrestler.alignment_momentum = 0
-        wrestler.popularity = min(100, wrestler.popularity + 5)  # Turns are exciting
-        db.add(GameNarrativeLogDB(
-            world_id=world_id, game_date=game_date, tick=0,
-            event_type="heel_turn",
-            description=f"SHOCKING HEEL TURN! {wrestler.name} has turned their back on the fans!",
-            involved_entities=[wrestler.id], importance=9,
-        ))
-        db.add(WrestlerHistoryDB(
-            wrestler_id=wrestler.id, game_date=game_date,
-            event_type="heel_turn",
-            description=f"{wrestler.name} turned heel",
-        ))
-
-    elif wrestler.alignment == "heel" and momentum >= 60:
-        wrestler.alignment = "face"
-        wrestler.alignment_momentum = 0
-        wrestler.popularity = min(100, wrestler.popularity + 5)
-        db.add(GameNarrativeLogDB(
-            world_id=world_id, game_date=game_date, tick=0,
-            event_type="face_turn",
-            description=f"THE CROWD GOES WILD! {wrestler.name} has turned babyface!",
-            involved_entities=[wrestler.id], importance=9,
-        ))
-        db.add(WrestlerHistoryDB(
-            wrestler_id=wrestler.id, game_date=game_date,
-            event_type="face_turn",
-            description=f"{wrestler.name} turned face",
-        ))
+    if wrestler.alignment == "face" and momentum <= FACE_TO_HEEL_THRESHOLD:
+        _execute_alignment_turn(db, wrestler, "heel", game_date, world_id)
+    elif wrestler.alignment == "heel" and momentum >= HEEL_TO_FACE_THRESHOLD:
+        _execute_alignment_turn(db, wrestler, "face", game_date, world_id)
 
 
 def get_chemistry_bonus(db: Session, world_id: str,
@@ -412,11 +491,14 @@ def get_chemistry_bonus(db: Session, world_id: str,
         WrestlerRelationshipDB.wrestler2_id == w2,
     ).first()
 
-    if not rel or rel.matches_together < 3:
+    CHEMISTRY_MIN_MATCHES = 3
+    CHEMISTRY_SCALE = 0.2
+    CHEMISTRY_MAX = 1.0
+
+    if not rel or rel.matches_together < CHEMISTRY_MIN_MATCHES:
         return 0.0
 
-    # Chemistry bonus scales with match count and quality
-    return min(1.0, rel.chemistry_score * 0.2)
+    return min(CHEMISTRY_MAX, rel.chemistry_score * CHEMISTRY_SCALE)
 
 
 def _post_match_lifecycle(db: Session, match: MatchDB,
@@ -498,19 +580,15 @@ def _process_botch_consequences(db: Session, match: MatchDB, game_date: str):
         victim_id = botch.get("defender")
         move_name = botch.get("move", "unknown move")
 
-        attacker = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == attacker_id).first()
-        victim = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == victim_id).first()
+        attacker = _get_wrestler(db, attacker_id)
+        victim = _get_wrestler(db, victim_id)
         if not attacker or not victim:
             continue
 
         # --- Trust degradation between these wrestlers ---
-        rel = db.query(WrestlerRelationshipDB).filter(
-            WrestlerRelationshipDB.world_id == match.world_id,
-            WrestlerRelationshipDB.wrestler1_id.in_([attacker_id, victim_id]),
-            WrestlerRelationshipDB.wrestler2_id.in_([attacker_id, victim_id]),
-        ).first()
+        rel = _get_relationship(db, match.world_id, attacker_id, victim_id)
         if rel:
-            trust_drop = 5 if severity == 2 else 15  # Dangerous botch = big trust hit
+            trust_drop = BOTCH_TRUST_DROP_MINOR if severity == 2 else BOTCH_TRUST_DROP_SEVERE
             rel.trust_level = max(0, (rel.trust_level or 50) - trust_drop)
             logger.info("Trust between %s and %s dropped by %d to %d (botch on %s)",
                         attacker.name, victim.name, trust_drop, rel.trust_level, move_name)
@@ -540,13 +618,13 @@ def _process_botch_consequences(db: Session, match: MatchDB, game_date: str):
             stats = db.query(WrestlerStatsDB).filter(
                 WrestlerStatsDB.wrestler_id == victim_id
             ).first()
-            injury_risk = 0.25 + (stats.injury_prone if stats else 30) / 200
+            injury_risk = BOTCH_BASE_INJURY_RISK + (stats.injury_prone if stats else 30) / BOTCH_INJURY_PRONE_DIVISOR
             if random.random() < injury_risk:
-                weeks_out = random.randint(1, 8)
+                weeks_out = random.randint(*BOTCH_WEEKS_RANGE)
                 from game_service.world_ticker import advance_game_date
                 victim.is_injured = True
                 victim.injury_return_date = advance_game_date(game_date, weeks_out * 7)
-                victim.condition = max(0, victim.condition - random.randint(15, 35))
+                victim.condition = max(0, victim.condition - random.randint(*BOTCH_CONDITION_LOSS_RANGE))
 
                 db.add(GameNarrativeLogDB(
                     world_id=match.world_id,
@@ -560,10 +638,8 @@ def _process_botch_consequences(db: Session, match: MatchDB, game_date: str):
                             victim.name, attacker.name, move_name, weeks_out)
 
             # Locker room standing drops for the botcher
-            if attacker.locker_room_standing in ("leader", "respected"):
-                attacker.locker_room_standing = "neutral"
-            elif attacker.locker_room_standing == "neutral":
-                attacker.locker_room_standing = "disliked"
+            attacker.locker_room_standing = STANDING_DOWNGRADE.get(
+                attacker.locker_room_standing, "neutral")
 
         elif severity == 2:
             # Bad botch — attacker remembers
@@ -602,20 +678,16 @@ def _process_shoot_consequences(db: Session, match: MatchDB, game_date: str):
     shooter_id = shoot_spot.get("attacker")
     victim_id = shoot_spot.get("defender")
 
-    shooter = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == shooter_id).first()
-    victim = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == victim_id).first()
+    shooter = _get_wrestler(db, shooter_id)
+    victim = _get_wrestler(db, victim_id)
     if not shooter or not victim:
         return
 
     # --- Trust DESTROYED between these wrestlers ---
-    rel = db.query(WrestlerRelationshipDB).filter(
-        WrestlerRelationshipDB.world_id == match.world_id,
-        WrestlerRelationshipDB.wrestler1_id.in_([shooter_id, victim_id]),
-        WrestlerRelationshipDB.wrestler2_id.in_([shooter_id, victim_id]),
-    ).first()
+    rel = _get_relationship(db, match.world_id, shooter_id, victim_id)
     if rel:
-        rel.trust_level = max(0, min(10, (rel.trust_level or 50) - 40))  # Near-zero
-        rel.rivalry_heat = min(100, (rel.rivalry_heat or 0) + 30)  # Real heat
+        rel.trust_level = max(0, min(SHOOT_TRUST_MAX_AFTER, (rel.trust_level or 50) - SHOOT_TRUST_DROP))
+        rel.rivalry_heat = min(HEAT_MAX, (rel.rivalry_heat or 0) + SHOOT_HEAT_INCREASE)
         rel.real_relationship = "enemies"  # This is personal now
         logger.info("SHOOT: Trust between %s and %s DESTROYED (now %d)",
                     shooter.name, victim.name, rel.trust_level)
@@ -634,8 +706,7 @@ def _process_shoot_consequences(db: Session, match: MatchDB, game_date: str):
             GameFederationDB.id == contract.federation_id
         ).first()
         if fed:
-            # Fine: 2 weeks salary
-            fine = contract.salary_weekly * 2
+            fine = contract.salary_weekly * SHOOT_FINE_MULTIPLIER
             fed.budget += fine  # Federation collects the fine
             db.add(GameNarrativeLogDB(
                 world_id=match.world_id,
@@ -647,9 +718,9 @@ def _process_shoot_consequences(db: Session, match: MatchDB, game_date: str):
             ))
 
             # Strict federations may also suspend
-            if (fed.kayfabe_strictness or 50) > 60:
+            if (fed.kayfabe_strictness or 50) > KAYFABE_STRICTNESS_THRESHOLD:
                 from game_service.world_ticker import advance_game_date
-                suspension_weeks = random.randint(2, 6)
+                suspension_weeks = random.randint(*SHOOT_SUSPENSION_WEEKS_RANGE)
                 shooter.is_injured = True  # Use injury system for suspension
                 shooter.injury_return_date = advance_game_date(game_date, suspension_weeks * 7)
                 db.add(GameNarrativeLogDB(
@@ -680,11 +751,11 @@ def _process_shoot_consequences(db: Session, match: MatchDB, game_date: str):
     ))
 
     # --- Morale impact ---
-    victim.morale = max(0, victim.morale - random.randint(10, 20))
+    victim.morale = max(0, victim.morale - random.randint(*VICTIM_MORALE_LOSS_RANGE))
     shooter.morale = max(0, min(100, shooter.morale + random.randint(-5, 5)))  # Mixed feelings
 
     # --- Controversial popularity boost for shooter (controversy sells) ---
-    shooter.popularity = min(100, shooter.popularity + random.randint(2, 8))
+    shooter.popularity = min(100, shooter.popularity + random.randint(*SHOOTER_POP_BOOST_RANGE))
 
     # --- Narrative log for the world ---
     db.add(GameNarrativeLogDB(

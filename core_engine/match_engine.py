@@ -746,37 +746,9 @@ class MatchSimulator:
             damage = int(damage * HOMETOWN_DAMAGE_MULTIPLIER)
 
         # --- BOTCH CHECK: moves can go wrong ---
-        # Higher-damage moves are riskier. Fatigue, low skill, and low trust increase botch chance.
-        is_botch = False
-        botch_severity = 0
-        move_difficulty = base_damage / 15.0  # 0.0-1.0 scale; power moves = harder to execute
-        if category == "aerial":
-            move_difficulty += BOTCH_AERIAL_BONUS  # Aerial moves are inherently riskier
-        fatigue_factor = max(0, (100 - attacker.stamina) / 200)  # Tired = sloppy
-        skill_factor = max(0, (100 - attack_stat) / 300)  # Low skill = more botches
-        trust_factor = getattr(self, '_trust_penalty', 0.0)  # Low trust with opponent
+        is_botch, botch_severity, damage = self._check_botch(
+            category, base_damage, attack_stat, attacker.stamina, damage)
 
-        botch_chance = (move_difficulty * BOTCH_DIFFICULTY_FACTOR) + fatigue_factor + skill_factor + trust_factor
-        botch_chance = min(BOTCH_MAX_CHANCE, botch_chance)
-
-        if random.random() < botch_chance:
-            is_botch = True
-            severity_roll = random.random()
-            if severity_roll < BOTCH_MINOR_THRESHOLD:
-                botch_severity = 1  # Minor: stumble, awkward landing
-            elif severity_roll < BOTCH_BAD_THRESHOLD:
-                botch_severity = 2  # Bad: sloppy execution, crowd notices
-            else:
-                botch_severity = 3  # Dangerous: potential injury
-
-            # Botch modifies damage and description
-            if botch_severity == 1:
-                damage = max(1, damage // 2)
-            elif botch_severity == 2:
-                damage = max(1, damage // 3)
-            elif botch_severity == 3:
-                # Dangerous botch can hurt the DEFENDER more than intended
-                damage = int(damage * DANGEROUS_BOTCH_DAMAGE_MULTIPLIER)
 
         # Check for reversal
         was_reversed = False
@@ -873,94 +845,105 @@ class MatchSimulator:
                         heat_change=5,
                     )
                 return None
-            damage = int(base_dmg * (attacker.stats.get("brawling", 50) / 50))
-            return MatchSpot(
-                tick=self.tick, attacker_id=attacker.wrestler_id,
-                defender_id=defender.wrestler_id,
-                move_name="Cage Spot", move_type="brawling",
-                damage=max(3, damage),
-                description=f"{attacker.name} {desc}!",
-                crowd_reaction=random.choice(CROWD_REACTIONS),
-                heat_change=random.randint(2, 5),
-            )
+            return self._build_stipulation_hit(attacker, defender, desc, base_dmg, "brawling",
+                                               "Cage Spot", "brawling", 3, CROWD_REACTIONS, (2, 5))
 
         elif "ladder" in stip:
             desc, base_dmg, stype = random.choice(LADDER_SPOTS)
             if stype == "climb":
                 if attacker.momentum > LADDER_CLIMB_MOMENTUM_THRESHOLD:
-                    return MatchSpot(
-                        tick=self.tick, attacker_id=attacker.wrestler_id,
-                        defender_id=defender.wrestler_id,
-                        move_name="Ladder Climb", move_type="aerial",
-                        damage=0,
-                        description=f"{attacker.name} is climbing the ladder! Fingers inches from the prize!",
-                        crowd_reaction="This could be it!",
-                        heat_change=6,
-                    )
+                    return self._build_special_stip_spot(attacker, defender,
+                        "Ladder Climb", "aerial",
+                        f"{attacker.name} is climbing the ladder! Fingers inches from the prize!",
+                        "This could be it!", 6)
                 return None
-            damage = int(base_dmg * (attacker.stats.get("power", 50) / 50))
-            return MatchSpot(
-                tick=self.tick, attacker_id=attacker.wrestler_id,
-                defender_id=defender.wrestler_id,
-                move_name="Ladder Spot", move_type=stype,
-                damage=max(5, damage),
-                description=f"{attacker.name} {desc}!",
-                crowd_reaction="OH MY GOD!",
-                heat_change=random.randint(3, 7),
-            )
+            return self._build_stipulation_hit(attacker, defender, desc, base_dmg, "power",
+                                               "Ladder Spot", stype, 5, ["OH MY GOD!"], (3, 7))
 
         elif "table" in stip:
             desc, base_dmg, stype = random.choice(TABLE_SPOTS)
             if stype == "setup":
-                return MatchSpot(
-                    tick=self.tick, attacker_id=attacker.wrestler_id,
-                    defender_id=defender.wrestler_id,
-                    move_name="Table Setup", move_type="power",
-                    damage=0,
-                    description=f"{attacker.name} {desc}!",
-                    crowd_reaction="The crowd knows what's coming!",
-                    heat_change=3,
-                )
-            damage = int(base_dmg * (attacker.stats.get("power", 50) / 50))
-            return MatchSpot(
-                tick=self.tick, attacker_id=attacker.wrestler_id,
-                defender_id=defender.wrestler_id,
-                move_name="Table Spot", move_type=stype,
-                damage=max(8, damage), is_finish=False,
-                description=f"{attacker.name} {desc}!",
-                crowd_reaction="THROUGH THE TABLE!",
-                heat_change=random.randint(5, 8),
-            )
+                return self._build_special_stip_spot(attacker, defender,
+                    "Table Setup", "power",
+                    f"{attacker.name} {desc}!",
+                    "The crowd knows what's coming!", 3)
+            return self._build_stipulation_hit(attacker, defender, desc, base_dmg, "power",
+                                               "Table Spot", stype, 8, ["THROUGH THE TABLE!"], (5, 8))
 
         elif "hell" in stip or "cell" in stip:
             desc, base_dmg, stype = random.choice(HELL_IN_A_CELL_SPOTS)
             if stype == "climb":
-                return MatchSpot(
-                    tick=self.tick, attacker_id=attacker.wrestler_id,
-                    defender_id=defender.wrestler_id,
-                    move_name="Cell Climb", move_type="aerial",
-                    damage=0,
-                    description=f"{attacker.name} {desc}! This is getting dangerous!",
-                    crowd_reaction="Don't do it! DON'T DO IT!",
-                    heat_change=7,
-                )
-            damage = int(base_dmg * (attacker.stats.get("brawling", 50) / 50))
-            return MatchSpot(
-                tick=self.tick, attacker_id=attacker.wrestler_id,
-                defender_id=defender.wrestler_id,
-                move_name="Cell Spot", move_type=stype,
-                damage=max(5, damage),
-                description=f"{attacker.name} {desc}!",
-                crowd_reaction="GOOD GOD ALMIGHTY!",
-                heat_change=random.randint(4, 8),
-            )
+                return self._build_special_stip_spot(attacker, defender,
+                    "Cell Climb", "aerial",
+                    f"{attacker.name} {desc}! This is getting dangerous!",
+                    "Don't do it! DON'T DO IT!", 7)
+            return self._build_stipulation_hit(attacker, defender, desc, base_dmg, "brawling",
+                                               "Cell Spot", stype, 5, ["GOOD GOD ALMIGHTY!"], (4, 8))
 
         return None
+
+    def _build_special_stip_spot(self, attacker, defender, move_name, move_type,
+                                  description, crowd_reaction, heat_change):
+        """Build a zero-damage stipulation spot (escapes, climbs, setups)."""
+        return MatchSpot(
+            tick=self.tick, attacker_id=attacker.wrestler_id,
+            defender_id=defender.wrestler_id,
+            move_name=move_name, move_type=move_type,
+            damage=0, description=description,
+            crowd_reaction=crowd_reaction, heat_change=heat_change,
+        )
+
+    def _build_stipulation_hit(self, attacker, defender, desc, base_dmg, stat_key,
+                                move_name, move_type, min_damage, reactions, heat_range):
+        """Build a damage-dealing stipulation spot with stat scaling."""
+        damage = int(base_dmg * self._stat_multiplier(attacker, stat_key))
+        reaction = random.choice(reactions) if isinstance(reactions, list) else reactions
+        return MatchSpot(
+            tick=self.tick, attacker_id=attacker.wrestler_id,
+            defender_id=defender.wrestler_id,
+            move_name=move_name, move_type=move_type,
+            damage=max(min_damage, damage),
+            description=f"{attacker.name} {desc}!",
+            crowd_reaction=reaction,
+            heat_change=random.randint(*heat_range),
+        )
+
+    def _check_botch(self, category: str, base_damage: int, attack_stat: int,
+                      stamina: float, damage: int) -> tuple:
+        """Check if a move is botched. Returns (is_botch, severity, modified_damage)."""
+        move_difficulty = base_damage / 15.0
+        if category == "aerial":
+            move_difficulty += BOTCH_AERIAL_BONUS
+        fatigue_factor = max(0, (100 - stamina) / 200)
+        skill_factor = max(0, (100 - attack_stat) / 300)
+        trust_factor = getattr(self, '_trust_penalty', 0.0)
+
+        botch_chance = (move_difficulty * BOTCH_DIFFICULTY_FACTOR) + fatigue_factor + skill_factor + trust_factor
+        botch_chance = min(BOTCH_MAX_CHANCE, botch_chance)
+
+        if random.random() >= botch_chance:
+            return False, 0, damage
+
+        severity_roll = random.random()
+        if severity_roll < BOTCH_MINOR_THRESHOLD:
+            return True, 1, max(1, damage // 2)
+        elif severity_roll < BOTCH_BAD_THRESHOLD:
+            return True, 2, max(1, damage // 3)
+        else:
+            return True, 3, int(damage * DANGEROUS_BOTCH_DAMAGE_MULTIPLIER)
+
+    def _stat_multiplier(self, wrestler: MatchParticipantState, stat_key: str) -> float:
+        """Get damage multiplier from a wrestler's stat vs baseline."""
+        return wrestler.stats.get(stat_key, STAT_BASELINE) / STAT_BASELINE
+
+    def _update_momentum(self, wrestler: MatchParticipantState, delta: float):
+        """Apply momentum change clamped to 0-100."""
+        wrestler.momentum = max(0, min(100, wrestler.momentum + delta))
 
     def _pick_move_category(self, wrestler: MatchParticipantState) -> str:
         """Pick a move category weighted by wrestler's stats."""
         categories = ["power", "technical", "aerial", "brawling", "submission"]
-        weights = [wrestler.stats.get(c, 50) for c in categories]
+        weights = [wrestler.stats.get(c, STAT_BASELINE) for c in categories]
         total = sum(weights)
         weights = [w / total for w in weights]
         return random.choices(categories, weights=weights, k=1)[0]
@@ -971,13 +954,13 @@ class MatchSimulator:
         if spot.was_reversed:
             # Reversal: attacker takes damage, defender gains momentum
             attacker.health -= spot.damage
-            defender.momentum = min(100, defender.momentum + REVERSAL_MOMENTUM_GAIN)
-            attacker.momentum = max(0, attacker.momentum - REVERSAL_MOMENTUM_LOSS)
+            self._update_momentum(defender, REVERSAL_MOMENTUM_GAIN)
+            self._update_momentum(attacker, -REVERSAL_MOMENTUM_LOSS)
         else:
             # Normal: defender takes damage, attacker gains momentum
             defender.health -= spot.damage
-            attacker.momentum = min(100, attacker.momentum + NORMAL_HIT_MOMENTUM_GAIN)
-            defender.momentum = max(0, defender.momentum - NORMAL_HIT_MOMENTUM_LOSS)
+            self._update_momentum(attacker, NORMAL_HIT_MOMENTUM_GAIN)
+            self._update_momentum(defender, -NORMAL_HIT_MOMENTUM_LOSS)
 
         # Stamina drain
         attacker.stamina = max(STAMINA_FLOOR, attacker.stamina - random.uniform(
@@ -995,9 +978,9 @@ class MatchSimulator:
                                defender: MatchParticipantState) -> bool:
         """Determine if offensive control should switch."""
         # Psychology stat helps maintain control
-        hold_chance = attacker.stats.get("psychology", 50) / 100
-        comeback_chance = defender.stats.get("stamina", 50) / 200
-        comeback_chance += defender.stats.get("speed", 50) / 400  # Fast wrestlers escape faster
+        hold_chance = attacker.stats.get("psychology", STAT_BASELINE) / 100
+        comeback_chance = defender.stats.get("stamina", STAT_BASELINE) / 200
+        comeback_chance += defender.stats.get("speed", STAT_BASELINE) / 400  # Fast wrestlers escape faster
 
         # Lower health = more likely to mount comeback (fighting spirit)
         if defender.health < COMEBACK_LOW_HEALTH_THRESHOLD:
@@ -1021,9 +1004,9 @@ class MatchSimulator:
 
             # --- GOING INTO BUSINESS: wrestler refuses to do the job ---
             # Check if this wrestler has the ego/frustration to go into business
-            ego = attacker.stats.get("ego", 50)
+            ego = attacker.stats.get("ego", STAT_BASELINE)
             frustration = getattr(attacker, '_frustration', 0)
-            morale_mod = getattr(attacker, '_morale', 50)
+            morale_mod = getattr(attacker, '_morale', STAT_BASELINE)
 
             # Conditions: high ego + high frustration + low morale + title match stakes
             shoot_chance = 0.0
@@ -1186,8 +1169,8 @@ class MatchSimulator:
                     defender=defender.name
                 )
                 defender.health -= INTERFERENCE_DAMAGE
-                defender.momentum = max(0, defender.momentum - INTERFERENCE_MOMENTUM_LOSS)
-                attacker.momentum = min(100, attacker.momentum + INTERFERENCE_MOMENTUM_GAIN)
+                self._update_momentum(defender, -INTERFERENCE_MOMENTUM_LOSS)
+                self._update_momentum(attacker, INTERFERENCE_MOMENTUM_GAIN)
                 return MatchSpot(
                     tick=self.tick, attacker_id=attacker.wrestler_id,
                     defender_id=defender.wrestler_id,
