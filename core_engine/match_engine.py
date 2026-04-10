@@ -61,331 +61,19 @@ from core_engine.match_constants import (
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Move databases
+# Static data — moved to match_data.py for cleanliness, re-exported here
 # ---------------------------------------------------------------------------
 
-MOVES = {
-    "power": [
-        ("Powerbomb", 12, "power"), ("Suplex", 8, "power"),
-        ("Bodyslam", 6, "power"), ("Clothesline", 7, "power"),
-        ("Spinebuster", 10, "power"), ("Gorilla Press", 9, "power"),
-        ("Big Boot", 7, "power"), ("Chokeslam", 11, "power"),
-        ("Military Press Slam", 10, "power"), ("Sidewalk Slam", 7, "power"),
-        ("Running Powerslam", 11, "power"), ("Samoan Drop", 8, "power"),
-        ("Fallaway Slam", 9, "power"), ("Avalanche Splash", 10, "power"),
-        ("Pop-Up Powerbomb", 13, "power"), ("Deadlift Suplex", 10, "power"),
-    ],
-    "technical": [
-        ("Arm Drag", 4, "technical"), ("Suplex Combo", 9, "technical"),
-        ("German Suplex", 10, "technical"), ("Snap Mare", 3, "technical"),
-        ("Dragon Screw", 7, "technical"), ("Backbreaker", 8, "technical"),
-        ("Neckbreaker", 7, "technical"), ("Brainbuster", 11, "technical"),
-        ("Northern Lights Suplex", 9, "technical"), ("T-Bone Suplex", 8, "technical"),
-        ("Belly-to-Belly Suplex", 8, "technical"), ("Fisherman Suplex", 9, "technical"),
-        ("Tiger Suplex", 10, "technical"), ("Rolling Elbow", 7, "technical"),
-        ("Cobra Clutch Slam", 9, "technical"), ("Bridging German", 11, "technical"),
-    ],
-    "aerial": [
-        ("Dropkick", 6, "aerial"), ("Moonsault", 11, "aerial"),
-        ("Diving Crossbody", 9, "aerial"), ("Hurricanrana", 8, "aerial"),
-        ("450 Splash", 12, "aerial"), ("Springboard Elbow", 8, "aerial"),
-        ("Frog Splash", 10, "aerial"), ("Shooting Star Press", 13, "aerial"),
-        ("Corkscrew Plancha", 10, "aerial"), ("Springboard Cutter", 11, "aerial"),
-        ("Tope Con Hilo", 9, "aerial"), ("Phoenix Splash", 14, "aerial"),
-        ("Sasuke Special", 10, "aerial"), ("Spanish Fly", 12, "aerial"),
-        ("Diving Elbow Drop", 9, "aerial"), ("Asai Moonsault", 11, "aerial"),
-    ],
-    "brawling": [
-        ("Right Hand", 4, "brawling"), ("Uppercut", 5, "brawling"),
-        ("Knee Strike", 7, "brawling"), ("Elbow Smash", 6, "brawling"),
-        ("Headbutt", 5, "brawling"), ("Lariat", 9, "brawling"),
-        ("Running Knee", 10, "brawling"), ("Discus Punch", 8, "brawling"),
-        ("Throat Thrust", 5, "brawling"), ("Spinning Backfist", 8, "brawling"),
-        ("Knife-Edge Chop", 4, "brawling"), ("Avalanche Corner Splash", 8, "brawling"),
-        ("European Uppercut", 6, "brawling"), ("Rebound Lariat", 10, "brawling"),
-        ("Enzuigiri", 7, "brawling"), ("Discus Elbow", 9, "brawling"),
-    ],
-    "submission": [
-        ("Armbar", 6, "submission"), ("Figure Four", 8, "submission"),
-        ("Sharpshooter", 9, "submission"), ("Crossface", 8, "submission"),
-        ("Sleeper Hold", 5, "submission"), ("Ankle Lock", 9, "submission"),
-        ("Kimura", 7, "submission"), ("Triangle Choke", 8, "submission"),
-        ("Boston Crab", 7, "submission"), ("STF", 8, "submission"),
-        ("Koji Clutch", 7, "submission"), ("Dragon Sleeper", 9, "submission"),
-        ("Rings of Saturn", 8, "submission"), ("Octopus Hold", 7, "submission"),
-        ("Cattle Mutilation", 9, "submission"), ("Rear Naked Choke", 8, "submission"),
-    ],
-}
-
-# ---------------------------------------------------------------------------
-# Signature move pools by archetype — used when populating wrestlers
-# ---------------------------------------------------------------------------
-
-SIGNATURE_MOVE_POOLS = {
-    "monster_heel": [
-        ("Tombstone Piledriver", 14, "power"), ("Running Big Boot", 9, "power"),
-        ("Release German Suplex", 10, "power"), ("Torture Rack", 10, "submission"),
-        ("Snake Eyes", 7, "brawling"), ("Tree of Woe Stomp", 8, "brawling"),
-    ],
-    "underdog_face": [
-        ("Sling Blade", 8, "technical"), ("Stunner", 12, "brawling"),
-        ("Tornado DDT", 10, "aerial"), ("La Magistral Cradle", 7, "technical"),
-        ("Diving Headbutt", 9, "aerial"), ("Thesz Press", 7, "brawling"),
-    ],
-    "cocky_technician": [
-        ("Rolling Thunder", 9, "technical"), ("Regal Cutter", 10, "technical"),
-        ("Perfect Plex", 10, "technical"), ("Bridging Suplex", 9, "technical"),
-        ("Figure Eight", 10, "submission"), ("Standing Moonsault", 9, "aerial"),
-    ],
-    "silent_assassin": [
-        ("Running Knee Strike", 11, "brawling"), ("Kinshasa", 12, "brawling"),
-        ("Roundhouse Kick", 10, "brawling"), ("Buzzsaw Kick", 9, "brawling"),
-        ("Snap DDT", 8, "technical"), ("Penalty Kick", 10, "brawling"),
-    ],
-    "cult_leader": [
-        ("Sister Abigail", 12, "power"), ("Mandible Claw", 8, "submission"),
-        ("Uranage Slam", 10, "power"), ("Running Senton", 9, "power"),
-        ("Swinging Neckbreaker", 8, "technical"), ("Eye Rake Combo", 6, "brawling"),
-    ],
-    "comedy_act": [
-        ("People's Elbow", 8, "brawling"), ("Worm", 6, "brawling"),
-        ("Bionic Elbow", 7, "brawling"), ("Stink Face", 3, "brawling"),
-        ("Atomic Drop", 6, "power"), ("Airplane Spin", 5, "power"),
-    ],
-    "anti_hero": [
-        ("Stunner", 12, "brawling"), ("Pedigree", 13, "power"),
-        ("Curb Stomp", 11, "brawling"), ("GTS", 12, "technical"),
-        ("Package Piledriver", 13, "power"), ("V-Trigger", 10, "brawling"),
-    ],
-    "legacy": [
-        ("Crossface Chicken Wing", 9, "submission"), ("Slingshot Suplex", 8, "technical"),
-        ("Figure Four Leglock", 9, "submission"), ("Spinning Toe Hold", 7, "submission"),
-        ("Flying Body Press", 9, "aerial"), ("Bionic Elbow", 7, "brawling"),
-    ],
-    "patriot": [
-        ("Patriot Slam", 11, "power"), ("Patriot Lock", 9, "submission"),
-        ("Red White and Blue Thunder Bomb", 12, "power"), ("Flying Shoulder Tackle", 8, "power"),
-        ("Angle Slam", 10, "technical"), ("Running Bulldog", 7, "brawling"),
-    ],
-    "daredevil": [
-        ("Swanton Bomb", 12, "aerial"), ("Springboard 450", 14, "aerial"),
-        ("Double Rotation Moonsault", 14, "aerial"), ("Corkscrew Shooting Star", 15, "aerial"),
-        ("Coast-to-Coast Dropkick", 12, "aerial"), ("Sky Twister Press", 13, "aerial"),
-    ],
-}
-
-# Archetype-specific finisher pools (name, damage, type)
-ARCHETYPE_FINISHERS = {
-    "monster_heel": [
-        ("The Annihilation", "power"), ("Tomb of Darkness", "power"),
-        ("The Extinction", "power"), ("Final Judgment", "power"),
-    ],
-    "underdog_face": [
-        ("Heart of a Champion", "technical"), ("Against All Odds", "aerial"),
-        ("The Comeback", "brawling"), ("Never Say Die", "technical"),
-    ],
-    "cocky_technician": [
-        ("The Masterpiece", "technical"), ("Perfection", "submission"),
-        ("Technical Knockout", "technical"), ("The Equation", "submission"),
-    ],
-    "silent_assassin": [
-        ("The Kill Shot", "brawling"), ("Silent Night", "brawling"),
-        ("Death Sentence", "brawling"), ("Zero Hour", "brawling"),
-    ],
-    "cult_leader": [
-        ("The Sermon", "power"), ("Enlightenment", "submission"),
-        ("The Awakening", "power"), ("Mass Hysteria", "power"),
-    ],
-    "comedy_act": [
-        ("The Punchline", "brawling"), ("The Gag Reflex", "brawling"),
-        ("Comedy of Errors", "brawling"), ("Lights Out Comedy", "power"),
-    ],
-    "anti_hero": [
-        ("The Reckoning", "brawling"), ("One Final Beat", "power"),
-        ("Bitter End", "power"), ("Anti-Establishment", "brawling"),
-    ],
-    "legacy": [
-        ("The Dynasty", "technical"), ("Legacy Lock", "submission"),
-        ("Generational Shift", "technical"), ("The Inheritance", "power"),
-    ],
-    "patriot": [
-        ("The Patriot Act", "power"), ("Eagle's Landing", "aerial"),
-        ("Freedom Strike", "brawling"), ("National Anthem", "submission"),
-    ],
-    "daredevil": [
-        ("Terminal Velocity", "aerial"), ("The Death-Defier", "aerial"),
-        ("Point of No Return", "aerial"), ("Leap of Faith", "aerial"),
-    ],
-}
-
-# ---------------------------------------------------------------------------
-# Match-type-specific spot pools
-# ---------------------------------------------------------------------------
-
-CAGE_SPOTS = [
-    ("throws opponent into the cage wall", 8, "brawling"),
-    ("grinds opponent's face against the steel", 6, "brawling"),
-    ("catapults opponent into the cage", 9, "power"),
-    ("climbs the cage and drops an elbow", 12, "aerial"),
-    ("slams opponent off the cage wall", 10, "power"),
-    ("attempts to escape over the top of the cage", 0, "escape"),
-]
-
-LADDER_SPOTS = [
-    ("drives opponent through a ladder", 12, "power"),
-    ("suplexes opponent onto a ladder", 11, "technical"),
-    ("pushes opponent off the ladder", 13, "aerial"),
-    ("sunset flip powerbomb off the ladder", 15, "power"),
-    ("climbs the ladder and reaches for the prize", 0, "climb"),
-    ("tips the ladder over with opponent on it", 14, "power"),
-]
-
-TABLE_SPOTS = [
-    ("sets up a table at ringside", 0, "setup"),
-    ("powerbombs opponent through the table", 16, "power"),
-    ("superplexes opponent through a table", 18, "power"),
-    ("spears opponent through a table", 15, "brawling"),
-    ("elbow drops opponent through a table from the top", 17, "aerial"),
-]
-
-HELL_IN_A_CELL_SPOTS = [
-    ("throws opponent into the cell wall", 9, "brawling"),
-    ("slams opponent onto the steel steps", 10, "power"),
-    ("climbs the outside of the cell", 0, "climb"),
-    ("chokeslams opponent off the cell roof", 20, "power"),
-    ("drives opponent through the announce table", 14, "brawling"),
-    ("uses the cell door as a weapon", 8, "brawling"),
-]
-
-IRON_MAN_FALL_DESCRIPTIONS = [
-    "scores a fall with a pinfall!", "scores a fall via submission!",
-    "scores a fall after a devastating finisher!",
-]
-
-# ---------------------------------------------------------------------------
-# Charisma style match spots
-# ---------------------------------------------------------------------------
-
-TAUNT_SPOTS = {
-    "cocky": [
-        "{name} flexes over their fallen opponent!", "{name} mocks the crowd with a strut!",
-        "{name} slaps the taste out of {opponent}'s mouth and laughs!",
-    ],
-    "intense": [
-        "{name} lets out a primal scream!", "{name} no-sells the last move and hulks up!",
-        "{name} stares daggers through {opponent} — pure intensity!",
-    ],
-    "funny": [
-        "{name} does a little dance for the crowd!", "{name} pretends to answer a phone call mid-match!",
-        "{name} offers a handshake — then pulls it away! Classic!",
-    ],
-    "mysterious": [
-        "{name} sits up like something out of a horror movie!",
-        "{name} points to the sky ominously...", "{name} tilts their head — unsettling...",
-    ],
-    "humble": [
-        "{name} fires up the crowd! They're feeding off the energy!",
-        "{name} slaps the mat — they're not done yet!",
-        "{name} bows to the crowd before delivering the next blow!",
-    ],
-}
-
-# ---------------------------------------------------------------------------
-# Venue atmosphere modifiers
-# ---------------------------------------------------------------------------
-
-VENUE_ATMOSPHERE = {
-    "club": {"capacity_range": (200, 1500), "rating_mod": -0.2, "crowd_energy": 0.8,
-             "description": "intimate venue"},
-    "arena": {"capacity_range": (2000, 10000), "rating_mod": 0.0, "crowd_energy": 1.0,
-              "description": "electric arena"},
-    "large_arena": {"capacity_range": (10001, 25000), "rating_mod": 0.1, "crowd_energy": 1.1,
-                    "description": "massive arena"},
-    "stadium": {"capacity_range": (25001, 80000), "rating_mod": 0.2, "crowd_energy": 1.2,
-                "description": "roaring stadium"},
-}
-
-def get_venue_tier(capacity: int) -> str:
-    """Determine venue tier from capacity."""
-    if capacity <= 1500:
-        return "club"
-    elif capacity <= 10000:
-        return "arena"
-    elif capacity <= 25000:
-        return "large_arena"
-    return "stadium"
-
-CROWD_REACTIONS = [
-    "The crowd erupts!", "Huge pop from the fans!", "The audience is on their feet!",
-    "Mixed reaction from the crowd.", "The fans are booing loudly!",
-    "Chants break out across the arena!", "Stunned silence from the crowd.",
-    "The energy in the building is electric!", "The crowd is split down the middle!",
-    "THIS IS AWESOME chants ring out!", "FIGHT FOREVER! FIGHT FOREVER!",
-    "The crowd is going absolutely ballistic!", "You can barely hear yourself think!",
-    "Dueling chants fill the arena!", "The fans throw streamers into the ring!",
-    "A hush falls over the crowd...", "The building is shaking!",
-    "Standing ovation from the crowd!", "The fans are in disbelief!",
-]
-
-REVERSAL_DESCRIPTIONS = [
-    "ducks and counters with", "reverses into", "blocks and hits",
-    "sidesteps and delivers", "catches the leg and transitions to",
-]
-
-NEAR_FALL_DESCRIPTIONS = [
-    "Goes for the cover! ONE... TWO... kickout at the last moment!",
-    "Hooks the leg! ONE... TWO... shoulder up just in time!",
-    "Lateral press! ONE... TWO... NO! They stay alive!",
-    "Quick pin attempt! ONE... TWO... power out!",
-]
-
-INTERFERENCE_SUCCESS = [
-    "{mgr} distracts the referee while {attacker} uses a low blow on {defender}!",
-    "{mgr} slides a chair into the ring — {attacker} uses it behind the ref's back!",
-    "{mgr} grabs {defender}'s ankle from outside! {attacker} capitalizes!",
-    "{mgr} throws powder in {defender}'s eyes while the ref argues with the crowd!",
-    "{mgr} pulls down the top rope — {defender} tumbles to the outside!",
-]
-
-INTERFERENCE_CAUGHT = [
-    "The referee catches {mgr} red-handed! The official ejects {mgr} from ringside!",
-    "{mgr} tries to interfere but the referee sees it — DISQUALIFICATION!",
-    "{defender} catches {mgr} trying to cheat — and decks {mgr} on the apron!",
-]
-
-INTERFERENCE_FAIL = [
-    "{mgr} tries to distract the referee but gets caught — warning issued!",
-    "{mgr} attempts to pass a weapon but {defender} sees it coming!",
-    "The referee is wise to {mgr}'s tricks tonight!",
-]
-
-POST_MATCH_ATTACK = [
-    "{attackers} storm the ring and lay out {victim} with a vicious beatdown!",
-    "After the match, {attackers} blindside {victim} from behind!",
-    "The bell has rung but {attackers} aren't done — {victim} takes a post-match assault!",
-]
-
-POST_MATCH_SAVE = [
-    "{savers} charge to the ring and clear out the attackers!",
-    "Here comes {savers} to make the save! The crowd goes wild!",
-]
-
-TAG_DESCRIPTIONS = [
-    "tags in their partner",
-    "reaches out and makes the tag",
-    "dives and makes the hot tag",
-    "slaps hands with their partner",
-]
-
-DOUBLE_TEAM_MOVES = [
-    ("Double Suplex", 14), ("Double Clothesline", 10),
-    ("Aided Powerbomb", 16), ("Tandem Neckbreaker", 12),
-    ("Double Dropkick", 11), ("Combo Finisher", 18),
-    ("Doomsday Device", 17), ("Magic Killer", 15),
-    ("3D (Dudley Death Drop)", 16), ("Poetry in Motion", 13),
-    ("Total Elimination", 15), ("Shatter Machine", 16),
-    ("Hart Attack", 14), ("Rocket Launcher", 13),
-]
+from core_engine.match_data import (  # noqa: E402
+    MOVES, SIGNATURE_MOVE_POOLS, ARCHETYPE_FINISHERS,
+    CAGE_SPOTS, LADDER_SPOTS, TABLE_SPOTS, HELL_IN_A_CELL_SPOTS,
+    IRON_MAN_FALL_DESCRIPTIONS,
+    TAUNT_SPOTS, VENUE_ATMOSPHERE, get_venue_tier,
+    CROWD_REACTIONS, REVERSAL_DESCRIPTIONS, NEAR_FALL_DESCRIPTIONS,
+    INTERFERENCE_SUCCESS, INTERFERENCE_CAUGHT, INTERFERENCE_FAIL,
+    POST_MATCH_ATTACK, POST_MATCH_SAVE,
+    TAG_DESCRIPTIONS, DOUBLE_TEAM_MOVES,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -556,9 +244,6 @@ class MatchSimulator:
                 near_fall = self._near_fall(attacker, defender)
                 if near_fall:
                     self.spots.append(near_fall)
-                near_fall = self._near_fall(attacker, defender)
-                if near_fall:
-                    self.spots.append(near_fall)
 
             if self._should_switch_control(attacker, defender):
                 attacker_idx, defender_idx = defender_idx, attacker_idx
@@ -632,9 +317,6 @@ class MatchSimulator:
                 if finish_spot:
                     self.spots.append(finish_spot)
                     return self._build_result(finish_spot, attacker, defender, participants)
-
-            if self._should_switch_control(attacker, defender):
-                pass  # In multi-person, control is already random each tick
 
         # Time limit: pick the participant with the highest momentum as winner
         if len(active) >= 2:
@@ -746,37 +428,9 @@ class MatchSimulator:
             damage = int(damage * HOMETOWN_DAMAGE_MULTIPLIER)
 
         # --- BOTCH CHECK: moves can go wrong ---
-        # Higher-damage moves are riskier. Fatigue, low skill, and low trust increase botch chance.
-        is_botch = False
-        botch_severity = 0
-        move_difficulty = base_damage / 15.0  # 0.0-1.0 scale; power moves = harder to execute
-        if category == "aerial":
-            move_difficulty += BOTCH_AERIAL_BONUS  # Aerial moves are inherently riskier
-        fatigue_factor = max(0, (100 - attacker.stamina) / 200)  # Tired = sloppy
-        skill_factor = max(0, (100 - attack_stat) / 300)  # Low skill = more botches
-        trust_factor = getattr(self, '_trust_penalty', 0.0)  # Low trust with opponent
+        is_botch, botch_severity, damage = self._check_botch(
+            category, base_damage, attack_stat, attacker.stamina, damage)
 
-        botch_chance = (move_difficulty * BOTCH_DIFFICULTY_FACTOR) + fatigue_factor + skill_factor + trust_factor
-        botch_chance = min(BOTCH_MAX_CHANCE, botch_chance)
-
-        if random.random() < botch_chance:
-            is_botch = True
-            severity_roll = random.random()
-            if severity_roll < BOTCH_MINOR_THRESHOLD:
-                botch_severity = 1  # Minor: stumble, awkward landing
-            elif severity_roll < BOTCH_BAD_THRESHOLD:
-                botch_severity = 2  # Bad: sloppy execution, crowd notices
-            else:
-                botch_severity = 3  # Dangerous: potential injury
-
-            # Botch modifies damage and description
-            if botch_severity == 1:
-                damage = max(1, damage // 2)
-            elif botch_severity == 2:
-                damage = max(1, damage // 3)
-            elif botch_severity == 3:
-                # Dangerous botch can hurt the DEFENDER more than intended
-                damage = int(damage * DANGEROUS_BOTCH_DAMAGE_MULTIPLIER)
 
         # Check for reversal
         was_reversed = False
@@ -873,94 +527,105 @@ class MatchSimulator:
                         heat_change=5,
                     )
                 return None
-            damage = int(base_dmg * (attacker.stats.get("brawling", 50) / 50))
-            return MatchSpot(
-                tick=self.tick, attacker_id=attacker.wrestler_id,
-                defender_id=defender.wrestler_id,
-                move_name="Cage Spot", move_type="brawling",
-                damage=max(3, damage),
-                description=f"{attacker.name} {desc}!",
-                crowd_reaction=random.choice(CROWD_REACTIONS),
-                heat_change=random.randint(2, 5),
-            )
+            return self._build_stipulation_hit(attacker, defender, desc, base_dmg, "brawling",
+                                               "Cage Spot", "brawling", 3, CROWD_REACTIONS, (2, 5))
 
         elif "ladder" in stip:
             desc, base_dmg, stype = random.choice(LADDER_SPOTS)
             if stype == "climb":
                 if attacker.momentum > LADDER_CLIMB_MOMENTUM_THRESHOLD:
-                    return MatchSpot(
-                        tick=self.tick, attacker_id=attacker.wrestler_id,
-                        defender_id=defender.wrestler_id,
-                        move_name="Ladder Climb", move_type="aerial",
-                        damage=0,
-                        description=f"{attacker.name} is climbing the ladder! Fingers inches from the prize!",
-                        crowd_reaction="This could be it!",
-                        heat_change=6,
-                    )
+                    return self._build_special_stip_spot(attacker, defender,
+                        "Ladder Climb", "aerial",
+                        f"{attacker.name} is climbing the ladder! Fingers inches from the prize!",
+                        "This could be it!", 6)
                 return None
-            damage = int(base_dmg * (attacker.stats.get("power", 50) / 50))
-            return MatchSpot(
-                tick=self.tick, attacker_id=attacker.wrestler_id,
-                defender_id=defender.wrestler_id,
-                move_name="Ladder Spot", move_type=stype,
-                damage=max(5, damage),
-                description=f"{attacker.name} {desc}!",
-                crowd_reaction="OH MY GOD!",
-                heat_change=random.randint(3, 7),
-            )
+            return self._build_stipulation_hit(attacker, defender, desc, base_dmg, "power",
+                                               "Ladder Spot", stype, 5, ["OH MY GOD!"], (3, 7))
 
         elif "table" in stip:
             desc, base_dmg, stype = random.choice(TABLE_SPOTS)
             if stype == "setup":
-                return MatchSpot(
-                    tick=self.tick, attacker_id=attacker.wrestler_id,
-                    defender_id=defender.wrestler_id,
-                    move_name="Table Setup", move_type="power",
-                    damage=0,
-                    description=f"{attacker.name} {desc}!",
-                    crowd_reaction="The crowd knows what's coming!",
-                    heat_change=3,
-                )
-            damage = int(base_dmg * (attacker.stats.get("power", 50) / 50))
-            return MatchSpot(
-                tick=self.tick, attacker_id=attacker.wrestler_id,
-                defender_id=defender.wrestler_id,
-                move_name="Table Spot", move_type=stype,
-                damage=max(8, damage), is_finish=False,
-                description=f"{attacker.name} {desc}!",
-                crowd_reaction="THROUGH THE TABLE!",
-                heat_change=random.randint(5, 8),
-            )
+                return self._build_special_stip_spot(attacker, defender,
+                    "Table Setup", "power",
+                    f"{attacker.name} {desc}!",
+                    "The crowd knows what's coming!", 3)
+            return self._build_stipulation_hit(attacker, defender, desc, base_dmg, "power",
+                                               "Table Spot", stype, 8, ["THROUGH THE TABLE!"], (5, 8))
 
         elif "hell" in stip or "cell" in stip:
             desc, base_dmg, stype = random.choice(HELL_IN_A_CELL_SPOTS)
             if stype == "climb":
-                return MatchSpot(
-                    tick=self.tick, attacker_id=attacker.wrestler_id,
-                    defender_id=defender.wrestler_id,
-                    move_name="Cell Climb", move_type="aerial",
-                    damage=0,
-                    description=f"{attacker.name} {desc}! This is getting dangerous!",
-                    crowd_reaction="Don't do it! DON'T DO IT!",
-                    heat_change=7,
-                )
-            damage = int(base_dmg * (attacker.stats.get("brawling", 50) / 50))
-            return MatchSpot(
-                tick=self.tick, attacker_id=attacker.wrestler_id,
-                defender_id=defender.wrestler_id,
-                move_name="Cell Spot", move_type=stype,
-                damage=max(5, damage),
-                description=f"{attacker.name} {desc}!",
-                crowd_reaction="GOOD GOD ALMIGHTY!",
-                heat_change=random.randint(4, 8),
-            )
+                return self._build_special_stip_spot(attacker, defender,
+                    "Cell Climb", "aerial",
+                    f"{attacker.name} {desc}! This is getting dangerous!",
+                    "Don't do it! DON'T DO IT!", 7)
+            return self._build_stipulation_hit(attacker, defender, desc, base_dmg, "brawling",
+                                               "Cell Spot", stype, 5, ["GOOD GOD ALMIGHTY!"], (4, 8))
 
         return None
+
+    def _build_special_stip_spot(self, attacker, defender, move_name, move_type,
+                                  description, crowd_reaction, heat_change):
+        """Build a zero-damage stipulation spot (escapes, climbs, setups)."""
+        return MatchSpot(
+            tick=self.tick, attacker_id=attacker.wrestler_id,
+            defender_id=defender.wrestler_id,
+            move_name=move_name, move_type=move_type,
+            damage=0, description=description,
+            crowd_reaction=crowd_reaction, heat_change=heat_change,
+        )
+
+    def _build_stipulation_hit(self, attacker, defender, desc, base_dmg, stat_key,
+                                move_name, move_type, min_damage, reactions, heat_range):
+        """Build a damage-dealing stipulation spot with stat scaling."""
+        damage = int(base_dmg * self._stat_multiplier(attacker, stat_key))
+        reaction = random.choice(reactions) if isinstance(reactions, list) else reactions
+        return MatchSpot(
+            tick=self.tick, attacker_id=attacker.wrestler_id,
+            defender_id=defender.wrestler_id,
+            move_name=move_name, move_type=move_type,
+            damage=max(min_damage, damage),
+            description=f"{attacker.name} {desc}!",
+            crowd_reaction=reaction,
+            heat_change=random.randint(*heat_range),
+        )
+
+    def _check_botch(self, category: str, base_damage: int, attack_stat: int,
+                      stamina: float, damage: int) -> tuple:
+        """Check if a move is botched. Returns (is_botch, severity, modified_damage)."""
+        move_difficulty = base_damage / 15.0
+        if category == "aerial":
+            move_difficulty += BOTCH_AERIAL_BONUS
+        fatigue_factor = max(0, (100 - stamina) / 200)
+        skill_factor = max(0, (100 - attack_stat) / 300)
+        trust_factor = getattr(self, '_trust_penalty', 0.0)
+
+        botch_chance = (move_difficulty * BOTCH_DIFFICULTY_FACTOR) + fatigue_factor + skill_factor + trust_factor
+        botch_chance = min(BOTCH_MAX_CHANCE, botch_chance)
+
+        if random.random() >= botch_chance:
+            return False, 0, damage
+
+        severity_roll = random.random()
+        if severity_roll < BOTCH_MINOR_THRESHOLD:
+            return True, 1, max(1, damage // 2)
+        elif severity_roll < BOTCH_BAD_THRESHOLD:
+            return True, 2, max(1, damage // 3)
+        else:
+            return True, 3, int(damage * DANGEROUS_BOTCH_DAMAGE_MULTIPLIER)
+
+    def _stat_multiplier(self, wrestler: MatchParticipantState, stat_key: str) -> float:
+        """Get damage multiplier from a wrestler's stat vs baseline."""
+        return wrestler.stats.get(stat_key, STAT_BASELINE) / STAT_BASELINE
+
+    def _update_momentum(self, wrestler: MatchParticipantState, delta: float):
+        """Apply momentum change clamped to 0-100."""
+        wrestler.momentum = max(0, min(100, wrestler.momentum + delta))
 
     def _pick_move_category(self, wrestler: MatchParticipantState) -> str:
         """Pick a move category weighted by wrestler's stats."""
         categories = ["power", "technical", "aerial", "brawling", "submission"]
-        weights = [wrestler.stats.get(c, 50) for c in categories]
+        weights = [wrestler.stats.get(c, STAT_BASELINE) for c in categories]
         total = sum(weights)
         weights = [w / total for w in weights]
         return random.choices(categories, weights=weights, k=1)[0]
@@ -971,13 +636,13 @@ class MatchSimulator:
         if spot.was_reversed:
             # Reversal: attacker takes damage, defender gains momentum
             attacker.health -= spot.damage
-            defender.momentum = min(100, defender.momentum + REVERSAL_MOMENTUM_GAIN)
-            attacker.momentum = max(0, attacker.momentum - REVERSAL_MOMENTUM_LOSS)
+            self._update_momentum(defender, REVERSAL_MOMENTUM_GAIN)
+            self._update_momentum(attacker, -REVERSAL_MOMENTUM_LOSS)
         else:
             # Normal: defender takes damage, attacker gains momentum
             defender.health -= spot.damage
-            attacker.momentum = min(100, attacker.momentum + NORMAL_HIT_MOMENTUM_GAIN)
-            defender.momentum = max(0, defender.momentum - NORMAL_HIT_MOMENTUM_LOSS)
+            self._update_momentum(attacker, NORMAL_HIT_MOMENTUM_GAIN)
+            self._update_momentum(defender, -NORMAL_HIT_MOMENTUM_LOSS)
 
         # Stamina drain
         attacker.stamina = max(STAMINA_FLOOR, attacker.stamina - random.uniform(
@@ -995,9 +660,9 @@ class MatchSimulator:
                                defender: MatchParticipantState) -> bool:
         """Determine if offensive control should switch."""
         # Psychology stat helps maintain control
-        hold_chance = attacker.stats.get("psychology", 50) / 100
-        comeback_chance = defender.stats.get("stamina", 50) / 200
-        comeback_chance += defender.stats.get("speed", 50) / 400  # Fast wrestlers escape faster
+        hold_chance = attacker.stats.get("psychology", STAT_BASELINE) / 100
+        comeback_chance = defender.stats.get("stamina", STAT_BASELINE) / 200
+        comeback_chance += defender.stats.get("speed", STAT_BASELINE) / 400  # Fast wrestlers escape faster
 
         # Lower health = more likely to mount comeback (fighting spirit)
         if defender.health < COMEBACK_LOW_HEALTH_THRESHOLD:
@@ -1021,9 +686,9 @@ class MatchSimulator:
 
             # --- GOING INTO BUSINESS: wrestler refuses to do the job ---
             # Check if this wrestler has the ego/frustration to go into business
-            ego = attacker.stats.get("ego", 50)
+            ego = attacker.stats.get("ego", STAT_BASELINE)
             frustration = getattr(attacker, '_frustration', 0)
-            morale_mod = getattr(attacker, '_morale', 50)
+            morale_mod = getattr(attacker, '_morale', STAT_BASELINE)
 
             # Conditions: high ego + high frustration + low morale + title match stakes
             shoot_chance = 0.0
@@ -1186,8 +851,8 @@ class MatchSimulator:
                     defender=defender.name
                 )
                 defender.health -= INTERFERENCE_DAMAGE
-                defender.momentum = max(0, defender.momentum - INTERFERENCE_MOMENTUM_LOSS)
-                attacker.momentum = min(100, attacker.momentum + INTERFERENCE_MOMENTUM_GAIN)
+                self._update_momentum(defender, -INTERFERENCE_MOMENTUM_LOSS)
+                self._update_momentum(attacker, INTERFERENCE_MOMENTUM_GAIN)
                 return MatchSpot(
                     tick=self.tick, attacker_id=attacker.wrestler_id,
                     defender_id=defender.wrestler_id,

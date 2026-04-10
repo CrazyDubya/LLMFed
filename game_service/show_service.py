@@ -22,6 +22,59 @@ from models.game_models import (
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Booking constants
+# ---------------------------------------------------------------------------
+
+MAX_STORYLINE_MATCHES_PER_SHOW = 2
+TAG_TEAM_BOOKING_RATE = 0.30
+CLIMAX_GIMMICK_RATE = 0.50
+TRIPLE_THREAT_RATE = 0.15
+HARDCORE_STIPULATION_RATE = 0.40
+CROWN_JEWEL_TITLE_CHANGE_RATE = 0.40
+REGULAR_PPV_TITLE_CHANGE_RATE = 0.25
+FATAL_FOUR_WAY_RATE = 0.60
+PLAYER_MATCH_WIN_RATE = 0.50
+DARK_MATCH_WIN_RATE = 0.55
+PROTECTION_BONUS = 30
+FINISH_TYPE_WEIGHTS = [60, 15, 10, 15]  # pinfall, submission, count_out, DQ
+FINISH_TYPES = ["pinfall", "submission", "count_out", "disqualification"]
+
+# Data-driven gimmick match configuration
+GIMMICK_MATCH_CONFIG = {
+    "Steel Cage":       {"match_type": "cage",            "finish": "pinfall"},
+    "Ladder":           {"match_type": "ladder",          "finish": "stipulation"},
+    "Tables":           {"match_type": "tables",          "finish": "stipulation"},
+    "Hell in a Cell":   {"match_type": "hell_in_a_cell",  "finish": "pinfall"},
+    "No DQ":            {"match_type": "singles",         "finish": "pinfall"},
+    "Last Man Standing": {"match_type": "singles",        "finish": "pinfall"},
+    "Iron Man":         {"match_type": "iron_man",        "finish": "pinfall"},
+}
+
+
+def _get_next_segment_position(db: Session, show_id: str) -> int:
+    """Get the next available segment position for a show."""
+    return db.query(ShowSegmentDB).filter(ShowSegmentDB.show_id == show_id).count() + 1
+
+
+def _calculate_wrestler_score(wrestler, push_map, push_tiers, randomness=15):
+    """Calculate a wrestler's booking score from push tier and popularity."""
+    push = push_map.get(wrestler.id)
+    tier_rank = push_tiers.index(push.push_tier) if push and push.push_tier in push_tiers else 2
+    score = (5 - tier_rank) * 20 + wrestler.popularity + random.randint(-randomness, randomness)
+    if push and push.protected:
+        score += PROTECTION_BONUS
+    return score
+
+
+def _get_available_wrestlers(db: Session, wrestler_ids: list):
+    """Get active, non-injured wrestlers from a list of IDs."""
+    return db.query(GameWrestlerDB).filter(
+        GameWrestlerDB.id.in_(wrestler_ids),
+        GameWrestlerDB.is_active == True,
+        GameWrestlerDB.is_injured == False,
+    ).all()
+
 
 # ---------------------------------------------------------------------------
 # Show management
@@ -86,10 +139,7 @@ def book_match(db: Session, show_id: str, world_id: str,
 
     # Determine position
     if position is None:
-        existing = db.query(ShowSegmentDB).filter(
-            ShowSegmentDB.show_id == show_id
-        ).count()
-        position = existing + 1
+        position = _get_next_segment_position(db, show_id)
 
     segment = ShowSegmentDB(
         show_id=show_id,
@@ -112,10 +162,7 @@ def book_promo_segment(db: Session, show_id: str,
                        game_date: str = None) -> ShowSegmentDB:
     """Book a promo segment, creating a PromoDB record when a wrestler is identified."""
     if position is None:
-        existing = db.query(ShowSegmentDB).filter(
-            ShowSegmentDB.show_id == show_id
-        ).count()
-        position = existing + 1
+        position = _get_next_segment_position(db, show_id)
 
     promo_id = None
     if wrestler_id:
@@ -208,7 +255,7 @@ def _sort_roster_by_style(db: Session, wrestlers: list, booking_style: str) -> l
         return sorted(wrestlers, key=lambda w: w.popularity, reverse=True)
 
 
-def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> list:
+def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
     """Auto-generate a match card for an NPC federation show.
 
     Uses federation's booking style (ai_personality) to influence card composition.
@@ -237,11 +284,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
         return []
 
     # Get active, non-injured wrestlers
-    wrestlers = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.id.in_(wrestler_ids),
-        GameWrestlerDB.is_active == True,
-        GameWrestlerDB.is_injured == False,
-    ).all()
+    wrestlers = _get_available_wrestlers(db, wrestler_ids)
 
     if len(wrestlers) < 2:
         return []
@@ -280,7 +323,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
 
     storyline_matches_booked = 0
     for sl in active_storylines:
-        if storyline_matches_booked >= 2:
+        if storyline_matches_booked >= MAX_STORYLINE_MATCHES_PER_SHOW:
             break  # Max 2 storyline matches per weekly show
         parts = db.query(StorylineParticipantDB).filter(
             StorylineParticipantDB.storyline_id == sl.id,
@@ -296,34 +339,20 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
             if w1 and w2 and not w1.is_injured and not w2.is_injured:
                 # Higher-heat storyline gets higher card position
                 is_main = (storyline_matches_booked == 0 and sl.heat >= 70)
-                w1_push = push_map.get(w1.id)
-                w2_push = push_map.get(w2.id)
-                w1_rank = PUSH_TIERS.index(w1_push.push_tier) if w1_push and w1_push.push_tier in PUSH_TIERS else 2
-                w2_rank = PUSH_TIERS.index(w2_push.push_tier) if w2_push and w2_push.push_tier in PUSH_TIERS else 2
-                planned_winner = w1 if w1_rank <= w2_rank else w2
+                planned_winner = w1 if _calculate_wrestler_score(w1, push_map, PUSH_TIERS) >= _calculate_wrestler_score(w2, push_map, PUSH_TIERS) else w2
                 # Climax storylines get gimmick finishes — more variety
                 finish = "pinfall"
                 stipulation = None
                 match_type = "singles"
-                if sl.status == "climax" and random.random() < 0.5:
+                if sl.status == "climax" and random.random() < CLIMAX_GIMMICK_RATE:
                     gimmick_choice = random.choices(
-                        ["Steel Cage", "Ladder", "Tables", "Hell in a Cell",
-                         "No DQ", "Last Man Standing", "Iron Man"],
+                        list(GIMMICK_MATCH_CONFIG.keys()),
                         weights=[20, 15, 15, 10, 20, 15, 5], k=1,
                     )[0]
                     stipulation = gimmick_choice
-                    if gimmick_choice == "Steel Cage":
-                        match_type = "cage"
-                    elif gimmick_choice == "Ladder":
-                        match_type = "ladder"
-                        finish = "stipulation"
-                    elif gimmick_choice == "Tables":
-                        match_type = "tables"
-                        finish = "stipulation"
-                    elif gimmick_choice == "Hell in a Cell":
-                        match_type = "hell_in_a_cell"
-                    elif gimmick_choice == "Iron Man":
-                        match_type = "iron_man"
+                    config = GIMMICK_MATCH_CONFIG[gimmick_choice]
+                    match_type = config["match_type"]
+                    finish = config["finish"]
 
                 seg = book_match(
                     db, show.id, show.world_id,
@@ -347,7 +376,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
     ).all()
 
     booked_tag = False
-    if len(tag_teams) >= 2 and random.random() < 0.30:
+    if len(tag_teams) >= 2 and random.random() < TAG_TEAM_BOOKING_RATE:
         t1, t2 = random.sample(tag_teams, 2)
         tag_wrestlers = [t1.wrestler1_id, t1.wrestler2_id, t2.wrestler1_id, t2.wrestler2_id]
         # Ensure no overlap
@@ -399,7 +428,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
                     db, show.id, show.world_id,
                     wrestler_ids=[pw.id, opp.id],
                     match_type="singles",
-                    planned_winner_id=pw.id if random.random() < 0.50 else opp.id,
+                    planned_winner_id=pw.id if random.random() < PLAYER_MATCH_WIN_RATE else opp.id,
                     planned_finish="pinfall",
                     position=1,  # Opening match — gets the player on TV
                 )
@@ -429,7 +458,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
                         db, show.id, show.world_id,
                         wrestler_ids=[w.id, opp.id],
                         match_type="singles",
-                        planned_winner_id=w.id if random.random() < 0.55 else opp.id,
+                        planned_winner_id=w.id if random.random() < DARK_MATCH_WIN_RATE else opp.id,
                         planned_finish="pinfall",
                         position=0,  # Dark match — position 0, before the card
                     )
@@ -458,7 +487,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
         is_main_event_slot = (actual_pos == num_matches + (1 if booked_tag else 0) - 1)
         match_type = "singles"
         if (not triple_threat_booked and not is_main_event_slot
-                and len(available) >= 3 and random.random() < 0.15):
+                and len(available) >= 3 and random.random() < TRIPLE_THREAT_RATE):
             w1, w2, w3 = available[0], available[1], available[2]
             used.add(w1.id)
             used.add(w2.id)
@@ -467,14 +496,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
             triple_threat_booked = True
             # Winner is the highest-pushed of the three
             all_w = [w1, w2, w3]
-            scores = {}
-            for w in all_w:
-                wp = push_map.get(w.id)
-                tier_rank = PUSH_TIERS.index(wp.push_tier) if wp and wp.push_tier in PUSH_TIERS else 2
-                scores[w.id] = (5 - tier_rank) * 20 + w.popularity + random.randint(-15, 15)
-                if wp and wp.protected:
-                    scores[w.id] += 30
-            planned_winner = max(all_w, key=lambda w: scores[w.id])
+            planned_winner = max(all_w, key=lambda w: _calculate_wrestler_score(w, push_map, PUSH_TIERS))
             position = actual_pos + 1
             seg = book_match(
                 db, show.id, show.world_id,
@@ -492,19 +514,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
         used.add(w2.id)
 
         # Determine winner (push-tier aware)
-        w1_push = push_map.get(w1.id)
-        w2_push = push_map.get(w2.id)
-        w1_tier_rank = PUSH_TIERS.index(w1_push.push_tier) if w1_push and w1_push.push_tier in PUSH_TIERS else 2
-        w2_tier_rank = PUSH_TIERS.index(w2_push.push_tier) if w2_push and w2_push.push_tier in PUSH_TIERS else 2
-        # Lower index = higher tier. Higher-tier wrestlers should usually win.
-        w1_score = (5 - w1_tier_rank) * 20 + w1.popularity + random.randint(-15, 15)
-        w2_score = (5 - w2_tier_rank) * 20 + w2.popularity + random.randint(-15, 15)
-        # Protected wrestlers get a big boost
-        if w1_push and w1_push.protected:
-            w1_score += 30
-        if w2_push and w2_push.protected:
-            w2_score += 30
-        planned_winner = w1 if w1_score >= w2_score else w2
+        planned_winner = w1 if _calculate_wrestler_score(w1, push_map, PUSH_TIERS) >= _calculate_wrestler_score(w2, push_map, PUSH_TIERS) else w2
 
         # Title match for main event if champion is available
         is_title = False
@@ -517,17 +527,13 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
 
         # Hardcore booking style adds stipulations and gimmick matches
         stipulation = None
-        if booking_style == "hardcore" and random.random() < 0.4:
+        if booking_style == "hardcore" and random.random() < HARDCORE_STIPULATION_RATE:
             stipulation = random.choice([
                 "No DQ", "Falls Count Anywhere", "Street Fight", "Extreme Rules",
                 "Tables", "Steel Cage", "Ladder",
             ])
 
-        finish = random.choices(
-            ["pinfall", "submission", "count_out", "disqualification"],
-            weights=[60, 15, 10, 15],
-            k=1,
-        )[0]
+        finish = random.choices(FINISH_TYPES, weights=FINISH_TYPE_WEIGHTS, k=1)[0]
         # Title matches almost always end clean
         if is_title and finish in ("count_out", "disqualification"):
             finish = "pinfall"
@@ -551,8 +557,8 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
     if total_segs >= 3:
         promo_pos = total_segs // 2 + 1
         available = [w for w in wrestlers if w.id not in used]
-        if available:
-            promo_wrestler = available[0]
+        promo_wrestler = available[0] if available else max(wrestlers, key=lambda w: w.popularity, default=None)
+        if promo_wrestler:
             book_promo_segment(
                 db, show.id,
                 description=f"{promo_wrestler.name} addresses the crowd",
@@ -561,19 +567,6 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, next_ppv=None) -> l
                 world_id=show.world_id,
                 game_date=show.game_date,
             )
-        else:
-            # Fallback: pick the most popular wrestler on the card
-            card_wrestlers = sorted(wrestlers, key=lambda w: w.popularity, reverse=True)
-            if card_wrestlers:
-                promo_wrestler = card_wrestlers[0]
-                book_promo_segment(
-                    db, show.id,
-                    description=f"{promo_wrestler.name} addresses the crowd",
-                    position=promo_pos,
-                    wrestler_id=promo_wrestler.id,
-                    world_id=show.world_id,
-                    game_date=show.game_date,
-                )
 
     db.flush()
     return segments
@@ -602,11 +595,7 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
         used.update(available[:2])
 
         # Winner: higher push tier wins (PPV wins matter more)
-        w1_push = push_map.get(w1.id)
-        w2_push = push_map.get(w2.id)
-        w1_rank = PUSH_TIERS.index(w1_push.push_tier) if w1_push and w1_push.push_tier in PUSH_TIERS else 2
-        w2_rank = PUSH_TIERS.index(w2_push.push_tier) if w2_push and w2_push.push_tier in PUSH_TIERS else 2
-        planned_winner = w1 if w1_rank <= w2_rank else w2
+        planned_winner = w1 if _calculate_wrestler_score(w1, push_map, PUSH_TIERS) >= _calculate_wrestler_score(w2, push_map, PUSH_TIERS) else w2
 
         seg = book_match(
             db, show.id, show.world_id,
@@ -640,19 +629,15 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
         if champ and champ.current_holder_id in (w1.id, w2.id):
             holder = w1 if w1.id == champ.current_holder_id else w2
             challenger = w2 if holder == w1 else w1
-            if ppv_event.is_crown_jewel and random.random() < 0.40:
+            if ppv_event.is_crown_jewel and random.random() < CROWN_JEWEL_TITLE_CHANGE_RATE:
                 planned_winner = challenger  # Crown jewel title change!
-            elif random.random() < 0.25:
+            elif random.random() < REGULAR_PPV_TITLE_CHANGE_RATE:
                 planned_winner = challenger  # Regular PPV title change
             else:
                 planned_winner = holder  # Champion retains
         else:
             # Non-title main event
-            w1_push = push_map.get(w1.id)
-            w2_push = push_map.get(w2.id)
-            w1_rank = PUSH_TIERS.index(w1_push.push_tier) if w1_push and w1_push.push_tier in PUSH_TIERS else 2
-            w2_rank = PUSH_TIERS.index(w2_push.push_tier) if w2_push and w2_push.push_tier in PUSH_TIERS else 2
-            planned_winner = w1 if w1_rank <= w2_rank else w2
+            planned_winner = w1 if _calculate_wrestler_score(w1, push_map, PUSH_TIERS) >= _calculate_wrestler_score(w2, push_map, PUSH_TIERS) else w2
 
         seg = book_match(
             db, show.id, show.world_id,
@@ -693,7 +678,7 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
         remaining = [w for w in remaining if w.id not in used]
     elif len(remaining) >= 4:
         # Fatal four way on non-crown-jewel PPVs (60% chance)
-        if random.random() < 0.60:
+        if random.random() < FATAL_FOUR_WAY_RATE:
             ffw = remaining[:4]
             ffw_ids = [w.id for w in ffw]
             for wid in ffw_ids:
