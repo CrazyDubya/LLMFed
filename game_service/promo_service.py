@@ -105,7 +105,13 @@ CLOSING_LINES = [
 
 # ---------------------------------------------------------------------------
 # Archetype-specific promo templates
+#
+# ARCHETYPE_TEMPLATES consolidates openers/bodies/closers per archetype.
+# Legacy accessors (ARCHETYPE_OPENERS, ARCHETYPE_BODIES, ARCHETYPE_CLOSERS)
+# are derived from this single source of truth.
 # ---------------------------------------------------------------------------
+
+ARCHETYPE_TEMPLATES = {}  # populated below; maps archetype -> {openers, bodies, closers}
 
 ARCHETYPE_OPENERS = {
     "monster_heel": [
@@ -273,6 +279,32 @@ ARCHETYPE_CLOSERS = {
     ],
 }
 
+# Build consolidated ARCHETYPE_TEMPLATES from the three separate dicts
+for _arch in ARCHETYPE_OPENERS:
+    ARCHETYPE_TEMPLATES[_arch] = {
+        "openers": ARCHETYPE_OPENERS[_arch],
+        "bodies": ARCHETYPE_BODIES.get(_arch, []),
+        "closers": ARCHETYPE_CLOSERS.get(_arch, []),
+    }
+
+# Event type classifications for emotional state
+NEGATIVE_LIFE_EVENT_TYPES = {
+    "divorce", "death_in_family", "legal_trouble", "substance_issue",
+    "financial_trouble", "mental_health", "public_controversy",
+}
+POSITIVE_LIFE_EVENT_TYPES = {
+    "marriage", "child_born", "personal_achievement", "charity_work",
+    "family_reconciliation",
+}
+
+# Emotional bleed thresholds
+SEVERE_EVENT_THRESHOLD = 7
+CATASTROPHIC_EVENT_THRESHOLD = 9
+GRIEF_MORALE_IMPACT = -10
+MIN_LLM_RESULT_LENGTH = 20
+MIN_GOOD_PROMO_WORDS = 30
+MAX_GOOD_PROMO_WORDS = 150
+
 # Emotional modifiers when life events bleed into promos
 EMOTIONAL_BLEED_LINES = {
     "grief": [
@@ -426,7 +458,7 @@ def _determine_emotional_state(life_events, kayfabe_commitment):
     # Higher kayfabe commitment = less bleed-through
     bleed_chance = max(0, (100 - kayfabe_commitment)) / 100.0
 
-    severe_events = [e for e in life_events if e.severity >= 7]
+    severe_events = [e for e in life_events if e.severity >= SEVERE_EVENT_THRESHOLD]
     if not severe_events:
         return None
 
@@ -434,19 +466,15 @@ def _determine_emotional_state(life_events, kayfabe_commitment):
         return None
 
     event = severe_events[0]
-    negative_types = {"divorce", "death_in_family", "legal_trouble", "substance_issue",
-                      "financial_trouble", "mental_health", "public_controversy"}
-    positive_types = {"marriage", "child_born", "personal_achievement", "charity_work",
-                      "family_reconciliation"}
 
-    if event.event_type in negative_types:
-        if event.severity >= 9:
+    if event.event_type in NEGATIVE_LIFE_EVENT_TYPES:
+        if event.severity >= CATASTROPHIC_EVENT_THRESHOLD:
             return "desperation"
-        elif event.morale_impact < -10:
+        elif event.morale_impact < GRIEF_MORALE_IMPACT:
             return "grief"
         else:
             return "anger"
-    elif event.event_type in positive_types:
+    elif event.event_type in POSITIVE_LIFE_EVENT_TYPES:
         return "joy"
     return None
 
@@ -477,7 +505,7 @@ def _generate_persona_promo(wrestler, stats, target_id, db, promo_type):
                 tone = "default"
 
             result = character_speak(db, wrestler.id, context, tone=tone)
-            if result and len(result.strip()) > 20:
+            if result and len(result.strip()) > MIN_LLM_RESULT_LENGTH:
                 return result
         except Exception:
             pass  # Fall through to template system
@@ -607,9 +635,9 @@ def _evaluate_promo_quality(stats, content: str, is_player: bool,
 
     # Length bonus
     word_count = len(content.split())
-    if 30 <= word_count <= 150:
+    if MIN_GOOD_PROMO_WORDS <= word_count <= MAX_GOOD_PROMO_WORDS:
         base += 0.5
-    elif word_count > 150:
+    elif word_count > MAX_GOOD_PROMO_WORDS:
         base += 0.3
 
     # Player promos get a small creativity bonus

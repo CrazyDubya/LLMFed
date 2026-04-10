@@ -816,21 +816,21 @@ class WorldTicker:
     # ------------------------------------------------------------------
 
     def _wrestler_lifecycle(self, game_date: str):
-        """All wrestler lifecycle processing — aging, goals, politics, etc."""
+        """Dispatch lifecycle processing by cadence: annual → seasonal → weekly → daily."""
+        self._lifecycle_annual(game_date)
+        self._lifecycle_seasonal(game_date)
+        self._lifecycle_weekly(game_date)
+        self._lifecycle_daily_ring_rust(game_date)
+
+    def _lifecycle_annual(self, game_date: str):
+        """Jan 1: Age wrestlers and roll PPV calendars. Apr 1: Hall of Fame."""
         from game_service.wrestler_lifecycle_service import (
-            age_wrestlers, evaluate_goals, create_wrestler_goals,
-            update_locker_room_dynamics, auto_assign_mentors,
-            hall_of_fame_ceremony, update_conditioning,
-            apply_nostalgia_pop,
+            age_wrestlers, hall_of_fame_ceremony,
         )
 
-        # --- Annual events ---
-        # Jan 1: Age all wrestlers (Group 1) + PPV calendar rollover
         if game_date.endswith("-01-01"):
             age_wrestlers(self.db, self.world.id, game_date)
             self.events.append("Annual aging applied to all wrestlers")
-
-            # Generate next year's PPV calendars for all active federations
             from game_service.ppv_calendar_service import rollover_ppv_calendar
             for fed in get_active_federations(self.db, self.world.id):
                 new_ppvs = rollover_ppv_calendar(self.db, fed, game_date)
@@ -839,69 +839,61 @@ class WorldTicker:
                         f"{fed.short_name or fed.name}: {len(new_ppvs)} PPVs scheduled for new year"
                     )
 
-        # April 1: Hall of Fame ceremony (Group 5)
         if game_date.endswith("-04-01"):
             inductee = hall_of_fame_ceremony(self.db, self.world.id, game_date)
             if inductee:
                 self.events.append(f"HALL OF FAME: {inductee.name} inducted!")
 
-        # --- Quarterly seasonal events ---
-        # Q1 (Jan): New Year's Resolution — wrestlers with unmet goals get morale boost
+    def _lifecycle_seasonal(self, game_date: str):
+        """Quarterly events: New Year (Jan 7), KOTR (Jun 1), Summer (Jul-Aug), Year-End (Dec 31)."""
         if game_date.endswith("-01-07"):
             self._seasonal_new_year_resolution(game_date)
-
-        # Q2 (June): King of the Ring tournament
         if game_date.endswith("-06-01"):
             self._seasonal_king_of_the_ring(game_date)
 
-        # Q3 (Jul-Sep): Summer Slam month — attendance boost
         month = game_date[5:7]
         if month in ("07", "08") and get_day_of_week(game_date) == MONDAY:
-            # Summer boost: all federations get a momentum nudge
             for fed in get_active_federations(self.db, self.world.id):
-                old_m = fed.momentum or 50
-                fed.momentum = min(100, old_m + 2)
+                fed.momentum = min(100, (fed.momentum or 50) + 2)
 
-        # Dec 31: Year-end summary and awards
         if game_date.endswith("-12-31"):
             self._generate_year_end_summary(game_date)
 
-        # --- Weekly events (Thursdays) ---
-        if get_day_of_week(game_date) == THURSDAY:
-            # Goal evaluation (Group 2)
-            wrestlers = get_active_wrestlers(self.db, self.world.id)
-            for w in wrestlers:
-                # Ensure goals are created
-                create_wrestler_goals(self.db, w, game_date)
-                completed = evaluate_goals(self.db, w, game_date)
-                for g in completed:
-                    self.events.append(f"{w.name} achieved: {g}")
+    def _lifecycle_weekly(self, game_date: str):
+        """Thursdays: goals, locker room dynamics, mentors, conditioning."""
+        if get_day_of_week(game_date) != THURSDAY:
+            return
 
-            # Locker room dynamics (Group 3)
-            npc_feds = get_active_federations(self.db, self.world.id)
-            for fed in npc_feds:
-                update_locker_room_dynamics(self.db, fed, game_date)
+        from game_service.wrestler_lifecycle_service import (
+            evaluate_goals, create_wrestler_goals,
+            update_locker_room_dynamics, auto_assign_mentors,
+            update_conditioning,
+        )
 
-            # Auto-assign mentors (Group 4)
-            for fed in npc_feds:
-                if fed.is_npc:
-                    auto_assign_mentors(self.db, fed, game_date)
+        wrestlers = get_active_wrestlers(self.db, self.world.id)
+        for w in wrestlers:
+            create_wrestler_goals(self.db, w, game_date)
+            completed = evaluate_goals(self.db, w, game_date)
+            for g in completed:
+                self.events.append(f"{w.name} achieved: {g}")
 
-            # Conditioning cycle (Group 6)
-            for w in wrestlers:
-                update_conditioning(self.db, w, game_date)
+        feds = get_active_federations(self.db, self.world.id)
+        for fed in feds:
+            update_locker_room_dynamics(self.db, fed, game_date)
+            if fed.is_npc:
+                auto_assign_mentors(self.db, fed, game_date)
 
-        # --- Daily: ring rust tracking (Group 1) ---
-        active = get_active_wrestlers(self.db, self.world.id)
-        for w in active:
+        for w in wrestlers:
+            update_conditioning(self.db, w, game_date)
+
+    def _lifecycle_daily_ring_rust(self, game_date: str):
+        """Daily ring rust tracking — days since last booked."""
+        for w in get_active_wrestlers(self.db, self.world.id):
             if w.last_booked_date:
                 try:
-                    days = self._days_between(w.last_booked_date, game_date)
-                    w.ring_rust_days = days
+                    w.ring_rust_days = self._days_between(w.last_booked_date, game_date)
                 except (ValueError, TypeError):
                     pass
-
-        # Nostalgia pop is applied in match_aftermath when a long-absent wrestler gets booked
 
     # ------------------------------------------------------------------
     # Phase 14: Persona & Social Media (Group 7)

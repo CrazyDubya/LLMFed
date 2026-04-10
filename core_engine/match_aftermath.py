@@ -79,6 +79,15 @@ SHOOT_SUSPENSION_WEEKS_RANGE = (2, 6)
 VICTIM_MORALE_LOSS_RANGE = (10, 20)
 SHOOTER_POP_BOOST_RANGE = (2, 8)
 
+# Chemistry bonus
+CHEMISTRY_MIN_MATCHES = 3
+CHEMISTRY_SCALE = 0.2
+CHEMISTRY_MAX = 1.0
+
+# Match rating defaults
+DEFAULT_MATCH_RATING = 3.0
+MATCH_RATING_SCALE = 5.0
+
 # Locker room standing progression (downgrade order)
 STANDING_DOWNGRADE = {
     "leader": "neutral",
@@ -251,8 +260,8 @@ def _handle_title_result(db: Session, match: MatchDB,
 def _update_popularity_morale(db: Session, match: MatchDB,
                               winners: list, losers: list):
     """Shift popularity and morale based on match result."""
-    rating = match.match_rating or 3.0
-    rating_factor = rating / 5.0  # 0.0 - 1.0
+    rating = match.match_rating or DEFAULT_MATCH_RATING
+    rating_factor = rating / MATCH_RATING_SCALE
 
     for wp in winners:
         w = _get_wrestler(db, wp.wrestler_id)
@@ -296,48 +305,35 @@ def _update_streaks(db: Session, winners: list, losers: list):
 def _record_history(db: Session, match: MatchDB, winners: list, losers: list,
                     game_date: str):
     """Create wrestler history entries for match results."""
-    for wp in winners:
-        w = _get_wrestler(db, wp.wrestler_id)
-        if w:
-            db.add(WrestlerHistoryDB(
-                wrestler_id=wp.wrestler_id, game_date=game_date,
-                event_type="match_win",
-                description=f"Defeated opponent via {match.finish_type or 'pinfall'} ({match.match_rating or 0:.1f} stars)",
-                details={"match_id": match.id, "rating": match.match_rating},
-            ))
+    finish = match.finish_type or "pinfall"
+    rating = match.match_rating or 0
 
-    for lp in losers:
-        w = _get_wrestler(db, lp.wrestler_id)
-        if w:
-            db.add(WrestlerHistoryDB(
-                wrestler_id=lp.wrestler_id, game_date=game_date,
-                event_type="match_loss",
-                description=f"Lost via {match.finish_type or 'pinfall'} ({match.match_rating or 0:.1f} stars)",
-                details={"match_id": match.id, "rating": match.match_rating},
-            ))
+    for is_winner, participants in [(True, winners), (False, losers)]:
+        event_type = "match_win" if is_winner else "match_loss"
+        desc = f"Defeated opponent via {finish}" if is_winner else f"Lost via {finish}"
+        for p in participants:
+            if _get_wrestler(db, p.wrestler_id):
+                db.add(WrestlerHistoryDB(
+                    wrestler_id=p.wrestler_id, game_date=game_date,
+                    event_type=event_type,
+                    description=f"{desc} ({rating:.1f} stars)",
+                    details={"match_id": match.id, "rating": match.match_rating},
+                ))
 
 
 def _update_relationships(db: Session, match: MatchDB,
                           participants: list, game_date: str):
     """Update or create relationship records between all match participants."""
     wrestler_ids = [p.wrestler_id for p in participants]
-    rating = match.match_rating or 3.0
+    rating = match.match_rating or DEFAULT_MATCH_RATING
 
     # Pre-fetch wrestler alignment data for rivalry_heat calculations
-    wrestlers_by_id = {}
-    for wid in wrestler_ids:
-        w = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == wid).first()
-        if w:
-            wrestlers_by_id[wid] = w
+    wrestlers_by_id = {wid: w for wid in wrestler_ids if (w := _get_wrestler(db, wid))}
 
     for i in range(len(wrestler_ids)):
         for j in range(i + 1, len(wrestler_ids)):
             w1, w2 = sorted([wrestler_ids[i], wrestler_ids[j]])
-            rel = db.query(WrestlerRelationshipDB).filter(
-                WrestlerRelationshipDB.world_id == match.world_id,
-                WrestlerRelationshipDB.wrestler1_id == w1,
-                WrestlerRelationshipDB.wrestler2_id == w2,
-            ).first()
+            rel = _get_relationship(db, match.world_id, w1, w2)
 
             if rel:
                 rel.matches_together += 1
@@ -490,10 +486,6 @@ def get_chemistry_bonus(db: Session, world_id: str,
         WrestlerRelationshipDB.wrestler1_id == w1,
         WrestlerRelationshipDB.wrestler2_id == w2,
     ).first()
-
-    CHEMISTRY_MIN_MATCHES = 3
-    CHEMISTRY_SCALE = 0.2
-    CHEMISTRY_MAX = 1.0
 
     if not rel or rel.matches_together < CHEMISTRY_MIN_MATCHES:
         return 0.0

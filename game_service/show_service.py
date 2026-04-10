@@ -37,6 +37,8 @@ FATAL_FOUR_WAY_RATE = 0.60
 PLAYER_MATCH_WIN_RATE = 0.50
 DARK_MATCH_WIN_RATE = 0.55
 PROTECTION_BONUS = 30
+FINISH_TYPE_WEIGHTS = [60, 15, 10, 15]  # pinfall, submission, count_out, DQ
+FINISH_TYPES = ["pinfall", "submission", "count_out", "disqualification"]
 
 # Data-driven gimmick match configuration
 GIMMICK_MATCH_CONFIG = {
@@ -531,11 +533,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
                 "Tables", "Steel Cage", "Ladder",
             ])
 
-        finish = random.choices(
-            ["pinfall", "submission", "count_out", "disqualification"],
-            weights=[60, 15, 10, 15],
-            k=1,
-        )[0]
+        finish = random.choices(FINISH_TYPES, weights=FINISH_TYPE_WEIGHTS, k=1)[0]
         # Title matches almost always end clean
         if is_title and finish in ("count_out", "disqualification"):
             finish = "pinfall"
@@ -559,8 +557,8 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
     if total_segs >= 3:
         promo_pos = total_segs // 2 + 1
         available = [w for w in wrestlers if w.id not in used]
-        if available:
-            promo_wrestler = available[0]
+        promo_wrestler = available[0] if available else max(wrestlers, key=lambda w: w.popularity, default=None)
+        if promo_wrestler:
             book_promo_segment(
                 db, show.id,
                 description=f"{promo_wrestler.name} addresses the crowd",
@@ -569,19 +567,6 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
                 world_id=show.world_id,
                 game_date=show.game_date,
             )
-        else:
-            # Fallback: pick the most popular wrestler on the card
-            card_wrestlers = sorted(wrestlers, key=lambda w: w.popularity, reverse=True)
-            if card_wrestlers:
-                promo_wrestler = card_wrestlers[0]
-                book_promo_segment(
-                    db, show.id,
-                    description=f"{promo_wrestler.name} addresses the crowd",
-                    position=promo_pos,
-                    wrestler_id=promo_wrestler.id,
-                    world_id=show.world_id,
-                    game_date=show.game_date,
-                )
 
     db.flush()
     return segments
