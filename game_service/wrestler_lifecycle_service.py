@@ -1,12 +1,8 @@
 """
-Wrestler Lifecycle Service — Groups 1-6
+Wrestler Lifecycle Service — aging, goals, politics, developmental,
+legacy/HoF, physical identity & conditioning.
 
-Handles: aging & decline, career goals, backstage politics,
-developmental pipeline, legacy/Hall of Fame, physical identity & conditioning.
-
-Group 2 (goals) lives in goal_service.py.
-Group 3 (politics) lives in politics_service.py.
-Constants live in lifecycle_constants.py.
+Goals: goal_service.py | Politics: politics_service.py | Data: lifecycle_constants.py
 """
 
 import logging
@@ -24,60 +20,20 @@ from models.game_models import (
     MentorshipDB, CareerHighlightDB, HallOfFameDB,
     GimmickHistoryDB, WrestlerBackstoryDB, LifeEventDB,
 )
-from game_service.lifecycle_constants import (
-    # Group 1: Aging
-    CAREER_PHASE_ROOKIE_MAX_EXP, CAREER_PHASE_RISING_OFFSET,
-    CAREER_PHASE_PRIME_OFFSET, CAREER_PHASE_VETERAN_OFFSET,
-    MAX_DECLINE_PER_YEAR, MIN_STAT_FLOOR, MAX_STAT_CAP,
-    EARLY_DECLINE_STATS, LATE_DECLINE_STATS, LATE_DECLINE_YEARS_THRESHOLD,
-    IMPROVING_STATS, IMPROVING_STAT_MAX_GAIN,
-    RETIREMENT_PRESSURE,
-    RING_RUST_NO_PENALTY_DAYS, RING_RUST_DIVISOR, RING_RUST_MIN_MODIFIER,
-    # Group 4: Developmental
-    MENTOR_MIN_PSYCHOLOGY, MENTOR_BONUS_DIVISOR,
-    DEBUT_MIN_WEEKS, DEBUT_MIN_AVG_RING, DEBUT_MIN_PSYCHOLOGY,
-    DEBUT_RING_STATS,
-    MENTOR_SPECIALTY_MULTIPLIER, MENTOR_PSYCHOLOGY_BONUS,
-    MENTOR_SELF_IMPROVE_CHANCE,
-    # Group 5: Legacy
-    LEGACY_HIGHLIGHT_WEIGHT, LEGACY_REIGN_WEIGHT,
-    LEGACY_RATING_WEIGHT, LEGACY_YEARS_WEIGHT,
-    HIGHLIGHT_STAR_THRESHOLD, HIGHLIGHT_MAX_SIGNIFICANCE,
-    HIGHLIGHT_SIGNIFICANCE_MULTIPLIER,
-    HOF_MIN_LEGACY,
-    NOSTALGIA_MIN_DAYS_ABSENT, NOSTALGIA_MIN_LEGACY,
-    NOSTALGIA_MAX_BONUS, NOSTALGIA_DAYS_PER_UNIT, NOSTALGIA_PER_UNIT,
-    # Group 6: Physical
-    BODY_TYPE_THRESHOLDS, BODY_TYPE_DEFAULT,
-    HEIGHT_RANGE, WEIGHT_OFFSET_RANGE, WEIGHT_MIN, WEIGHT_MAX,
-    HEIGHT_WEIGHT_FACTOR,
-    BODY_MOD_HEAVY_DIFF, BODY_MOD_HEAVY, BODY_MOD_LIGHT, BODY_MOD_NEUTRAL,
-    STIPULATION_SPECIALIST_MAP, STIPULATION_BONUS_DIVISOR,
-    SPECIALIZATION_GROWTH,
-    CONDITIONING_DEFAULT, CONDITIONING_OVERWORK_THRESHOLD,
-    CONDITIONING_OVERWORK_PENALTY, CONDITIONING_REST_GAIN,
-    CONDITIONING_WORK_GAIN, CONDITIONING_MIN,
-)
+import game_service.lifecycle_constants as LC
 
-# Re-export Group 2 (career goals) so existing imports keep working
+# Re-exports so existing imports from this module keep working
 from game_service.goal_service import (          # noqa: F401
-    create_wrestler_goals,
-    evaluate_goals,
-    _check_goal_completed,
+    create_wrestler_goals, evaluate_goals, _check_goal_completed,
 )
-
-# Re-export Group 3 (backstage politics) so existing imports keep working
 from game_service.politics_service import (      # noqa: F401
-    update_locker_room_dynamics,
-    apply_politics_to_booking,
+    update_locker_room_dynamics, apply_politics_to_booking,
 )
 
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
+# -- Shared helpers ----------------------------------------------------------
 
 def _get_wrestler_stats(db: Session, wrestler_id: str) -> Optional[WrestlerStatsDB]:
     """Fetch a wrestler's stats row (returns None if missing)."""
@@ -86,9 +42,7 @@ def _get_wrestler_stats(db: Session, wrestler_id: str) -> Optional[WrestlerStats
     ).first()
 
 
-# ---------------------------------------------------------------------------
-# Group 1: Aging, Physical Decline & Career Arc
-# ---------------------------------------------------------------------------
+# -- Group 1: Aging, Physical Decline & Career Arc --------------------------
 
 def update_career_phase(wrestler: GameWrestlerDB):
     """Derive career phase from age and peak_age."""
@@ -96,13 +50,13 @@ def update_career_phase(wrestler: GameWrestlerDB):
     peak = wrestler.peak_age or 28
     exp = wrestler.experience_years or 0
 
-    if exp < CAREER_PHASE_ROOKIE_MAX_EXP:
+    if exp < LC.CAREER_PHASE_ROOKIE_MAX_EXP:
         wrestler.career_phase = "rookie"
-    elif age < peak + CAREER_PHASE_RISING_OFFSET:
+    elif age < peak + LC.CAREER_PHASE_RISING_OFFSET:
         wrestler.career_phase = "rising"
-    elif age < peak + CAREER_PHASE_PRIME_OFFSET:
+    elif age < peak + LC.CAREER_PHASE_PRIME_OFFSET:
         wrestler.career_phase = "prime"
-    elif age < peak + CAREER_PHASE_VETERAN_OFFSET:
+    elif age < peak + LC.CAREER_PHASE_VETERAN_OFFSET:
         wrestler.career_phase = "veteran"
     else:
         wrestler.career_phase = "declining"
@@ -120,7 +74,6 @@ def age_wrestlers(db: Session, world_id: str, game_date: str):
         w.experience_years = (w.experience_years or 0) + 1
         update_career_phase(w)
 
-        # Physical stat decline past peak
         peak = w.peak_age or 28
         if w.age > peak:
             stats = _get_wrestler_stats(db, w.id)
@@ -128,25 +81,25 @@ def age_wrestlers(db: Session, world_id: str, game_date: str):
                 continue
 
             years_past = w.age - peak
-            decline = min(years_past, MAX_DECLINE_PER_YEAR)
+            decline = min(years_past, LC.MAX_DECLINE_PER_YEAR)
 
-            for attr in EARLY_DECLINE_STATS:
+            for attr in LC.EARLY_DECLINE_STATS:
                 old = getattr(stats, attr, 50)
-                setattr(stats, attr, max(MIN_STAT_FLOOR, old - random.randint(1, decline)))
+                setattr(stats, attr, max(LC.MIN_STAT_FLOOR, old - random.randint(1, decline)))
 
-            if years_past > LATE_DECLINE_YEARS_THRESHOLD:
-                for attr in LATE_DECLINE_STATS:
+            if years_past > LC.LATE_DECLINE_YEARS_THRESHOLD:
+                for attr in LC.LATE_DECLINE_STATS:
                     old = getattr(stats, attr, 50)
-                    setattr(stats, attr, max(MIN_STAT_FLOOR, old - random.randint(0, decline - 1)))
+                    setattr(stats, attr, max(LC.MIN_STAT_FLOOR, old - random.randint(0, decline - 1)))
 
-            for attr in IMPROVING_STATS:
+            for attr in LC.IMPROVING_STATS:
                 old = getattr(stats, attr, 50)
-                setattr(stats, attr, min(MAX_STAT_CAP, old + random.randint(0, IMPROVING_STAT_MAX_GAIN)))
+                setattr(stats, attr, min(LC.MAX_STAT_CAP, old + random.randint(0, LC.IMPROVING_STAT_MAX_GAIN)))
 
 
 def calculate_retirement_pressure(wrestler: GameWrestlerDB) -> int:
     """Calculate how likely a wrestler is to retire (replaces flat 1% random)."""
-    rp = RETIREMENT_PRESSURE
+    rp = LC.RETIREMENT_PRESSURE
     pressure = 0
     phase = wrestler.career_phase or "prime"
 
@@ -173,24 +126,22 @@ def calculate_retirement_pressure(wrestler: GameWrestlerDB) -> int:
 def calculate_ring_rust_modifier(wrestler: GameWrestlerDB) -> float:
     """Ring rust modifier for match engine (0.85 - 1.0)."""
     rust = wrestler.ring_rust_days or 0
-    if rust <= RING_RUST_NO_PENALTY_DAYS:
+    if rust <= LC.RING_RUST_NO_PENALTY_DAYS:
         return 1.0
-    return max(RING_RUST_MIN_MODIFIER, 1.0 - (rust / RING_RUST_DIVISOR))
+    return max(LC.RING_RUST_MIN_MODIFIER, 1.0 - (rust / LC.RING_RUST_DIVISOR))
 
 
-# ---------------------------------------------------------------------------
-# Group 4: Developmental Pipeline
-# ---------------------------------------------------------------------------
+# -- Group 4: Developmental Pipeline ----------------------------------------
 
 def assign_mentor(db: Session, federation: GameFederationDB,
                   protege: GameWrestlerDB, mentor: GameWrestlerDB,
                   game_date: str) -> Optional[MentorshipDB]:
     """Assign a veteran mentor to a young wrestler."""
     mentor_stats = _get_wrestler_stats(db, mentor.id)
-    if not mentor_stats or (mentor_stats.psychology or 0) < MENTOR_MIN_PSYCHOLOGY:
+    if not mentor_stats or (mentor_stats.psychology or 0) < LC.MENTOR_MIN_PSYCHOLOGY:
         return None
 
-    bonus = ((mentor_stats.psychology or 50) + (mentor_stats.work_ethic or 50)) / MENTOR_BONUS_DIVISOR
+    bonus = ((mentor_stats.psychology or 50) + (mentor_stats.work_ethic or 50)) / LC.MENTOR_BONUS_DIVISOR
     m = MentorshipDB(
         world_id=federation.world_id,
         mentor_id=mentor.id,
@@ -226,7 +177,6 @@ def auto_assign_mentors(db: Session, federation: GameFederationDB, game_date: st
             MentorshipDB.is_active == True,
         ).all()
     )
-
     mentoring_ids = set(
         m.mentor_id for m in db.query(MentorshipDB).filter(
             MentorshipDB.federation_id == federation.id,
@@ -260,15 +210,15 @@ def check_debut_readiness(db: Session, wrestler: GameWrestlerDB) -> bool:
         WrestlerPushDB.wrestler_id == wrestler.id,
         WrestlerPushDB.push_tier == "developmental",
     ).first()
-    if not push or (push.weeks_at_tier or 0) < DEBUT_MIN_WEEKS:
+    if not push or (push.weeks_at_tier or 0) < LC.DEBUT_MIN_WEEKS:
         return False
 
     stats = _get_wrestler_stats(db, wrestler.id)
     if not stats:
         return False
 
-    avg_ring = sum(getattr(stats, attr, 50) or 50 for attr in DEBUT_RING_STATS) / len(DEBUT_RING_STATS)
-    return avg_ring > DEBUT_MIN_AVG_RING and (stats.psychology or 0) > DEBUT_MIN_PSYCHOLOGY
+    avg_ring = sum(getattr(stats, a, 50) or 50 for a in LC.DEBUT_RING_STATS) / len(LC.DEBUT_RING_STATS)
+    return avg_ring > LC.DEBUT_MIN_AVG_RING and (stats.psychology or 0) > LC.DEBUT_MIN_PSYCHOLOGY
 
 
 def training_with_mentor(db: Session, wrestler_id: str, stat_name: str) -> int:
@@ -283,21 +233,19 @@ def training_with_mentor(db: Session, wrestler_id: str, stat_name: str) -> int:
 
     bonus = 0
     if stat_name == mentorship.skill_focus:
-        bonus = max(1, int(mentorship.mentor_bonus * MENTOR_SPECIALTY_MULTIPLIER))
+        bonus = max(1, int(mentorship.mentor_bonus * LC.MENTOR_SPECIALTY_MULTIPLIER))
     elif stat_name == "psychology":
-        bonus = MENTOR_PSYCHOLOGY_BONUS
+        bonus = LC.MENTOR_PSYCHOLOGY_BONUS
 
-    if random.random() < MENTOR_SELF_IMPROVE_CHANCE:
+    if random.random() < LC.MENTOR_SELF_IMPROVE_CHANCE:
         mentor_stats = _get_wrestler_stats(db, mentorship.mentor_id)
-        if mentor_stats and (mentor_stats.psychology or 0) < MAX_STAT_CAP:
-            mentor_stats.psychology = min(MAX_STAT_CAP, (mentor_stats.psychology or 50) + 1)
+        if mentor_stats and (mentor_stats.psychology or 0) < LC.MAX_STAT_CAP:
+            mentor_stats.psychology = min(LC.MAX_STAT_CAP, (mentor_stats.psychology or 50) + 1)
 
     return bonus
 
 
-# ---------------------------------------------------------------------------
-# Group 5: Legacy, Hall of Fame & Nostalgia
-# ---------------------------------------------------------------------------
+# -- Group 5: Legacy, Hall of Fame & Nostalgia ------------------------------
 
 def record_career_highlight(db: Session, wrestler_id: str, highlight_type: str,
                             description: str, game_date: str,
@@ -318,12 +266,13 @@ def check_match_highlights(db: Session, match: MatchDB, wrestler_id: str,
     """Check if a match produced career highlights."""
     rating = match.match_rating or 0
 
-    if rating >= HIGHLIGHT_STAR_THRESHOLD:
+    if rating >= LC.HIGHLIGHT_STAR_THRESHOLD:
         record_career_highlight(
             db, wrestler_id, "5_star_classic",
             f"A {rating}-star classic",
             game_date,
-            significance=min(HIGHLIGHT_MAX_SIGNIFICANCE, int(rating * HIGHLIGHT_SIGNIFICANCE_MULTIPLIER)),
+            significance=min(LC.HIGHLIGHT_MAX_SIGNIFICANCE,
+                             int(rating * LC.HIGHLIGHT_SIGNIFICANCE_MULTIPLIER)),
             match_id=match.id,
         )
 
@@ -365,10 +314,10 @@ def compute_legacy_score(db: Session, wrestler_id: str) -> int:
     )
 
     return int(
-        (highlights * LEGACY_HIGHLIGHT_WEIGHT)
-        + (reigns * LEGACY_REIGN_WEIGHT)
-        + (avg_rating * LEGACY_RATING_WEIGHT)
-        + (years * LEGACY_YEARS_WEIGHT)
+        (highlights * LC.LEGACY_HIGHLIGHT_WEIGHT)
+        + (reigns * LC.LEGACY_REIGN_WEIGHT)
+        + (avg_rating * LC.LEGACY_RATING_WEIGHT)
+        + (years * LC.LEGACY_YEARS_WEIGHT)
     )
 
 
@@ -393,7 +342,7 @@ def hall_of_fame_ceremony(db: Session, world_id: str, game_date: str):
             continue
         score = compute_legacy_score(db, w.id)
         w.legacy_score = score
-        if score > best_score and score > HOF_MIN_LEGACY:
+        if score > best_score and score > LC.HOF_MIN_LEGACY:
             best = w
             best_score = score
 
@@ -431,31 +380,29 @@ def apply_nostalgia_pop(wrestler: GameWrestlerDB, game_date: str,
     except (ValueError, TypeError):
         return 0
 
-    if days_absent < NOSTALGIA_MIN_DAYS_ABSENT or (wrestler.legacy_score or 0) < NOSTALGIA_MIN_LEGACY:
+    if days_absent < LC.NOSTALGIA_MIN_DAYS_ABSENT or (wrestler.legacy_score or 0) < LC.NOSTALGIA_MIN_LEGACY:
         return 0
 
-    pop_bonus = min(NOSTALGIA_MAX_BONUS, (days_absent // NOSTALGIA_DAYS_PER_UNIT) * NOSTALGIA_PER_UNIT)
-    wrestler.popularity = min(MAX_STAT_CAP, (wrestler.popularity or 50) + pop_bonus)
+    pop_bonus = min(LC.NOSTALGIA_MAX_BONUS, (days_absent // LC.NOSTALGIA_DAYS_PER_UNIT) * LC.NOSTALGIA_PER_UNIT)
+    wrestler.popularity = min(LC.MAX_STAT_CAP, (wrestler.popularity or 50) + pop_bonus)
     return pop_bonus
 
 
-# ---------------------------------------------------------------------------
-# Group 6: Physical Identity, Specialization & Conditioning
-# ---------------------------------------------------------------------------
+# -- Group 6: Physical Identity, Specialization & Conditioning --------------
 
 def derive_body_type(height_cm: int, weight_kg: int) -> str:
     """Derive body_type from height and weight."""
-    for threshold, btype in BODY_TYPE_THRESHOLDS:
+    for threshold, btype in LC.BODY_TYPE_THRESHOLDS:
         if weight_kg < threshold:
             return btype
-    return BODY_TYPE_DEFAULT
+    return LC.BODY_TYPE_DEFAULT
 
 
 def generate_physical_attributes() -> dict:
     """Generate height_cm, weight_kg, body_type for a wrestler."""
-    height = random.randint(*HEIGHT_RANGE)
-    base_weight = int(height * HEIGHT_WEIGHT_FACTOR + random.randint(*WEIGHT_OFFSET_RANGE))
-    weight = max(WEIGHT_MIN, min(WEIGHT_MAX, base_weight))
+    height = random.randint(*LC.HEIGHT_RANGE)
+    base_weight = int(height * LC.HEIGHT_WEIGHT_FACTOR + random.randint(*LC.WEIGHT_OFFSET_RANGE))
+    weight = max(LC.WEIGHT_MIN, min(LC.WEIGHT_MAX, base_weight))
     return {
         "height_cm": height,
         "weight_kg": weight,
@@ -466,22 +413,22 @@ def generate_physical_attributes() -> dict:
 def calculate_body_modifier(attacker_weight: int, defender_weight: int) -> dict:
     """Calculate stat modifiers based on weight difference."""
     diff = (attacker_weight or 100) - (defender_weight or 100)
-    if diff > BODY_MOD_HEAVY_DIFF:
-        return dict(BODY_MOD_HEAVY)
-    elif diff < -BODY_MOD_HEAVY_DIFF:
-        return dict(BODY_MOD_LIGHT)
-    return dict(BODY_MOD_NEUTRAL)
+    if diff > LC.BODY_MOD_HEAVY_DIFF:
+        return dict(LC.BODY_MOD_HEAVY)
+    elif diff < -LC.BODY_MOD_HEAVY_DIFF:
+        return dict(LC.BODY_MOD_LIGHT)
+    return dict(LC.BODY_MOD_NEUTRAL)
 
 
 def calculate_stipulation_bonus(stats: WrestlerStatsDB, stipulation: str) -> float:
     """Stipulation specialist bonus multiplier (1.0 - 1.5)."""
     if not stipulation:
         return 1.0
-    attr = STIPULATION_SPECIALIST_MAP.get(stipulation.lower().replace(" ", "_"))
+    attr = LC.STIPULATION_SPECIALIST_MAP.get(stipulation.lower().replace(" ", "_"))
     if not attr:
         return 1.0
     spec = getattr(stats, attr, 0) or 0
-    return 1.0 + (spec / STIPULATION_BONUS_DIVISOR)
+    return 1.0 + (spec / LC.STIPULATION_BONUS_DIVISOR)
 
 
 def update_conditioning(db: Session, wrestler: GameWrestlerDB, game_date: str):
@@ -508,13 +455,13 @@ def update_conditioning(db: Session, wrestler: GameWrestlerDB, game_date: str):
         ).count()
     )
 
-    cond = stats.conditioning_level or CONDITIONING_DEFAULT
-    if matches_this_week >= CONDITIONING_OVERWORK_THRESHOLD:
-        cond = max(CONDITIONING_MIN, cond - CONDITIONING_OVERWORK_PENALTY)
+    cond = stats.conditioning_level or LC.CONDITIONING_DEFAULT
+    if matches_this_week >= LC.CONDITIONING_OVERWORK_THRESHOLD:
+        cond = max(LC.CONDITIONING_MIN, cond - LC.CONDITIONING_OVERWORK_PENALTY)
     elif matches_this_week == 0 and not wrestler.is_injured:
-        cond = min(MAX_STAT_CAP, cond + CONDITIONING_REST_GAIN)
+        cond = min(LC.MAX_STAT_CAP, cond + LC.CONDITIONING_REST_GAIN)
     else:
-        cond = min(MAX_STAT_CAP, cond + CONDITIONING_WORK_GAIN)
+        cond = min(LC.MAX_STAT_CAP, cond + LC.CONDITIONING_WORK_GAIN)
     stats.conditioning_level = cond
 
 
@@ -522,21 +469,16 @@ def grow_specialization(stats: WrestlerStatsDB, stipulation: str):
     """Increase specialization from working a stipulation match."""
     if not stipulation:
         return
-    attr = STIPULATION_SPECIALIST_MAP.get(stipulation.lower().replace(" ", "_"))
+    attr = LC.STIPULATION_SPECIALIST_MAP.get(stipulation.lower().replace(" ", "_"))
     if attr:
         old = getattr(stats, attr, 0) or 0
-        setattr(stats, attr, min(MAX_STAT_CAP, old + SPECIALIZATION_GROWTH))
+        setattr(stats, attr, min(LC.MAX_STAT_CAP, old + LC.SPECIALIZATION_GROWTH))
 
 
-# ---------------------------------------------------------------------------
-# Group 7: Persona — Gimmick Evolution & Life Events
-# ---------------------------------------------------------------------------
+# -- Group 7: Persona — Gimmick Evolution & Life Events --------------------
 
 def tick_persona(db: Session, world_id: str, game_date: str):
-    """Weekly persona tick: gimmick staleness, life events, gimmick evolution.
-
-    Called from world ticker on Fridays.
-    """
+    """Weekly persona tick: gimmick staleness, life events, gimmick evolution."""
     from game_service import persona_service
 
     wrestlers = db.query(GameWrestlerDB).filter(
