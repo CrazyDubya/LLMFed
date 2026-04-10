@@ -689,137 +689,47 @@ class MatchSimulator:
         if len(team_ids) < 2:
             return self._simulate_singles(participants)
 
-        team_a = team_map[team_ids[0]]
-        team_b = team_map[team_ids[1]]
+        # teams[0] = team A roster, teams[1] = team B roster
+        teams = [team_map[team_ids[0]], team_map[team_ids[1]]]
 
-        # Legal men: index 0 from each team starts
-        legal_a_idx = 0
-        legal_b_idx = 0
-
-        # Track how long each legal man has been in (for hot tag mechanic)
-        ticks_in_a = 0
-        ticks_in_b = 0
+        # Mutable state: legal_indices[i] = index of legal man in teams[i]
+        legal_indices = [0, 0]
+        # ticks_in[i] = how long team i's legal man has been in the ring
+        ticks_in = [0, 0]
 
         # Tag matches run slightly longer
         min_len, max_len = self.MATCH_LENGTH.get(self.card_position, (10, 20))
         target_length = random.randint(min_len + 3, max_len + 5)
 
-        # Who's on offense: 0 = team_a attacks, 1 = team_b attacks
+        # Who's on offense: 0 = teams[0] attacks, 1 = teams[1] attacks
         attacking_team = 0
 
         while self.tick < target_length + 10:
             self.tick += 1
-            ticks_in_a += 1
-            ticks_in_b += 1
+            ticks_in[0] += 1
+            ticks_in[1] += 1
 
-            attacker = team_a[legal_a_idx] if attacking_team == 0 else team_b[legal_b_idx]
-            defender = team_b[legal_b_idx] if attacking_team == 0 else team_a[legal_a_idx]
+            atk_team = attacking_team
+            def_team = 1 - attacking_team
+            attacker = teams[atk_team][legal_indices[atk_team]]
+            defender = teams[def_team][legal_indices[def_team]]
 
-            # --- Tag-in opportunity (attacking team tags to bring fresh partner) ---
-            ticks_in = ticks_in_a if attacking_team == 0 else ticks_in_b
-            if ticks_in > 5 and attacker.stamina < 60 and random.random() < 0.35:
-                if attacking_team == 0 and len(team_a) > 1:
-                    legal_a_idx = (legal_a_idx + 1) % len(team_a)
-                    ticks_in_a = 0
-                    new_wrestler = team_a[legal_a_idx]
-                    new_wrestler.momentum = min(100, new_wrestler.momentum + 10)
-                    self.spots.append(MatchSpot(
-                        tick=self.tick, attacker_id=new_wrestler.wrestler_id,
-                        defender_id=defender.wrestler_id, move_name="Tag",
-                        move_type="tag", damage=0,
-                        crowd_reaction="Tag made!", heat_change=1,
-                        description=f"{attacker.name} {random.choice(TAG_DESCRIPTIONS)}! {new_wrestler.name} enters the ring!",
-                    ))
-                    attacker = new_wrestler
-                elif attacking_team == 1 and len(team_b) > 1:
-                    legal_b_idx = (legal_b_idx + 1) % len(team_b)
-                    ticks_in_b = 0
-                    new_wrestler = team_b[legal_b_idx]
-                    new_wrestler.momentum = min(100, new_wrestler.momentum + 10)
-                    self.spots.append(MatchSpot(
-                        tick=self.tick, attacker_id=new_wrestler.wrestler_id,
-                        defender_id=defender.wrestler_id, move_name="Tag",
-                        move_type="tag", damage=0,
-                        crowd_reaction="Tag made!", heat_change=1,
-                        description=f"{attacker.name} {random.choice(TAG_DESCRIPTIONS)}! {new_wrestler.name} enters the ring!",
-                    ))
-                    attacker = new_wrestler
-
-            # --- Hot tag mechanic (defending team, beaten down, makes desperate tag) ---
-            defending_ticks = ticks_in_b if attacking_team == 0 else ticks_in_a
-            if defending_ticks > 6 and defender.health < 50 and random.random() < 0.3:
-                if attacking_team == 0 and len(team_b) > 1:
-                    legal_b_idx = (legal_b_idx + 1) % len(team_b)
-                    ticks_in_b = 0
-                    hot_tag = team_b[legal_b_idx]
-                    hot_tag.momentum = min(100, hot_tag.momentum + 25)
-                    hot_tag.finisher_available = True
-                    self.spots.append(MatchSpot(
-                        tick=self.tick, attacker_id=hot_tag.wrestler_id,
-                        defender_id=attacker.wrestler_id, move_name="Hot Tag",
-                        move_type="tag", damage=0,
-                        crowd_reaction="The crowd erupts for the hot tag!",
-                        heat_change=4,
-                        description=f"{defender.name} desperately reaches out... HOT TAG! {hot_tag.name} storms into the ring on fire!",
-                    ))
-                    attacking_team = 1
-                    defender = attacker
-                    attacker = hot_tag
-                elif attacking_team == 1 and len(team_a) > 1:
-                    legal_a_idx = (legal_a_idx + 1) % len(team_a)
-                    ticks_in_a = 0
-                    hot_tag = team_a[legal_a_idx]
-                    hot_tag.momentum = min(100, hot_tag.momentum + 25)
-                    hot_tag.finisher_available = True
-                    self.spots.append(MatchSpot(
-                        tick=self.tick, attacker_id=hot_tag.wrestler_id,
-                        defender_id=attacker.wrestler_id, move_name="Hot Tag",
-                        move_type="tag", damage=0,
-                        crowd_reaction="The crowd erupts for the hot tag!",
-                        heat_change=4,
-                        description=f"{defender.name} desperately reaches out... HOT TAG! {hot_tag.name} storms into the ring on fire!",
-                    ))
-                    attacking_team = 0
-                    defender = attacker
-                    attacker = hot_tag
-
-            # --- Double-team opportunity (both partners briefly in ring) ---
-            if random.random() < 0.12:
-                if attacking_team == 0 and len(team_a) > 1:
-                    partner = team_a[(legal_a_idx + 1) % len(team_a)]
-                    move_name, dmg = random.choice(DOUBLE_TEAM_MOVES)
-                    dt_spot = MatchSpot(
-                        tick=self.tick, attacker_id=attacker.wrestler_id,
-                        defender_id=defender.wrestler_id, move_name=move_name,
-                        move_type="power", damage=dmg,
-                        crowd_reaction="Incredible double-team!",
-                        heat_change=3,
-                        description=f"{attacker.name} and {partner.name} hit a {move_name} on {defender.name}!",
-                    )
-                    self.spots.append(dt_spot)
-                    self._apply_spot(dt_spot, attacker, defender)
-                    continue
-                elif attacking_team == 1 and len(team_b) > 1:
-                    partner = team_b[(legal_b_idx + 1) % len(team_b)]
-                    move_name, dmg = random.choice(DOUBLE_TEAM_MOVES)
-                    dt_spot = MatchSpot(
-                        tick=self.tick, attacker_id=attacker.wrestler_id,
-                        defender_id=defender.wrestler_id, move_name=move_name,
-                        move_type="power", damage=dmg,
-                        crowd_reaction="Incredible double-team!",
-                        heat_change=3,
-                        description=f"{attacker.name} and {partner.name} hit a {move_name} on {defender.name}!",
-                    )
-                    self.spots.append(dt_spot)
-                    self._apply_spot(dt_spot, attacker, defender)
-                    continue
+            # --- Tag-in, hot tag, and double-team opportunities ---
+            result = self._tag_team_action(
+                teams, legal_indices, ticks_in, attacking_team,
+                attacker, defender,
+            )
+            if result is not None:
+                action_type, attacker, defender, attacking_team = result
+                if action_type == "double_team":
+                    continue  # Double-team already applied; skip normal spot
 
             # --- Normal spot ---
             spot = self._generate_spot(attacker, defender)
             self.spots.append(spot)
             self._apply_spot(spot, attacker, defender)
 
-            if not attacker.finisher_available and attacker.momentum > 75:
+            if not attacker.finisher_available and attacker.momentum > FINISHER_MOMENTUM_THRESHOLD:
                 attacker.finisher_available = True
 
             if self.tick >= target_length - 3:
@@ -828,7 +738,7 @@ class MatchSimulator:
                     self.spots.append(finish_spot)
                     return self._build_result(finish_spot, attacker, defender, participants)
 
-            if self.tick > target_length * 0.6 and random.random() < 0.25:
+            if self.tick > target_length * 0.6 and random.random() < NEAR_FALL_CHANCE:
                 near_fall = self._near_fall(attacker, defender)
                 if near_fall:
                     self.spots.append(near_fall)
@@ -845,6 +755,82 @@ class MatchSimulator:
             duration_ticks=self.tick,
             spots=self.spots,
         )
+
+    def _tag_team_action(
+        self,
+        teams: List[List[MatchParticipantState]],
+        legal_indices: List[int],
+        ticks_in: List[int],
+        attacking_team: int,
+        attacker: MatchParticipantState,
+        defender: MatchParticipantState,
+    ) -> Optional[tuple]:
+        """Handle tag-in, hot tag, and double-team logic for either team.
+
+        Returns ``None`` if no tag action occurred, or a tuple of
+        ``(action_type, attacker, defender, attacking_team)`` reflecting the
+        (possibly updated) match state.
+        """
+        atk_team = attacking_team
+        def_team = 1 - attacking_team
+
+        # --- Tag-in opportunity (attacking team tags to bring fresh partner) ---
+        if (ticks_in[atk_team] > TAG_IN_TICKS_THRESHOLD
+                and attacker.stamina < TAG_IN_STAMINA_THRESHOLD
+                and random.random() < TAG_IN_CHANCE
+                and len(teams[atk_team]) > 1):
+            legal_indices[atk_team] = (legal_indices[atk_team] + 1) % len(teams[atk_team])
+            ticks_in[atk_team] = 0
+            new_wrestler = teams[atk_team][legal_indices[atk_team]]
+            new_wrestler.momentum = min(100, new_wrestler.momentum + TAG_IN_MOMENTUM_BOOST)
+            self.spots.append(MatchSpot(
+                tick=self.tick, attacker_id=new_wrestler.wrestler_id,
+                defender_id=defender.wrestler_id, move_name="Tag",
+                move_type="tag", damage=0,
+                crowd_reaction="Tag made!", heat_change=1,
+                description=f"{attacker.name} {random.choice(TAG_DESCRIPTIONS)}! {new_wrestler.name} enters the ring!",
+            ))
+            return ("tag_in", new_wrestler, defender, attacking_team)
+
+        # --- Hot tag mechanic (defending team, beaten down, makes desperate tag) ---
+        if (ticks_in[def_team] > HOT_TAG_TICKS_THRESHOLD
+                and defender.health < HOT_TAG_HEALTH_THRESHOLD
+                and random.random() < HOT_TAG_CHANCE
+                and len(teams[def_team]) > 1):
+            legal_indices[def_team] = (legal_indices[def_team] + 1) % len(teams[def_team])
+            ticks_in[def_team] = 0
+            hot_tag = teams[def_team][legal_indices[def_team]]
+            hot_tag.momentum = min(100, hot_tag.momentum + HOT_TAG_MOMENTUM_BOOST)
+            hot_tag.finisher_available = True
+            self.spots.append(MatchSpot(
+                tick=self.tick, attacker_id=hot_tag.wrestler_id,
+                defender_id=attacker.wrestler_id, move_name="Hot Tag",
+                move_type="tag", damage=0,
+                crowd_reaction="The crowd erupts for the hot tag!",
+                heat_change=4,
+                description=f"{defender.name} desperately reaches out... HOT TAG! {hot_tag.name} storms into the ring on fire!",
+            ))
+            # Offense switches to the defending team
+            new_attacking_team = def_team
+            return ("hot_tag", hot_tag, attacker, new_attacking_team)
+
+        # --- Double-team opportunity (both partners briefly in ring) ---
+        if random.random() < DOUBLE_TEAM_CHANCE and len(teams[atk_team]) > 1:
+            partner = teams[atk_team][(legal_indices[atk_team] + 1) % len(teams[atk_team])]
+            move_name, dmg = random.choice(DOUBLE_TEAM_MOVES)
+            dt_spot = MatchSpot(
+                tick=self.tick, attacker_id=attacker.wrestler_id,
+                defender_id=defender.wrestler_id, move_name=move_name,
+                move_type="power", damage=dmg,
+                crowd_reaction="Incredible double-team!",
+                heat_change=3,
+                description=f"{attacker.name} and {partner.name} hit a {move_name} on {defender.name}!",
+            )
+            self.spots.append(dt_spot)
+            self._apply_spot(dt_spot, attacker, defender)
+            return ("double_team", attacker, defender, attacking_team)
+
+        return None
 
     def _generate_spot(self, attacker: MatchParticipantState,
                        defender: MatchParticipantState) -> MatchSpot:
@@ -1515,6 +1501,30 @@ class MatchSimulator:
             went_into_business=self._shoot_occurred,
             shoot_wrestler_id=self._shoot_wrestler_id,
         )
+
+
+# ---------------------------------------------------------------------------
+# Helper: Stat modifier calculation
+# ---------------------------------------------------------------------------
+
+def _build_stat_modifiers(morale: float, ring_rust_days: int, conditioning: float) -> float:
+    """Compute a combined stat modifier from morale, ring rust, and conditioning.
+
+    Returns a multiplier (roughly 0.6-1.15) applied to all wrestler stats
+    before a match simulation.
+    """
+    # Morale affects performance: range MORALE_MODIFIER_BASE to BASE+RANGE
+    stat_modifier = MORALE_MODIFIER_BASE + (morale / 100) * MORALE_MODIFIER_RANGE
+
+    # Ring rust penalty for wrestlers who haven't competed recently
+    if ring_rust_days > RING_RUST_THRESHOLD_DAYS:
+        stat_modifier *= max(RING_RUST_FLOOR, 1.0 - (ring_rust_days / RING_RUST_DIVISOR))
+
+    # Conditioning modifier
+    cond_modifier = CONDITIONING_MODIFIER_BASE + (conditioning / 100) * CONDITIONING_MODIFIER_RANGE
+    stat_modifier *= cond_modifier
+
+    return stat_modifier
 
 
 # ---------------------------------------------------------------------------

@@ -19,6 +19,7 @@ from models.game_models import (
     WorldDB, GameFederationDB, GameWrestlerDB,
     ContractDB, ShowDB, TalentOfferDB,
 )
+from game_service.player_action_handler import get_active_contract
 
 logger = logging.getLogger(__name__)
 
@@ -203,10 +204,7 @@ def process_talent_offers(db: Session, world: WorldDB, events: List[str],
             continue
 
         # Current contract
-        current = db.query(ContractDB).filter(
-            ContractDB.wrestler_id == wrestler.id,
-            ContractDB.status == "active",
-        ).first()
+        current = get_active_contract(db, wrestler.id)
 
         accept_chance = 0.1  # Base 10%
         if wrestler.morale < 30:
