@@ -1,7 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useGame } from '../context/GameContext';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { useWorldSocket } from '../hooks/useWorldSocket';
+import LiveFeed from '../components/LiveFeed';
+import SchedulerControls from '../components/SchedulerControls';
 
 interface Wrestler {
   id: string; name: string; popularity: number; alignment: string;
@@ -117,6 +120,13 @@ export default function PromoterDashboard() {
 
   useEffect(() => { loadData(); }, [worldId, federationId]);
 
+  // WebSocket: auto-refresh on tick and show completion events
+  const handleTick = useCallback(() => { loadData(); }, [worldId, federationId]);
+  const { connected: wsConnected, eventLog } = useWorldSocket(worldId, {
+    onTick: handleTick,
+    onShowCompleted: handleTick,
+  });
+
   const advanceDay = async (days: number = 1) => {
     if (!worldId) return;
     setAdvancing(true);
@@ -174,6 +184,10 @@ export default function PromoterDashboard() {
             <h1 className="text-2xl font-bold text-amber-400">{federation?.name || 'Loading...'}</h1>
             <p className="text-sm text-gray-400">
               Promoter Mode | {worldData?.current_game_date || '...'} | Prestige: {federation?.prestige || 0}
+              <span className={`ml-2 inline-flex items-center gap-1 ${wsConnected ? 'text-green-500' : 'text-red-500'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                {wsConnected ? 'LIVE' : 'OFFLINE'}
+              </span>
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -1138,6 +1152,22 @@ export default function PromoterDashboard() {
             {narrative.length === 0 && <div className="text-center text-gray-500 py-8">No events yet. Advance time to see the world come alive!</div>}
           </div>
         )}
+
+        {/* Live Feed & Scheduler Controls - always visible at bottom */}
+        <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-4 pb-8">
+          <div className="lg:col-span-2">
+            <LiveFeed events={eventLog} connected={wsConnected} />
+          </div>
+          <div className="space-y-4">
+            <SchedulerControls />
+            <button
+              onClick={() => navigate('/shows')}
+              className="w-full px-4 py-2.5 bg-[#1a1a24] border border-gray-800 hover:border-amber-800 text-amber-400 rounded-lg text-sm transition"
+            >
+              Shows Hub - View All Results
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

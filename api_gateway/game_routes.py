@@ -43,6 +43,7 @@ from game_service.world_service import (
     get_world_federations, get_world_wrestlers, get_wrestler_with_stats,
 )
 from game_service.world_ticker import WorldTicker
+from api_gateway.websocket_hub import manager as ws_manager
 from game_service.show_service import (
     create_show as svc_create_show, book_match as svc_book_match,
     book_promo_segment as svc_book_promo_segment, get_show_card,
@@ -547,7 +548,7 @@ def api_list_actions(
 # ---------------------------------------------------------------------------
 
 @router.post("/worlds/{world_id}/tick", response_model=WorldTickStatus)
-def api_advance_world(
+async def api_advance_world(
     world_id: str,
     days: int = 1,
     current_user: TokenData = Depends(get_current_user),
@@ -567,11 +568,33 @@ def api_advance_world(
             PlayerActionDB.status == "pending",
         ).count()
 
+        events_today = result["day_results"][-1]["events"] if result["day_results"] else []
+
+        # Broadcast tick to all connected WebSocket clients
+        await ws_manager.broadcast_to_world(world_id, {
+            "type": "tick",
+            "world_id": world_id,
+            "game_date": world.current_game_date,
+            "tick": world.current_tick,
+            "events": events_today,
+            "auto": False,
+        })
+
+        # Broadcast individual notable events
+        for day in result.get("day_results", []):
+            for event in day.get("events", []):
+                if "show" in event.lower() and "completed" in event.lower():
+                    await ws_manager.broadcast_to_world(world_id, {
+                        "type": "show_completed",
+                        "world_id": world_id,
+                        "description": event,
+                    })
+
         return WorldTickStatus(
             world_id=world_id,
             current_game_date=world.current_game_date,
             current_tick=world.current_tick,
-            events_today=result["day_results"][-1]["events"] if result["day_results"] else [],
+            events_today=events_today,
             pending_actions=pending,
         )
     except ValueError as e:

@@ -8,6 +8,7 @@ import PromoterDashboard from './pages/PromoterDashboard';
 import WrestlerDashboard from './pages/WrestlerDashboard';
 import ShowViewerPage from './pages/ShowViewerPage';
 import CardBuilderPage from './pages/CardBuilderPage';
+import ShowsHubPage from './pages/ShowsHubPage';
 
 const queryClient = new QueryClient();
 
@@ -35,6 +36,7 @@ function AppRoutes() {
       <Route path="/play" element={<ProtectedRoute><GameRoute /></ProtectedRoute>} />
       <Route path="/show/:showId" element={<ProtectedRoute><ShowViewerPage /></ProtectedRoute>} />
       <Route path="/show/:showId/book" element={<ProtectedRoute><CardBuilderPage /></ProtectedRoute>} />
+      <Route path="/shows" element={<ProtectedRoute><ShowsHubPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/setup" />} />
     </Routes>
   );
