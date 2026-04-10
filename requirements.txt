@@ -7,9 +7,13 @@ pydantic>=2.0,<3
 python-dotenv
 httpx
 openai
+anthropic
+google-genai
 websockets
 pytest
 python-jose[cryptography]
 passlib[bcrypt]
 python-multipart
 slowapi
+typer
+rich

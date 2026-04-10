@@ -29,11 +29,16 @@ class UserDB(Base):
     """User account for authentication."""
     __tablename__ = "users"
 
+    # Roles: admin, owner, player, viewer
+    VALID_ROLES = ("admin", "owner", "player", "viewer")
+
     id = Column(String, primary_key=True, default=_uuid)
     email = Column(String(255), nullable=False, unique=True, index=True)
     username = Column(String(50), nullable=False, unique=True, index=True)
     password_hash = Column(String(255), nullable=False)
     display_name = Column(String(100), nullable=True)
+    role = Column(String(20), nullable=False, default="player")
+    api_key = Column(String(64), nullable=True, unique=True, index=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=_utc_now)
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
