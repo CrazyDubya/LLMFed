@@ -5,7 +5,7 @@ These models define the database schema and relationships for the wrestling
 federation simulator.
 """
 
-from sqlalchemy import Column, String, Integer, DateTime, JSON, ForeignKey, Text
+from sqlalchemy import Column, String, Integer, DateTime, JSON, ForeignKey, Text, Index
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime, timezone
 import uuid
@@ -59,10 +59,10 @@ class EngineRequestDB(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     request_id = Column(String, nullable=False, unique=True)
-    agent_id = Column(String, nullable=False)
+    agent_id = Column(String, nullable=False, index=True)
     due_tick = Column(Integer, nullable=False)
     context_json = Column(Text, nullable=False)
-    status = Column(String, nullable=False, default="pending")
+    status = Column(String, nullable=False, default="pending", index=True)
     created_at = Column(DateTime, default=_utc_now)
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
@@ -73,8 +73,12 @@ class NarrativeLogDB(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     tick_id = Column(String, nullable=False)
-    time_index = Column(Integer, nullable=False)
-    agent_id = Column(String, nullable=False)
+    time_index = Column(Integer, nullable=False, index=True)
+    agent_id = Column(String, nullable=False, index=True)
     role = Column(String, nullable=False)
     description = Column(Text, nullable=False)
     created_at = Column(DateTime, default=_utc_now)
+
+    __table_args__ = (
+        Index("ix_narrative_tick_time", "tick_id", "time_index"),
+    )

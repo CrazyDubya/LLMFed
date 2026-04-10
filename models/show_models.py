@@ -52,6 +52,11 @@ class ShowDB(Base):
     segments = relationship("ShowSegmentDB", back_populates="show",
                             order_by="ShowSegmentDB.position", cascade="all, delete-orphan")
 
+    __table_args__ = (
+        Index("ix_shows_world_date", "world_id", "game_date"),
+        Index("ix_shows_world_completed", "world_id", "is_completed"),
+    )
+
 
 class ShowSegmentDB(Base):
     """A segment within a show (match, promo, backstage, etc.)."""
