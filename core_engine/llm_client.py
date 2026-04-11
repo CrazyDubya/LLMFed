@@ -4,6 +4,12 @@ Maintains the same public interface (send_prompt(dict) -> dict) so that
 core_engine.engine and api_gateway.main continue to work unchanged.
 Internally all calls route through llm_abstraction.provider for consistent
 retry, circuit-breaking, and cost tracking.
+
+Error behaviour:
+    * **Transient** LLM errors (timeout, rate-limit, circuit open) fall
+      back to a stub action silently.
+    * **Permanent** errors (auth, bad config) are *propagated* so callers
+      (and operators) get immediate, actionable feedback.
 """
 
 import logging
@@ -11,7 +17,10 @@ import json
 import os
 
 from core_engine.dispatcher import LLMDispatcher
-from llm_abstraction.provider import LLMMessage, get_llm
+from llm_abstraction.provider import (
+    LLMMessage, get_llm,
+    LLMPermanentError, LLMTransientError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +53,9 @@ class LLMClient:
     def send_prompt(self, prompt: dict) -> dict:
         """Route to the unified LLM provider and return an action dict.
 
-        Always returns a dict with at least action_id, description, meta.
+        Returns a dict with at least action_id, description, meta.
+        Raises :class:`LLMPermanentError` for auth/config issues so the
+        caller can surface them instead of silently degrading.
         """
         if not isinstance(prompt, dict) or not prompt:
             logger.error("send_prompt called with empty or non-dict prompt")
@@ -60,8 +71,11 @@ class LLMClient:
                 temperature=0.7,
             )
             return self._parse_response(response.content)
+        except LLMPermanentError:
+            # Auth / config errors must propagate — silent fallback hides them
+            raise
         except Exception as e:
-            logger.error("LLM call failed: %s", e)
+            logger.warning("LLM call failed (transient), using fallback: %s", e)
             return self._fallback_stub()
 
     def _parse_response(self, content: str) -> dict:

@@ -20,6 +20,7 @@ from models.game_models import (
     ContractDB, ShowDB, TalentOfferDB,
 )
 from game_service.player_action_handler import get_active_contract
+from game_service.salary_calculator import calculate_salary_from_db
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +165,7 @@ def generate_talent_offers(db: Session, world: WorldDB, events: List[str],
         if existing:
             continue
 
-        salary = max(1500, target.popularity * 30 + random.randint(-500, 500))
+        salary = calculate_salary_from_db(db, target.id, federation_id=fed.id)
         expires = advance_game_date(game_date, 14)
 
         db.add(TalentOfferDB(

@@ -19,6 +19,52 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Error taxonomy — lets callers distinguish transient from permanent failures
+# ---------------------------------------------------------------------------
+
+
+class LLMError(Exception):
+    """Base class for all LLM-related errors."""
+
+
+class LLMTransientError(LLMError):
+    """Transient error — safe to retry (timeout, rate-limit, 5xx)."""
+
+
+class LLMPermanentError(LLMError):
+    """Permanent error — do NOT retry (auth, bad config, invalid request)."""
+
+
+class LLMCircuitOpenError(LLMTransientError):
+    """The circuit breaker is open for this provider."""
+
+
+def _classify_llm_error(exc: Exception) -> LLMError:
+    """Wrap a provider SDK exception into the appropriate LLMError subclass."""
+    msg = str(exc)
+    exc_type = type(exc).__name__
+
+    def _wrap(err: LLMError) -> LLMError:
+        err.__cause__ = exc
+        return err
+
+    # Auth / config errors are permanent
+    if any(tok in msg.lower() for tok in ("auth", "api key", "api_key", "unauthorized", "forbidden", "invalid_api_key")):
+        return _wrap(LLMPermanentError(f"Authentication/config error: {msg}"))
+    if any(tok in exc_type.lower() for tok in ("auth", "permission")):
+        return _wrap(LLMPermanentError(f"{exc_type}: {msg}"))
+
+    # Rate-limit / timeout / connection errors are transient
+    if any(tok in msg.lower() for tok in ("rate", "timeout", "timed out", "connection", "503", "529")):
+        return _wrap(LLMTransientError(f"Transient error: {msg}"))
+    if isinstance(exc, (ConnectionError, TimeoutError, OSError)):
+        return _wrap(LLMTransientError(f"Transient error: {msg}"))
+
+    # Default: treat as transient so the circuit breaker can handle it
+    return _wrap(LLMTransientError(f"Unknown LLM error: {msg}"))
+
+
+# ---------------------------------------------------------------------------
 # Cost tables (USD per 1K tokens as of 2025)
 # ---------------------------------------------------------------------------
 _COST_PER_1K: Dict[str, Dict[str, float]] = {
@@ -118,7 +164,12 @@ class CircuitBreaker:
         self._failures = 0
         self._opened_at = None
 
-    def record_failure(self) -> None:
+    def record_failure(self, permanent: bool = False) -> None:
+        """Record a failure. Only transient failures (permanent=False) count
+        toward opening the circuit; permanent errors are config problems that
+        retrying won't fix."""
+        if permanent:
+            return
         self._failures += 1
         if self._failures >= self.threshold:
             self._opened_at = time.monotonic()
@@ -139,7 +190,7 @@ def _retry_with_backoff(
     max_delay: float = 30.0,
     retryable_exceptions: tuple = (Exception,),
 ):
-    """Call *fn* with exponential backoff. Returns the first successful result."""
+    """Call *fn* with exponential backoff (sync). Returns the first successful result."""
     last_exc = None
     for attempt in range(max_retries + 1):
         try:
@@ -153,6 +204,33 @@ def _retry_with_backoff(
                 "Retry %d/%d after %.1fs: %s", attempt + 1, max_retries, delay, e
             )
             time.sleep(delay)
+    raise last_exc  # type: ignore[misc]
+
+
+async def _async_retry_with_backoff(
+    fn,
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+    max_delay: float = 30.0,
+    retryable_exceptions: tuple = (Exception,),
+):
+    """Call async *fn* with exponential backoff using ``asyncio.sleep``
+    so the event loop is never blocked."""
+    import asyncio
+
+    last_exc = None
+    for attempt in range(max_retries + 1):
+        try:
+            return await fn()
+        except retryable_exceptions as e:
+            last_exc = e
+            if attempt == max_retries:
+                break
+            delay = min(base_delay * (2**attempt), max_delay)
+            logger.warning(
+                "Async retry %d/%d after %.1fs: %s", attempt + 1, max_retries, delay, e
+            )
+            await asyncio.sleep(delay)
     raise last_exc  # type: ignore[misc]
 
 
@@ -230,7 +308,7 @@ class OpenAIProvider(LLMProviderBase):
         **kwargs,
     ) -> LLMResponse:
         if self.circuit.is_open:
-            raise ConnectionError(f"OpenAI circuit breaker is open for {self.model}")
+            raise LLMCircuitOpenError(f"OpenAI circuit breaker is open for {self.model}")
 
         t0 = time.monotonic()
 
@@ -253,9 +331,10 @@ class OpenAIProvider(LLMProviderBase):
                 _call, max_retries=self.max_retries
             )
             self.circuit.record_success()
-        except Exception:
-            self.circuit.record_failure()
-            raise
+        except Exception as exc:
+            classified = _classify_llm_error(exc)
+            self.circuit.record_failure(permanent=isinstance(classified, LLMPermanentError))
+            raise classified from exc
 
         choice = response.choices[0]
         usage_dict = None
@@ -287,7 +366,7 @@ class OpenAIProvider(LLMProviderBase):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         if self.circuit.is_open:
-            raise ConnectionError(f"OpenAI circuit breaker is open for {self.model}")
+            raise LLMCircuitOpenError(f"OpenAI circuit breaker is open for {self.model}")
 
         import openai
 
@@ -312,9 +391,10 @@ class OpenAIProvider(LLMProviderBase):
                         finish_reason=chunk.choices[0].finish_reason,
                         model=chunk.model,
                     )
-        except Exception:
-            self.circuit.record_failure()
-            raise
+        except Exception as exc:
+            classified = _classify_llm_error(exc)
+            self.circuit.record_failure(permanent=isinstance(classified, LLMPermanentError))
+            raise classified from exc
 
 
 # ---------------------------------------------------------------------------
@@ -348,7 +428,7 @@ class OllamaProvider(LLMProviderBase):
         **kwargs,
     ) -> LLMResponse:
         if self.circuit.is_open:
-            raise ConnectionError(f"Ollama circuit breaker is open for {self.model}")
+            raise LLMCircuitOpenError(f"Ollama circuit breaker is open for {self.model}")
 
         t0 = time.monotonic()
 
@@ -374,9 +454,10 @@ class OllamaProvider(LLMProviderBase):
         try:
             data = _retry_with_backoff(_call, max_retries=self.max_retries)
             self.circuit.record_success()
-        except Exception:
-            self.circuit.record_failure()
-            raise
+        except Exception as exc:
+            classified = _classify_llm_error(exc)
+            self.circuit.record_failure(permanent=isinstance(classified, LLMPermanentError))
+            raise classified from exc
 
         return LLMResponse(
             content=data.get("response", ""),
@@ -410,7 +491,7 @@ class AnthropicProvider(LLMProviderBase):
         **kwargs,
     ) -> LLMResponse:
         if self.circuit.is_open:
-            raise ConnectionError(
+            raise LLMCircuitOpenError(
                 f"Anthropic circuit breaker is open for {self.model}"
             )
 
@@ -450,9 +531,10 @@ class AnthropicProvider(LLMProviderBase):
                 _call, max_retries=self.max_retries
             )
             self.circuit.record_success()
-        except Exception:
-            self.circuit.record_failure()
-            raise
+        except Exception as exc:
+            classified = _classify_llm_error(exc)
+            self.circuit.record_failure(permanent=isinstance(classified, LLMPermanentError))
+            raise classified from exc
 
         content = ""
         for block in response.content:
@@ -484,7 +566,7 @@ class AnthropicProvider(LLMProviderBase):
         **kwargs,
     ) -> Iterator[StreamChunk]:
         if self.circuit.is_open:
-            raise ConnectionError(
+            raise LLMCircuitOpenError(
                 f"Anthropic circuit breaker is open for {self.model}"
             )
 
@@ -516,9 +598,10 @@ class AnthropicProvider(LLMProviderBase):
                 self.circuit.record_success()
                 for text in stream.text_stream:
                     yield StreamChunk(content=text, model=self.model)
-        except Exception:
-            self.circuit.record_failure()
-            raise
+        except Exception as exc:
+            classified = _classify_llm_error(exc)
+            self.circuit.record_failure(permanent=isinstance(classified, LLMPermanentError))
+            raise classified from exc
 
 
 # ---------------------------------------------------------------------------
@@ -544,7 +627,7 @@ class GeminiProvider(LLMProviderBase):
         **kwargs,
     ) -> LLMResponse:
         if self.circuit.is_open:
-            raise ConnectionError(
+            raise LLMCircuitOpenError(
                 f"Gemini circuit breaker is open for {self.model}"
             )
 
@@ -587,9 +670,10 @@ class GeminiProvider(LLMProviderBase):
                 _call, max_retries=self.max_retries
             )
             self.circuit.record_success()
-        except Exception:
-            self.circuit.record_failure()
-            raise
+        except Exception as exc:
+            classified = _classify_llm_error(exc)
+            self.circuit.record_failure(permanent=isinstance(classified, LLMPermanentError))
+            raise classified from exc
 
         content = response.text or ""
         usage_meta = getattr(response, "usage_metadata", None)
@@ -632,25 +716,89 @@ _PROVIDER_REGISTRY: Dict[str, type] = {
 # ---------------------------------------------------------------------------
 
 
+class BudgetExceededError(LLMError):
+    """Raised when the LLM budget hard limit has been reached."""
+
+
 @dataclass
 class TokenBudget:
-    """Track cumulative token usage across requests."""
+    """Track cumulative token usage across requests with optional caps.
+
+    Call :meth:`reset` periodically (e.g. at the start of each game day)
+    to prevent unbounded accumulation in long-running processes.
+
+    Budget limits (set via env vars or constructor):
+        * ``LLMFED_BUDGET_SOFT_USD`` — log a warning, switch to shorter max_tokens
+        * ``LLMFED_BUDGET_HARD_USD`` — raise :class:`BudgetExceededError`
+    """
 
     total_prompt_tokens: int = 0
     total_completion_tokens: int = 0
     total_cost_usd: float = 0.0
     request_count: int = 0
+    # Lifetime counters survive resets — useful for billing/monitoring
+    lifetime_prompt_tokens: int = 0
+    lifetime_completion_tokens: int = 0
+    lifetime_cost_usd: float = 0.0
+    lifetime_request_count: int = 0
+
+    # Configurable budget caps (0 = unlimited)
+    soft_limit_usd: float = 0.0
+    hard_limit_usd: float = 0.0
+    _soft_warned: bool = field(default=False, repr=False)
+
+    def __post_init__(self):
+        # Allow env-var overrides
+        if self.soft_limit_usd == 0:
+            self.soft_limit_usd = float(os.getenv("LLMFED_BUDGET_SOFT_USD", "0"))
+        if self.hard_limit_usd == 0:
+            self.hard_limit_usd = float(os.getenv("LLMFED_BUDGET_HARD_USD", "0"))
+
+    def check_budget(self) -> None:
+        """Raise if hard limit exceeded; warn on soft limit."""
+        if self.hard_limit_usd > 0 and self.lifetime_cost_usd >= self.hard_limit_usd:
+            raise BudgetExceededError(
+                f"LLM budget hard limit reached: ${self.lifetime_cost_usd:.4f} >= ${self.hard_limit_usd:.4f}"
+            )
+        if self.soft_limit_usd > 0 and self.lifetime_cost_usd >= self.soft_limit_usd and not self._soft_warned:
+            self._soft_warned = True
+            logger.warning(
+                "LLM budget soft limit reached: $%.4f >= $%.4f — consider reducing max_tokens",
+                self.lifetime_cost_usd, self.soft_limit_usd,
+            )
 
     def record(self, response: LLMResponse) -> None:
         self.request_count += 1
+        self.lifetime_request_count += 1
         self.total_cost_usd += response.cost_usd
+        self.lifetime_cost_usd += response.cost_usd
         if response.usage:
-            self.total_prompt_tokens += response.usage.get("prompt_tokens", 0)
-            self.total_completion_tokens += response.usage.get("completion_tokens", 0)
+            prompt = response.usage.get("prompt_tokens", 0)
+            completion = response.usage.get("completion_tokens", 0)
+            self.total_prompt_tokens += prompt
+            self.total_completion_tokens += completion
+            self.lifetime_prompt_tokens += prompt
+            self.lifetime_completion_tokens += completion
+        # Drop heavy raw_response to prevent memory growth
+        response.raw_response = None
+
+    def reset(self) -> Dict[str, Any]:
+        """Reset window counters and return the snapshot before reset."""
+        snapshot = self.summary()
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+        self.total_cost_usd = 0.0
+        self.request_count = 0
+        self._soft_warned = False
+        return snapshot
 
     @property
     def total_tokens(self) -> int:
         return self.total_prompt_tokens + self.total_completion_tokens
+
+    @property
+    def is_over_soft_limit(self) -> bool:
+        return self.soft_limit_usd > 0 and self.lifetime_cost_usd >= self.soft_limit_usd
 
     def summary(self) -> Dict[str, Any]:
         return {
@@ -659,6 +807,11 @@ class TokenBudget:
             "total_completion_tokens": self.total_completion_tokens,
             "total_tokens": self.total_tokens,
             "total_cost_usd": round(self.total_cost_usd, 6),
+            "lifetime_request_count": self.lifetime_request_count,
+            "lifetime_cost_usd": round(self.lifetime_cost_usd, 6),
+            "soft_limit_usd": self.soft_limit_usd,
+            "hard_limit_usd": self.hard_limit_usd,
+            "is_over_soft_limit": self.is_over_soft_limit,
         }
 
 
@@ -717,6 +870,12 @@ class LLMAbstraction:
             )
         return cls(self.model, **self.config)
 
+    def _effective_max_tokens(self, max_tokens: Optional[int]) -> Optional[int]:
+        """Reduce max_tokens when over the soft budget limit."""
+        if self.budget.is_over_soft_limit and (max_tokens is None or max_tokens > 100):
+            return 100  # conserve tokens while still producing useful output
+        return max_tokens
+
     def generate(
         self,
         prompt: str,
@@ -725,6 +884,7 @@ class LLMAbstraction:
         max_tokens: Optional[int] = None,
         **kwargs,
     ) -> LLMResponse:
+        self.budget.check_budget()
         messages = []
         if system_message:
             messages.append(LLMMessage(role="system", content=system_message))
@@ -733,7 +893,7 @@ class LLMAbstraction:
         response = self.provider.generate(
             messages=messages,
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_tokens=self._effective_max_tokens(max_tokens),
             **kwargs,
         )
         self.budget.record(response)
@@ -746,10 +906,11 @@ class LLMAbstraction:
         max_tokens: Optional[int] = None,
         **kwargs,
     ) -> LLMResponse:
+        self.budget.check_budget()
         response = self.provider.generate(
             messages=messages,
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_tokens=self._effective_max_tokens(max_tokens),
             **kwargs,
         )
         self.budget.record(response)

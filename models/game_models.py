@@ -19,6 +19,7 @@ from models.federation_models import *  # noqa: F401,F403
 from models.wrestler_models import *    # noqa: F401,F403
 from models.show_models import *        # noqa: F401,F403
 from models.social_models import *      # noqa: F401,F403
+from models.audit_models import *      # noqa: F401,F403
 
 
 # ---------------------------------------------------------------------------

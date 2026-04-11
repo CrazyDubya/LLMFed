@@ -106,12 +106,13 @@ class TestOpenAIProvider:
         assert response.latency_ms > 0
 
     def test_circuit_breaker_blocks_when_open(self):
+        from llm_abstraction.provider import LLMCircuitOpenError
         provider = OpenAIProvider(
             model="gpt-3.5-turbo", api_key="test-key", circuit_threshold=1
         )
         provider.circuit.record_failure()
         assert provider.circuit.is_open is True
-        with pytest.raises(ConnectionError, match="circuit breaker is open"):
+        with pytest.raises(LLMCircuitOpenError, match="circuit breaker is open"):
             provider.generate([LLMMessage(role="user", content="Hi")])
 
 
