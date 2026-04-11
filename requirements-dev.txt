@@ -1,0 +1,8 @@
+# Development / testing dependencies — not needed in production.
+-r requirements.txt
+
+pytest>=7.0
+pytest-asyncio
+pytest-cov
+flake8
+mypy

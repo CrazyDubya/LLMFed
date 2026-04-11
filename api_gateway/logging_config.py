@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from fastapi import Request
 import sys
 
+logger = logging.getLogger(__name__)
+
 
 class StructuredFormatter(logging.Formatter):
     """
@@ -187,13 +189,25 @@ def get_request_id(request: Request) -> str:
 class PerformanceMonitor:
     """Simple performance monitoring for API endpoints.
 
-    Caps tracked endpoints at MAX_ENDPOINTS to prevent unbounded growth (Rule 7, Rule 8).
+    Caps tracked endpoints at MAX_ENDPOINTS to prevent unbounded growth.
+    When the cap is reached, evicts the least-recently-used 25% of entries
+    and logs a warning so the data loss is visible.
     """
 
     MAX_ENDPOINTS = 10_000
+    _EVICT_FRACTION = 0.25  # Remove 25% of oldest entries when cap is hit
 
     def __init__(self):
         self.metrics: Dict[str, Dict[str, Any]] = {}
+        self._cap_warned = False
+
+    def _evict_oldest(self):
+        """Evict the least-recently-accessed entries to make room."""
+        evict_count = max(1, int(len(self.metrics) * self._EVICT_FRACTION))
+        # Sort by count (least accessed first) as a proxy for staleness
+        sorted_keys = sorted(self.metrics, key=lambda k: self.metrics[k]["count"])
+        for key in sorted_keys[:evict_count]:
+            del self.metrics[key]
 
     def record_request(self, method: str, path: str, duration_ms: float, status_code: int):
         """Record metrics for a request."""
@@ -201,7 +215,13 @@ class PerformanceMonitor:
 
         if key not in self.metrics:
             if len(self.metrics) >= self.MAX_ENDPOINTS:
-                return  # Refuse to grow past cap
+                if not self._cap_warned:
+                    logger.warning(
+                        f"PerformanceMonitor reached capacity ({self.MAX_ENDPOINTS} endpoints). "
+                        "Evicting least-used entries."
+                    )
+                    self._cap_warned = True
+                self._evict_oldest()
             self.metrics[key] = {
                 "count": 0,
                 "total_duration_ms": 0.0,

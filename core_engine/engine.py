@@ -198,6 +198,9 @@ class Engine:
                     break
                 results.extend(tick_results)
             return results
+        except Exception:
+            db.rollback()
+            raise
         finally:
             db.close()
 
@@ -208,6 +211,9 @@ class Engine:
             return db.query(EngineRequestDB).filter(
                 EngineRequestDB.status == "pending"
             ).all()
+        except Exception:
+            db.rollback()
+            raise
         finally:
             db.close()
 
@@ -400,9 +406,33 @@ class Engine:
 
 
 # ---------------------------------------------------------------------------
-# Singleton instance for easy import by FastAPI
+# Singleton accessor (thread-safe, lazy — avoids import-time side effects)
 # ---------------------------------------------------------------------------
-engine_instance = Engine()
+import threading
+
+_engine_instance: Optional[Engine] = None
+_engine_lock = threading.Lock()
+
+
+def get_engine() -> Engine:
+    """Return the shared Engine instance, creating it on first call."""
+    global _engine_instance
+    if _engine_instance is None:
+        with _engine_lock:
+            if _engine_instance is None:
+                _engine_instance = Engine()
+    return _engine_instance
+
+
+def reset_engine() -> None:
+    """Reset the engine singleton (for testing)."""
+    global _engine_instance
+    with _engine_lock:
+        _engine_instance = None
+
+
+# Backwards-compatible alias — will be removed in a future release
+engine_instance = get_engine()
 
 __all__ = [
     "AppliedAction",
@@ -412,5 +442,7 @@ __all__ = [
     "Engine",
     "EngineRequest",
     "engine_instance",
+    "get_engine",
+    "reset_engine",
     "MAX_TICKS_PER_CALL",
 ]

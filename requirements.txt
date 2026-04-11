@@ -10,7 +10,6 @@ openai
 anthropic
 google-genai
 websockets
-pytest
 python-jose[cryptography]
 passlib[bcrypt]
 python-multipart

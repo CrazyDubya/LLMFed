@@ -780,21 +780,31 @@ class LLMAbstraction:
 
 
 # ---------------------------------------------------------------------------
-# Singleton
+# Singleton (thread-safe with double-checked locking)
 # ---------------------------------------------------------------------------
 
+import threading
+
 _default_llm: Optional[LLMAbstraction] = None
+_default_llm_lock = threading.Lock()
 
 
 def get_llm() -> LLMAbstraction:
-    """Get the default LLM instance (created once, reused)."""
+    """Get the default LLM instance (created once, reused).
+
+    Thread-safe: uses double-checked locking to avoid creating
+    duplicate instances under concurrent access.
+    """
     global _default_llm
     if _default_llm is None:
-        _default_llm = LLMAbstraction(provider="auto")
+        with _default_llm_lock:
+            if _default_llm is None:
+                _default_llm = LLMAbstraction(provider="auto")
     return _default_llm
 
 
 def reset_llm() -> None:
     """Reset the singleton (useful for testing)."""
     global _default_llm
-    _default_llm = None
+    with _default_llm_lock:
+        _default_llm = None

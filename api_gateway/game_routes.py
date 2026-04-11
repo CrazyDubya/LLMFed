@@ -14,6 +14,8 @@ from api_gateway.routes.wrestler_routes import router as wrestler_router
 from api_gateway.routes.booking_routes import router as booking_router
 from api_gateway.routes.storyline_routes import router as storyline_router
 from api_gateway.routes.stable_manager_routes import router as stable_manager_router
+from api_gateway.routes.snapshot_routes import router as snapshot_router
+from api_gateway.routes.analytics_routes import router as analytics_router
 
 router = APIRouter()
 
@@ -24,3 +26,5 @@ router.include_router(wrestler_router)
 router.include_router(booking_router)
 router.include_router(storyline_router)
 router.include_router(stable_manager_router)
+router.include_router(snapshot_router)
+router.include_router(analytics_router)

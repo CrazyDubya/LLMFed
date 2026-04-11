@@ -7,7 +7,7 @@ name = "llmfed"
 version = "0.1.0"
 description = "AI-powered wrestling federation simulator with LLM agents"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = [
     "fastapi>=0.100",
     "uvicorn[standard]",
@@ -25,7 +25,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest",
+    "pytest>=7.0",
+    "pytest-asyncio",
+    "pytest-cov",
+    "flake8",
+    "mypy",
 ]
 
 [tool.setuptools.packages.find]

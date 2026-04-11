@@ -23,72 +23,65 @@ logger = logging.getLogger(__name__)
 USE_LLM = os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes")
 
 # ------------------------------------------------------------------
-# Lazy imports (same pattern as world_ticker)
+# Service registry — replaces per-module globals with a single
+# dict + accessor.  Tests can call ``_service_registry.clear()``
+# to reset state between runs.
 # ------------------------------------------------------------------
 
-_match_engine = None
-_show_service = None
-_storyline_service = None
-_match_aftermath = None
-_news_service = None
-_viewership_service = None
-_stable_service = None
+import threading
+
+_service_registry: dict = {}
+_service_lock = threading.Lock()
+
+_SERVICE_LOADERS = {
+    "match_engine": lambda: __import__("core_engine.match_engine", fromlist=["match_engine"]),
+    "show_service": lambda: __import__("game_service.show_service", fromlist=["show_service"]),
+    "storyline_service": lambda: __import__("game_service.storyline_service", fromlist=["storyline_service"]),
+    "match_aftermath": lambda: __import__("core_engine.match_aftermath", fromlist=["match_aftermath"]),
+    "news_service": lambda: __import__("game_service.news_service", fromlist=["news_service"]),
+    "viewership_service": lambda: __import__("game_service.viewership_service", fromlist=["viewership_service"]),
+    "stable_service": lambda: __import__("game_service.stable_service", fromlist=["stable_service"]),
+}
+
+
+def _get_service(name: str):
+    """Thread-safe lazy service accessor with double-checked locking."""
+    if name not in _service_registry:
+        with _service_lock:
+            if name not in _service_registry:
+                loader = _SERVICE_LOADERS.get(name)
+                if loader is None:
+                    raise ValueError(f"Unknown service: {name}")
+                _service_registry[name] = loader()
+    return _service_registry[name]
 
 
 def _get_match_engine():
-    global _match_engine
-    if _match_engine is None:
-        from core_engine import match_engine as _me
-        _match_engine = _me
-    return _match_engine
+    return _get_service("match_engine")
 
 
 def _get_show_service():
-    global _show_service
-    if _show_service is None:
-        from game_service import show_service as _ss
-        _show_service = _ss
-    return _show_service
+    return _get_service("show_service")
 
 
 def _get_storyline_service():
-    global _storyline_service
-    if _storyline_service is None:
-        from game_service import storyline_service as _sls
-        _storyline_service = _sls
-    return _storyline_service
+    return _get_service("storyline_service")
 
 
 def _get_match_aftermath():
-    global _match_aftermath
-    if _match_aftermath is None:
-        from core_engine import match_aftermath as _ma
-        _match_aftermath = _ma
-    return _match_aftermath
+    return _get_service("match_aftermath")
 
 
 def _get_news_service():
-    global _news_service
-    if _news_service is None:
-        from game_service import news_service as _ns
-        _news_service = _ns
-    return _news_service
+    return _get_service("news_service")
 
 
 def _get_viewership_service():
-    global _viewership_service
-    if _viewership_service is None:
-        from game_service import viewership_service as _vs
-        _viewership_service = _vs
-    return _viewership_service
+    return _get_service("viewership_service")
 
 
 def _get_stable_service():
-    global _stable_service
-    if _stable_service is None:
-        from game_service import stable_service as _stbs
-        _stable_service = _stbs
-    return _stable_service
+    return _get_service("stable_service")
 
 
 # ------------------------------------------------------------------
