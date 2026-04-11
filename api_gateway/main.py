@@ -8,6 +8,7 @@ This module wires them together with middleware, error handling, and CORS.
 import os
 import sys
 import logging
+from contextlib import asynccontextmanager
 
 # Configure local Ollama before any imports to enforce using long-gemma
 os.environ.setdefault("OPENAI_MODEL", "long-gemma")
@@ -30,7 +31,7 @@ from api_gateway.logging_config import setup_logging, logging_middleware
 from api_gateway.game_routes import router as game_router
 from api_gateway.routes.core_routes import router as core_router
 from api_gateway.routes.metrics_routes import router as metrics_router
-from api_gateway.websocket_hub import websocket_endpoint, start_reaper
+from api_gateway.websocket_hub import websocket_endpoint, start_reaper, stop_reaper, manager
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -40,6 +41,39 @@ use_json_logging = os.getenv("JSON_LOGGING", "false").lower() == "true"
 setup_logging(log_level=log_level, use_json=use_json_logging)
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Lifespan — startup and graceful shutdown
+# ---------------------------------------------------------------------------
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage startup and shutdown lifecycle."""
+    # --- Startup ---
+    start_reaper()
+    logger.info("LLMFed API started")
+    yield
+    # --- Shutdown ---
+    logger.info("LLMFed API shutting down …")
+    # Cancel the WebSocket stale-connection reaper
+    stop_reaper()
+    # Close all active WebSocket connections cleanly
+    for world_id in list(manager.active_connections):
+        for ws in list(manager.active_connections.get(world_id, [])):
+            try:
+                await ws.close(code=1001, reason="server shutting down")
+            except Exception:
+                pass
+    # Dispose SQLAlchemy connection pool
+    try:
+        from agent_service.database import engine as db_engine
+        db_engine.dispose()
+        logger.info("Database connection pool disposed")
+    except Exception as e:
+        logger.warning("Error disposing database pool: %s", e)
+    logger.info("Shutdown complete")
+
 
 # ---------------------------------------------------------------------------
 # Application
@@ -73,6 +107,7 @@ Most endpoints require JWT authentication. Get your token from `/auth/token`.
 - Other endpoints: Configurable per endpoint
     """,
     version="0.2.0",
+    lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_tags=[
@@ -126,14 +161,6 @@ async def add_security_headers(request: Request, call_next):
 # Error handlers
 # ---------------------------------------------------------------------------
 register_error_handlers(app)
-
-# ---------------------------------------------------------------------------
-# Startup / shutdown
-# ---------------------------------------------------------------------------
-@app.on_event("startup")
-async def _on_startup():
-    start_reaper()
-
 
 # ---------------------------------------------------------------------------
 # Routers

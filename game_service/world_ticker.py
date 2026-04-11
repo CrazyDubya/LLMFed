@@ -8,7 +8,7 @@ storyline progression, economy, and world events.
 import logging
 import os
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
@@ -30,7 +30,7 @@ def _llm_generate(prompt: str, fallback: str, system_msg: str = None) -> str:
         if response and response.content:
             return response.content.strip()
     except Exception as e:
-        logging.getLogger(__name__).debug("LLM generation failed, using fallback: %s", e)
+        logging.getLogger(__name__).warning("LLM generation failed, using fallback: %s", e)
     return fallback
 
 from models.game_models import (
@@ -194,6 +194,9 @@ class WorldTicker:
         # 17. Character agency — LLM-driven wrestler decisions
         self._character_agency_tick(new_date)
 
+        # 18. Reset daily LLM budget window and log spend
+        self._reset_llm_budget()
+
         self.db.commit()
 
         return {
@@ -221,7 +224,7 @@ class WorldTicker:
                 result = handler.execute(action)
                 action.status = "completed"
                 action.result = result
-                action.processed_at = datetime.utcnow()
+                action.processed_at = datetime.now(timezone.utc)
                 self.events.append(f"Processed action: {action.action_type}")
             except Exception as e:
                 action.status = "failed"
@@ -1006,6 +1009,32 @@ class WorldTicker:
                 self.events.append(f"[CHARACTER] {evt}")
         except Exception as e:
             logger.error("Character agency tick failed: %s", e, exc_info=True)
+
+    # ------------------------------------------------------------------
+    # LLM budget management
+    # ------------------------------------------------------------------
+
+    def _reset_llm_budget(self):
+        """Reset the daily LLM token budget window.
+
+        Logs the spend for the previous window so operators can track
+        cost-per-game-day. The lifetime counters survive the reset.
+        """
+        if not USE_LLM:
+            return
+        try:
+            from llm_abstraction.provider import get_llm
+            llm = get_llm()
+            snapshot = llm.budget.reset()
+            if snapshot.get("request_count", 0) > 0:
+                logger.info(
+                    "LLM daily budget reset — window spend: $%.4f (%d requests, %d tokens)",
+                    snapshot.get("total_cost_usd", 0),
+                    snapshot.get("request_count", 0),
+                    snapshot.get("total_tokens", 0),
+                )
+        except Exception as e:
+            logger.debug("LLM budget reset skipped: %s", e)
 
     # ------------------------------------------------------------------
     # Seasonal events

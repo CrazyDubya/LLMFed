@@ -68,10 +68,14 @@ def get_metrics() -> Dict[str, Any]:
 
 @router.get("/health/llm", summary="LLM provider health probe")
 def llm_health() -> Dict[str, Any]:
-    """Probe the active LLM provider and return status + latency.
+    """Probe the active LLM provider and return status, budget, and circuit state.
 
     Useful for load-balancer health checks and operator dashboards.
+    Pass ``?ping=true`` to run a lightweight echo prompt for connectivity
+    verification (adds ~1-3s latency).
     """
+    from fastapi import Query, Request
+
     result: Dict[str, Any] = {"status": "unknown", "provider": None}
     try:
         from llm_abstraction.provider import get_llm
@@ -79,19 +83,32 @@ def llm_health() -> Dict[str, Any]:
         result["provider"] = llm.provider_name
         result["model"] = llm.model
 
+        # Circuit breaker details
         cb = llm.provider.circuit
+        result["circuit_breaker"] = {
+            "state": "open" if cb.is_open else "closed",
+            "consecutive_failures": cb._failures,
+            "threshold": cb.threshold,
+            "cooldown_seconds": cb.cooldown_seconds,
+        }
+
         if cb.is_open:
             result["status"] = "circuit_open"
             result["detail"] = "Circuit breaker is open — provider recently failed"
             return result
 
-        # Quick validation probe (doesn't send a real request)
+        # Config validation
         is_valid = llm.provider.validate_config()
-        if is_valid:
-            result["status"] = "healthy"
-        else:
+        if not is_valid:
             result["status"] = "misconfigured"
             result["detail"] = "Provider config validation failed"
+            return result
+
+        result["status"] = "healthy"
+
+        # Budget summary
+        result["budget"] = llm.get_budget_summary()
+
     except Exception as e:
         result["status"] = "unavailable"
         result["detail"] = str(e)

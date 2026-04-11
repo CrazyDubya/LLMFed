@@ -892,7 +892,10 @@ class MatchSimulator:
                       defender: MatchParticipantState,
                       participants: List[MatchParticipantState]) -> MatchResult:
         """Build the final MatchResult."""
-        # Generate narrative summary
+        # Calculate rating once and reuse
+        rating = self._calculate_rating(participants)
+
+        # Generate narrative summary — only highlight spots are kept
         highlights = [s for s in self.spots if s.damage >= HIGHLIGHT_DAMAGE_THRESHOLD or s.is_near_fall or s.is_finisher]
         narrative_parts = [s.description for s in highlights[-5:]]  # Last 5 highlights
         narrative = " ".join(narrative_parts)
@@ -907,7 +910,7 @@ class MatchSimulator:
                     loser_name=defender.name,
                     finish_type=finish_spot.finish_type or "pinfall",
                     finish_description=finish_spot.description,
-                    rating=self._calculate_rating(participants),
+                    rating=rating,
                     key_spots=narrative_parts,
                     stipulation=self.stipulation or "",
                     is_title_match=self.is_title_match,
@@ -932,7 +935,6 @@ class MatchSimulator:
                 })
 
         # Botches hurt match rating
-        rating = self._calculate_rating(participants)
         if botch_count > 0:
             botch_penalty = botch_count * BOTCH_RATING_PENALTY_PER
             for be in botch_events:
@@ -941,14 +943,16 @@ class MatchSimulator:
             rating = max(RATING_MIN, rating - botch_penalty)
             rating = round(rating, 1)
 
-        return MatchResult(
+        # Only retain highlight spots in the result to reduce memory
+        # pressure during multi-match show simulations.
+        result = MatchResult(
             winner_id=finish_spot.attacker_id,
             finish_type=finish_spot.finish_type or "pinfall",
             finish_description=finish_spot.description,
             match_rating=rating,
             crowd_heat=self._calculate_heat(),
             duration_ticks=self.tick,
-            spots=self.spots,
+            spots=highlights,
             narrative_summary=narrative,
             interference_occurred=self._interference_happened,
             botch_count=botch_count,
@@ -956,6 +960,11 @@ class MatchSimulator:
             went_into_business=self._shoot_occurred,
             shoot_wrestler_id=self._shoot_wrestler_id,
         )
+
+        # Release full spot list now that highlights have been extracted
+        self.spots.clear()
+
+        return result
 
 
 # ---------------------------------------------------------------------------

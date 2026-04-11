@@ -1,0 +1,44 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    ports:
+      - "8091:8091"
+    environment:
+      DATABASE_URL: "postgresql://llmfed:llmfed@db:5432/llmfed"
+      OPENAI_MODEL: "${OPENAI_MODEL:-long-gemma}"
+      OPENAI_API_BASE: "${OPENAI_API_BASE:-http://ollama:11434/v1}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      JWT_SECRET_KEY: "${JWT_SECRET_KEY:-dev-secret-key-change-in-production}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:8091"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: llmfed
+      POSTGRES_PASSWORD: llmfed
+      POSTGRES_DB: llmfed
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U llmfed"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  pgdata:
+  ollama_data:

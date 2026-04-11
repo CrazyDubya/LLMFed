@@ -296,6 +296,14 @@ class OpenAIProvider(LLMProviderBase):
         self.api_base = kwargs.get("api_base") or os.getenv(
             "OPENAI_API_BASE", "https://api.openai.com/v1"
         )
+        self._client = None  # lazily initialised, reused across requests
+
+    def _get_client(self):
+        """Return the shared OpenAI client, creating it on first use."""
+        if self._client is None:
+            import openai
+            self._client = openai.OpenAI(api_key=self.api_key, base_url=self.api_base)
+        return self._client
 
     def validate_config(self) -> bool:
         return self.api_key is not None
@@ -311,11 +319,9 @@ class OpenAIProvider(LLMProviderBase):
             raise LLMCircuitOpenError(f"OpenAI circuit breaker is open for {self.model}")
 
         t0 = time.monotonic()
+        client = self._get_client()
 
         def _call():
-            import openai
-
-            client = openai.OpenAI(api_key=self.api_key, base_url=self.api_base)
             openai_messages = [
                 {"role": msg.role, "content": msg.content} for msg in messages
             ]
@@ -368,9 +374,7 @@ class OpenAIProvider(LLMProviderBase):
         if self.circuit.is_open:
             raise LLMCircuitOpenError(f"OpenAI circuit breaker is open for {self.model}")
 
-        import openai
-
-        client = openai.OpenAI(api_key=self.api_key, base_url=self.api_base)
+        client = self._get_client()
         openai_messages = [
             {"role": msg.role, "content": msg.content} for msg in messages
         ]
@@ -382,7 +386,6 @@ class OpenAIProvider(LLMProviderBase):
                 max_tokens=max_tokens,
                 stream=True,
             )
-            self.circuit.record_success()
             for chunk in stream:
                 delta = chunk.choices[0].delta if chunk.choices else None
                 if delta and delta.content:
@@ -391,6 +394,8 @@ class OpenAIProvider(LLMProviderBase):
                         finish_reason=chunk.choices[0].finish_reason,
                         model=chunk.model,
                     )
+            # Record success only after the full stream has been consumed
+            self.circuit.record_success()
         except Exception as exc:
             classified = _classify_llm_error(exc)
             self.circuit.record_failure(permanent=isinstance(classified, LLMPermanentError))
@@ -479,6 +484,14 @@ class AnthropicProvider(LLMProviderBase):
     def __init__(self, model: str, api_key: Optional[str] = None, **kwargs):
         super().__init__(model, **kwargs)
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        self._client = None  # lazily initialised, reused across requests
+
+    def _get_client(self):
+        """Return the shared Anthropic client, creating it on first use."""
+        if self._client is None:
+            import anthropic
+            self._client = anthropic.Anthropic(api_key=self.api_key)
+        return self._client
 
     def validate_config(self) -> bool:
         return self.api_key is not None
@@ -498,9 +511,7 @@ class AnthropicProvider(LLMProviderBase):
         t0 = time.monotonic()
 
         def _call():
-            import anthropic
-
-            client = anthropic.Anthropic(api_key=self.api_key)
+            client = self._get_client()
 
             # Separate system message from conversation messages
             system_msg = None
@@ -570,9 +581,7 @@ class AnthropicProvider(LLMProviderBase):
                 f"Anthropic circuit breaker is open for {self.model}"
             )
 
-        import anthropic
-
-        client = anthropic.Anthropic(api_key=self.api_key)
+        client = self._get_client()
 
         system_msg = None
         conv_messages = []
@@ -595,9 +604,10 @@ class AnthropicProvider(LLMProviderBase):
 
         try:
             with client.messages.stream(**create_kwargs) as stream:
-                self.circuit.record_success()
                 for text in stream.text_stream:
                     yield StreamChunk(content=text, model=self.model)
+            # Record success only after the full stream has been consumed
+            self.circuit.record_success()
         except Exception as exc:
             classified = _classify_llm_error(exc)
             self.circuit.record_failure(permanent=isinstance(classified, LLMPermanentError))
@@ -615,6 +625,14 @@ class GeminiProvider(LLMProviderBase):
     def __init__(self, model: str, api_key: Optional[str] = None, **kwargs):
         super().__init__(model, **kwargs)
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
+        self._client = None  # lazily initialised, reused across requests
+
+    def _get_client(self):
+        """Return the shared Gemini client, creating it on first use."""
+        if self._client is None:
+            from google import genai
+            self._client = genai.Client(api_key=self.api_key)
+        return self._client
 
     def validate_config(self) -> bool:
         return self.api_key is not None
@@ -634,9 +652,7 @@ class GeminiProvider(LLMProviderBase):
         t0 = time.monotonic()
 
         def _call():
-            from google import genai
-
-            client = genai.Client(api_key=self.api_key)
+            client = self._get_client()
 
             # Build contents from messages
             system_instruction = None

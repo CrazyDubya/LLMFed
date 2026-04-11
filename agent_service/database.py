@@ -4,6 +4,7 @@ init_db() is NOT called at import time (Rule 3, Rule 8). Callers
 must invoke it explicitly during application startup.
 """
 import logging
+import os
 import time
 
 from sqlalchemy import create_engine
@@ -14,10 +15,16 @@ from models.db_models import Base
 
 logger = logging.getLogger(__name__)
 
-# For SQLite, connect_args are needed for FastAPI compatibility
-_engine_args = {}
+# Build engine kwargs based on the database backend.
+_engine_args: dict = {}
 if DATABASE_URL.startswith("sqlite"):
     _engine_args["connect_args"] = {"check_same_thread": False}
+else:
+    # Production pool tuning for PostgreSQL / MySQL
+    _engine_args["pool_size"] = int(os.getenv("DB_POOL_SIZE", "20"))
+    _engine_args["max_overflow"] = int(os.getenv("DB_MAX_OVERFLOW", "40"))
+    _engine_args["pool_recycle"] = int(os.getenv("DB_POOL_RECYCLE", "3600"))
+    _engine_args["pool_pre_ping"] = True  # detect stale connections
 
 engine = create_engine(DATABASE_URL, **_engine_args)
 

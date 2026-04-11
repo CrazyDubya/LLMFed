@@ -426,8 +426,17 @@ def reset_engine() -> None:
         _engine_instance = None
 
 
-# Backwards-compatible alias — will be removed in a future release
-engine_instance = get_engine()
+# Backwards-compatible lazy alias — avoids import-time side effects.
+# Accessing ``engine_instance`` still works but initialisation is deferred
+# until first use, so simply importing from this module no longer triggers
+# init_db() / LLM client setup.
+
+
+def __getattr__(name: str):
+    if name == "engine_instance":
+        return get_engine()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "AppliedAction",
