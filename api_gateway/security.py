@@ -273,8 +273,9 @@ def _authenticate_api_key(api_key: str) -> TokenData:
     from agent_service.database import SessionLocal
     from models.game_models import UserDB
 
-    db = SessionLocal()
+    db = None
     try:
+        db = SessionLocal()
         user = db.query(UserDB).filter(UserDB.api_key == api_key).first()
         if user is None or not user.is_active:
             raise HTTPException(
@@ -286,5 +287,12 @@ def _authenticate_api_key(api_key: str) -> TokenData:
             username=user.username,
             role=getattr(user, "role", "player"),
         )
+    except HTTPException:
+        raise
+    except Exception:
+        if db is not None:
+            db.rollback()
+        raise
     finally:
-        db.close()
+        if db is not None:
+            db.close()

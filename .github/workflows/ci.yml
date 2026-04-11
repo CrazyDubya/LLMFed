@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Lint with flake8
+        run: |
+          pip install flake8
+          flake8 . --count --show-source --statistics
+
+      - name: Run tests
+        env:
+          DATABASE_URL: "sqlite:///./test_ci.db"
+          OPENAI_API_KEY: "sk-test-not-real"
+          OPENAI_API_BASE: "http://127.0.0.1:11434/v1"
+          OPENAI_MODEL: "long-gemma"
+        run: |
+          python -m pytest tests/ -v --tb=short -q

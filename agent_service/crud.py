@@ -2,6 +2,11 @@
 
 Each function validates its parameters (Rule 2), checks return values (Rule 4),
 and uses explicit field whitelists for updates instead of blind setattr (Rule 9).
+
+Error handling contract:
+- ValueError: invalid input (bad role, empty ID, etc.)
+- Return None: resource not found (expected condition, not an error)
+- SQLAlchemyError: re-raised after rollback so callers/error-handlers can respond
 """
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -37,7 +42,7 @@ def get_agent_by_id(db: Session, agent_id: str) -> AgentDB | None:
         return None
 
 
-def create_agent(db: Session, agent_data: AgentCreateData) -> AgentDB | None:
+def create_agent(db: Session, agent_data: AgentCreateData) -> AgentDB:
     """Creates a new agent in the database."""
     if agent_data.role not in VALID_ROLES:
         raise ValueError(f"Invalid role '{agent_data.role}', must be one of {VALID_ROLES}")
@@ -64,7 +69,7 @@ def create_agent(db: Session, agent_data: AgentCreateData) -> AgentDB | None:
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error creating agent '{agent_data.name}': {e}")
-        return None
+        raise
 
 
 def get_agents(db: Session, skip: int = 0, limit: int = 100) -> list[AgentDB]:
@@ -106,7 +111,7 @@ def update_agent(db: Session, agent_id: str, update_data: AgentUpdateData) -> Ag
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error updating agent {agent_id}: {e}")
-        return None
+        raise
 
 
 def delete_agent(db: Session, agent_id: str) -> bool:
@@ -124,7 +129,7 @@ def delete_agent(db: Session, agent_id: str) -> bool:
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error deleting agent {agent_id}: {e}")
-        return False
+        raise
 
 
 def get_agents_by_federation_id(db: Session, federation_id: str) -> list[AgentDB]:
@@ -150,7 +155,7 @@ def get_federation_by_id(db: Session, federation_id: str) -> FederationDB | None
         return None
 
 
-def create_federation(db: Session, fed_data: FederationCreateData) -> FederationDB | None:
+def create_federation(db: Session, fed_data: FederationCreateData) -> FederationDB:
     """Creates a new federation in the database."""
     federation_id = str(uuid.uuid4())
     db_federation = FederationDB(
@@ -170,7 +175,7 @@ def create_federation(db: Session, fed_data: FederationCreateData) -> Federation
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error creating federation '{fed_data.name}': {e}")
-        return None
+        raise
 
 
 def get_federations(db: Session, skip: int = 0, limit: int = 100) -> list[FederationDB]:
@@ -209,7 +214,7 @@ def update_federation(db: Session, federation_id: str, update_data: FederationUp
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error updating federation {federation_id}: {e}")
-        return None
+        raise
 
 
 def delete_federation(db: Session, federation_id: str) -> bool:
@@ -235,4 +240,4 @@ def delete_federation(db: Session, federation_id: str) -> bool:
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error deleting federation {federation_id}: {e}")
-        return False
+        raise

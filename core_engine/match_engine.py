@@ -321,7 +321,8 @@ class MatchSimulator:
         # Time limit: pick the participant with the highest momentum as winner
         if len(active) >= 2:
             winner = max(active, key=lambda p: p.momentum)
-            loser = [p for p in active if p is not winner][0]
+            remaining = [p for p in active if p is not winner]
+            loser = remaining[0] if remaining else active[-1]
             return MatchResult(
                 winner_id=winner.wrestler_id,
                 finish_type="pinfall",
@@ -335,7 +336,7 @@ class MatchSimulator:
         return MatchResult(
             winner_id=active[0].wrestler_id if active else None,
             finish_type="last_person_standing",
-            finish_description="Last person standing wins!",
+            finish_description="Last person standing wins!" if active else "No winner — all participants eliminated!",
             match_rating=self._calculate_rating(participants),
             crowd_heat=self._calculate_heat(),
             duration_ticks=self.tick,
@@ -396,7 +397,13 @@ class MatchSimulator:
         if (attacker.signature_moves and attacker.momentum > SIGNATURE_MOMENTUM_THRESHOLD
                 and random.random() < SIGNATURE_CHANCE):
             sig = random.choice(attacker.signature_moves)
-            sig_name, sig_damage, sig_type = sig[0], sig[1], sig[2]
+            if len(sig) >= 3:
+                sig_name, sig_damage, sig_type = sig[0], sig[1], sig[2]
+            else:
+                logger.warning(f"Malformed signature move for {attacker.name}: {sig}")
+                sig_name = sig[0] if sig else "Signature Move"
+                sig_damage = sig[1] if len(sig) > 1 else SIGNATURE_DAMAGE_MIN
+                sig_type = "power"
             attack_stat = attacker.stats.get(sig_type, STAT_BASELINE)
             damage = int(sig_damage * (attack_stat / STAT_BASELINE) * (attacker.stamina / 100))
             damage = max(SIGNATURE_DAMAGE_MIN, damage)
@@ -627,6 +634,8 @@ class MatchSimulator:
         categories = ["power", "technical", "aerial", "brawling", "submission"]
         weights = [wrestler.stats.get(c, STAT_BASELINE) for c in categories]
         total = sum(weights)
+        if total <= 0:
+            return random.choice(categories)
         weights = [w / total for w in weights]
         return random.choices(categories, weights=weights, k=1)[0]
 

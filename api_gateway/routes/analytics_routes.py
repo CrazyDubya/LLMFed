@@ -63,3 +63,22 @@ def api_head_to_head(
     """Get head-to-head comparison between two wrestlers."""
     from game_service.analytics_service import head_to_head
     return head_to_head(db, world_id, wrestler_a, wrestler_b)
+
+
+@router.get("/llm-usage")
+def api_llm_usage():
+    """Get LLM cost/usage summary (API calls, total cost, budget remaining)."""
+    from game_service.analytics_service import llm_usage_summary
+    return llm_usage_summary()
+
+
+@router.get("/world/{world_id}/leaderboard")
+def api_leaderboard(
+    world_id: str,
+    metric: str = Query("win_rate", description="Sort by: win_rate, avg_match_rating, total_matches, wins"),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    """Get top performers leaderboard."""
+    from game_service.analytics_service import top_performers
+    return top_performers(db, world_id, metric, limit)

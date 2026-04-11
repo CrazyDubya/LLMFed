@@ -204,6 +204,67 @@ def head_to_head(
     }
 
 
+def llm_usage_summary() -> Dict[str, Any]:
+    """Return LLM cost/usage summary from the LLM abstraction budget tracker.
+
+    This gives operators visibility into API costs and call volumes.
+    """
+    try:
+        from llm_abstraction.provider import get_llm
+        llm = get_llm()
+        return llm.get_budget_summary()
+    except Exception as e:
+        logger.warning("Could not retrieve LLM budget summary: %s", e)
+        return {"error": str(e), "total_cost": 0, "total_calls": 0}
+
+
+def top_performers(
+    db: Session,
+    world_id: str,
+    metric: str = "win_rate",
+    limit: int = 10,
+) -> List[Dict[str, Any]]:
+    """Return top-N wrestlers by a chosen metric (win_rate, avg_rating, matches)."""
+    from models.show_models import MatchDB, MatchParticipantDB
+    from models.game_models import GameWrestlerDB
+
+    wrestlers = db.query(GameWrestlerDB).filter(
+        GameWrestlerDB.world_id == world_id
+    ).all()
+
+    leaderboard = []
+    for w in wrestlers:
+        parts = (
+            db.query(MatchParticipantDB, MatchDB)
+            .join(MatchDB, MatchParticipantDB.match_id == MatchDB.id)
+            .filter(
+                MatchParticipantDB.wrestler_id == w.id,
+                MatchDB.world_id == world_id,
+                MatchDB.winner_id.isnot(None),
+            )
+            .all()
+        )
+        total = len(parts)
+        if total == 0:
+            continue
+        wins = sum(1 for p, m in parts if m.winner_id == w.id)
+        ratings = [m.match_rating for p, m in parts if m.match_rating]
+        avg_rating = round(sum(ratings) / len(ratings), 2) if ratings else 0.0
+        leaderboard.append({
+            "wrestler_id": w.id,
+            "name": w.ring_name,
+            "total_matches": total,
+            "wins": wins,
+            "win_rate": round(wins / total, 3),
+            "avg_match_rating": avg_rating,
+        })
+
+    # Sort by requested metric
+    sort_key = metric if metric in ("win_rate", "avg_match_rating", "total_matches", "wins") else "win_rate"
+    leaderboard.sort(key=lambda x: x.get(sort_key, 0), reverse=True)
+    return leaderboard[:limit]
+
+
 def world_summary(
     db: Session,
     world_id: str,

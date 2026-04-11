@@ -231,9 +231,17 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
     debug_mode = os.getenv("DEBUG_MODE", "false").lower() == "true"
     
     if debug_mode:
+        import re
+        exc_msg = str(exc)
+        # Redact patterns that may contain secrets
+        exc_msg = re.sub(
+            r'(?i)(api[_-]?key|password|token|secret)[\s=:]+\S+',
+            r'\1=***REDACTED***',
+            exc_msg,
+        )
         details = {
             "exception_type": type(exc).__name__,
-            "exception_message": str(exc)
+            "exception_message": exc_msg,
         }
     else:
         details = None
