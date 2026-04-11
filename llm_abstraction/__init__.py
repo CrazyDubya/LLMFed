@@ -20,6 +20,12 @@ from .provider import (
     estimate_cost,
     get_llm,
     reset_llm,
+    # Error taxonomy
+    LLMError,
+    LLMTransientError,
+    LLMPermanentError,
+    LLMCircuitOpenError,
+    BudgetExceededError,
 )
 from .cache import LLMResponseCache
 from .async_support import AsyncLLM
@@ -39,6 +45,12 @@ __all__ = [
     "StreamChunk",
     # Reliability
     "CircuitBreaker",
+    # Errors
+    "LLMError",
+    "LLMTransientError",
+    "LLMPermanentError",
+    "LLMCircuitOpenError",
+    "BudgetExceededError",
     # Cost/budget
     "TokenBudget",
     "estimate_cost",

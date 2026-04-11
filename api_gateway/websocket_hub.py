@@ -9,6 +9,9 @@ Players connect to receive live updates about their world:
 
 Connection lifecycle:
     connect -> welcome message -> ping/pong heartbeat -> disconnect
+
+A background reaper task periodically closes stale connections that
+haven't sent a heartbeat within HEARTBEAT_TIMEOUT_SECONDS.
 """
 
 import asyncio
@@ -23,6 +26,9 @@ logger = logging.getLogger(__name__)
 # Heartbeat interval — clients should send ping within this window
 HEARTBEAT_TIMEOUT_SECONDS = 60
 
+# How often the reaper checks for stale connections
+_REAPER_INTERVAL_SECONDS = 30
+
 
 class ConnectionManager:
     """Manages WebSocket connections grouped by world_id."""
@@ -30,8 +36,10 @@ class ConnectionManager:
     def __init__(self):
         # world_id -> set of connected websockets
         self.active_connections: Dict[str, Set[WebSocket]] = {}
-        # websocket -> last activity timestamp (for heartbeat tracking)
+        # websocket -> (world_id, last activity timestamp)
         self._last_activity: Dict[WebSocket, float] = {}
+        # reverse lookup: websocket -> world_id (needed by reaper)
+        self._ws_to_world: Dict[WebSocket, str] = {}
 
     async def connect(self, websocket: WebSocket, world_id: str):
         """Accept and register a new connection."""
@@ -40,9 +48,10 @@ class ConnectionManager:
             self.active_connections[world_id] = set()
         self.active_connections[world_id].add(websocket)
         self._last_activity[websocket] = time.monotonic()
+        self._ws_to_world[websocket] = world_id
         logger.info(
-            f"WebSocket connected to world {world_id} "
-            f"({len(self.active_connections[world_id])} connections)"
+            "WebSocket connected to world %s (%d connections)",
+            world_id, len(self.active_connections[world_id]),
         )
 
     def disconnect(self, websocket: WebSocket, world_id: str):
@@ -52,6 +61,7 @@ class ConnectionManager:
             if not self.active_connections[world_id]:
                 del self.active_connections[world_id]
         self._last_activity.pop(websocket, None)
+        self._ws_to_world.pop(websocket, None)
 
     def touch(self, websocket: WebSocket):
         """Update the last-activity timestamp for heartbeat tracking."""
@@ -59,26 +69,27 @@ class ConnectionManager:
 
     async def broadcast_to_world(self, world_id: str, message: dict):
         """Send a message to all connections in a world."""
-        if world_id not in self.active_connections:
+        connections = self.active_connections.get(world_id)
+        if not connections:
             return
 
+        # Snapshot the set to avoid RuntimeError if it changes during iteration
         dead: Set[WebSocket] = set()
-        for connection in self.active_connections[world_id]:
+        for connection in list(connections):
             try:
                 await connection.send_json(message)
             except WebSocketDisconnect:
                 dead.add(connection)
             except Exception as e:
                 logger.warning(
-                    f"Failed to send WebSocket message to world {world_id}: "
-                    f"{type(e).__name__}: {e}"
+                    "Failed to send WebSocket message to world %s: %s: %s",
+                    world_id, type(e).__name__, e,
                 )
                 dead.add(connection)
 
         # Clean up dead connections
         for conn in dead:
-            self.active_connections[world_id].discard(conn)
-            self._last_activity.pop(conn, None)
+            self.disconnect(conn, world_id)
 
     async def send_personal(self, websocket: WebSocket, message: dict):
         """Send a message to a specific connection."""
@@ -88,8 +99,8 @@ class ConnectionManager:
             logger.debug("WebSocket already disconnected during personal send")
         except Exception as e:
             logger.warning(
-                f"Failed to send personal WebSocket message: "
-                f"{type(e).__name__}: {e}"
+                "Failed to send personal WebSocket message: %s: %s",
+                type(e).__name__, e,
             )
 
     def get_connection_count(self, world_id: Optional[str] = None) -> int:
@@ -102,16 +113,69 @@ class ConnectionManager:
         """Return (websocket, world_id) pairs that haven't pinged recently."""
         now = time.monotonic()
         stale = []
-        for world_id, conns in self.active_connections.items():
-            for ws in conns:
-                last = self._last_activity.get(ws, 0)
-                if now - last > HEARTBEAT_TIMEOUT_SECONDS:
+        for ws, last in list(self._last_activity.items()):
+            if now - last > HEARTBEAT_TIMEOUT_SECONDS:
+                world_id = self._ws_to_world.get(ws)
+                if world_id:
                     stale.append((ws, world_id))
         return stale
+
+    async def close_stale_connections(self) -> int:
+        """Close and remove all stale connections. Returns count closed."""
+        stale = self.get_stale_connections()
+        for ws, world_id in stale:
+            logger.info("Closing stale WebSocket for world %s", world_id)
+            self.disconnect(ws, world_id)
+            try:
+                await ws.close(code=1000, reason="heartbeat timeout")
+            except Exception:
+                pass  # already dead
+        return len(stale)
+
+    def stats(self) -> dict:
+        """Return connection statistics for monitoring."""
+        return {
+            "total_connections": self.get_connection_count(),
+            "worlds": len(self.active_connections),
+            "per_world": {
+                wid: len(conns) for wid, conns in self.active_connections.items()
+            },
+        }
 
 
 # Singleton manager
 manager = ConnectionManager()
+
+
+# ---------------------------------------------------------------------------
+# Background reaper task
+# ---------------------------------------------------------------------------
+
+_reaper_task: Optional[asyncio.Task] = None
+
+
+async def _reaper_loop():
+    """Periodically close stale connections."""
+    while True:
+        await asyncio.sleep(_REAPER_INTERVAL_SECONDS)
+        try:
+            closed = await manager.close_stale_connections()
+            if closed:
+                logger.info("Reaper closed %d stale WebSocket connection(s)", closed)
+        except Exception as e:
+            logger.error("WebSocket reaper error: %s", e)
+
+
+def start_reaper():
+    """Start the stale-connection reaper as a background task.
+
+    Safe to call multiple times — only one reaper runs at a time.
+    Call from a FastAPI ``startup`` event handler.
+    """
+    global _reaper_task
+    if _reaper_task is None or _reaper_task.done():
+        _reaper_task = asyncio.ensure_future(_reaper_loop())
+        logger.info("WebSocket stale-connection reaper started")
 
 
 # ---------------------------------------------------------------------------
@@ -148,9 +212,24 @@ async def websocket_endpoint(websocket: WebSocket, world_id: str):
             "message": "Connected to world feed",
         })
 
-        # Keep connection alive, handle incoming messages
+        # Keep connection alive, handle incoming messages.
+        # asyncio.wait_for enforces a receive timeout so silent clients
+        # don't hold connections open forever.
         while True:
-            data = await websocket.receive_text()
+            try:
+                data = await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=HEARTBEAT_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                # Client hasn't sent anything within the heartbeat window
+                logger.info("WebSocket timed out for world %s", world_id)
+                await manager.send_personal(websocket, {
+                    "type": "error",
+                    "message": "Heartbeat timeout — closing connection",
+                })
+                break
+
             manager.touch(websocket)
             try:
                 msg = json.loads(data)
@@ -174,8 +253,8 @@ async def websocket_endpoint(websocket: WebSocket, world_id: str):
                     "message": "Invalid JSON",
                 })
     except WebSocketDisconnect:
-        manager.disconnect(websocket, world_id)
-        logger.info(f"WebSocket disconnected from world {world_id}")
+        logger.info("WebSocket disconnected from world %s", world_id)
     except Exception as e:
-        logger.error(f"WebSocket error for world {world_id}: {type(e).__name__}: {e}")
+        logger.error("WebSocket error for world %s: %s: %s", world_id, type(e).__name__, e)
+    finally:
         manager.disconnect(websocket, world_id)

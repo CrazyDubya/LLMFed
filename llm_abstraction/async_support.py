@@ -1,8 +1,12 @@
 """
 Async wrappers for LLM providers.
 
-Provides async generate/stream methods that run the synchronous provider
-calls in a thread executor, plus asyncio.gather-based batch generation.
+Provides async generate/stream methods that offload synchronous provider
+calls to a thread executor (so the event loop is never blocked), along
+with ``asyncio.gather``-based batch generation with bounded concurrency.
+
+Retry backoff inside the thread executor uses ``asyncio.sleep`` via the
+async retry helper to avoid blocking the loop during waits.
 """
 
 import asyncio
@@ -13,6 +17,7 @@ from llm_abstraction.provider import (
     LLMAbstraction,
     LLMMessage,
     LLMResponse,
+    _async_retry_with_backoff,
 )
 from llm_abstraction.cache import LLMResponseCache
 
@@ -35,12 +40,14 @@ class AsyncLLM:
         cache_max_size: int = 256,
         cache_ttl: float = 300.0,
         enable_cache: bool = True,
+        max_retries: int = 2,
     ):
         if llm is None:
             from llm_abstraction.provider import get_llm
             llm = get_llm()
         self._llm = llm
         self._cache = LLMResponseCache(max_size=cache_max_size, ttl_seconds=cache_ttl) if enable_cache else None
+        self._max_retries = max_retries
 
     async def generate(
         self,
@@ -51,7 +58,8 @@ class AsyncLLM:
         use_cache: bool = True,
         **kwargs,
     ) -> LLMResponse:
-        """Async generate — runs the sync provider in a thread executor."""
+        """Async generate — runs the sync provider in a thread executor
+        with non-blocking retry backoff."""
         messages_dicts = []
         if system_message:
             messages_dicts.append({"role": "system", "content": system_message})
@@ -67,15 +75,21 @@ class AsyncLLM:
                 return cached
 
         loop = asyncio.get_running_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: self._llm.generate(
-                prompt=prompt,
-                system_message=system_message,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **kwargs,
-            ),
+
+        async def _attempt():
+            return await loop.run_in_executor(
+                None,
+                lambda: self._llm.generate(
+                    prompt=prompt,
+                    system_message=system_message,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **kwargs,
+                ),
+            )
+
+        response = await _async_retry_with_backoff(
+            _attempt, max_retries=self._max_retries,
         )
 
         # Store in cache
@@ -106,14 +120,20 @@ class AsyncLLM:
                 return cached
 
         loop = asyncio.get_running_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: self._llm.generate_with_messages(
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **kwargs,
-            ),
+
+        async def _attempt():
+            return await loop.run_in_executor(
+                None,
+                lambda: self._llm.generate_with_messages(
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **kwargs,
+                ),
+            )
+
+        response = await _async_retry_with_backoff(
+            _attempt, max_retries=self._max_retries,
         )
 
         if use_cache and self._cache is not None:

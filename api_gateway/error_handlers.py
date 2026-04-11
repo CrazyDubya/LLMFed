@@ -233,12 +233,14 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
     if debug_mode:
         import re
         exc_msg = str(exc)
-        # Redact patterns that may contain secrets
-        exc_msg = re.sub(
-            r'(?i)(api[_-]?key|password|token|secret)[\s=:]+\S+',
-            r'\1=***REDACTED***',
-            exc_msg,
-        )
+        # Redact patterns that may contain secrets — covers key=val,
+        # "key": "val", Authorization headers, and Bearer tokens.
+        _REDACT_PATTERNS = [
+            r'(?i)(api[_-]?key|password|token|secret|authorization|bearer)[\s=:"\']+\S+',
+            r'(?i)(sk-|pk-|ghp_|gho_|xox[bpsa]-)\S+',
+        ]
+        for pat in _REDACT_PATTERNS:
+            exc_msg = re.sub(pat, r'***REDACTED***', exc_msg)
         details = {
             "exception_type": type(exc).__name__,
             "exception_message": exc_msg,

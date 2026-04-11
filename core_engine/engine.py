@@ -224,7 +224,10 @@ class Engine:
     def _process_one_tick(self, db) -> Optional[List[TickResult]]:
         """Process a single tick across all roles.
 
-        Returns the list of TickResults, or None if a finisher ended the match.
+        All DB writes within a tick are staged (``db.add``) and committed
+        once at the end, so either the entire tick persists or none of it
+        does.  Returns the list of TickResults, or None if a finisher
+        ended the match.
         """
         tick_index = self.scheduler.next_tick()
         self.state.current_tick = tick_index
@@ -240,9 +243,14 @@ class Engine:
             for agent_db in role_agents:
                 result = self._process_agent(db, agent_db, role, tick_id, tick_index)
                 if result is None:
-                    # Finisher — match over
+                    # Finisher — commit staged writes then signal match over
+                    db.commit()
                     return None
                 results.append(result)
+
+        # Single commit for the entire tick — keeps engine_request and
+        # narrative_log rows atomically consistent.
+        db.commit()
         return results
 
     # ------------------------------------------------------------------
@@ -258,13 +266,10 @@ class Engine:
         context = self._build_context(agent_db, role, tick_index)
         request_id = str(uuid.uuid4())
 
-        # Call LLM
+        # Call LLM — permanent errors (auth/config) propagate;
+        # transient errors are handled inside send_prompt via fallback.
         prompt_payload = PromptBuilder.build_prompt(context, self.promoter_hints)
-        try:
-            action_data = self.llm_client.send_prompt(prompt_payload)
-        except Exception as e:
-            logger.error(f"LLM send_prompt error for {agent_id}: {e}")
-            action_data = {"action_id": "noop", "description": "Stub action", "meta": {}}
+        action_data = self.llm_client.send_prompt(prompt_payload)
 
         # Persist engine request
         self._persist_engine_request(db, request_id, agent_id, tick_index, context)
@@ -369,12 +374,12 @@ class Engine:
                 self.state.heat += adj
 
     # ------------------------------------------------------------------
-    # Private: persistence helpers
+    # Private: persistence helpers (add to session only — caller commits)
     # ------------------------------------------------------------------
 
     @staticmethod
     def _persist_engine_request(db, request_id: str, agent_id: str, tick_index: int, context: EventContext) -> None:
-        """Write an EngineRequestDB row and commit."""
+        """Stage an EngineRequestDB row (no commit — batched per tick)."""
         db.add(EngineRequestDB(
             request_id=request_id,
             agent_id=agent_id,
@@ -382,15 +387,10 @@ class Engine:
             context_json=context.model_dump_json(),
             status="processed",
         ))
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
 
     @staticmethod
     def _persist_narrative_log(db, tick_id: str, tick_index: int, agent_id: str, role: str, description: str) -> None:
-        """Write a NarrativeLogDB row and commit."""
+        """Stage a NarrativeLogDB row (no commit — batched per tick)."""
         db.add(NarrativeLogDB(
             tick_id=tick_id,
             time_index=tick_index,
@@ -398,11 +398,6 @@ class Engine:
             role=role,
             description=description,
         ))
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
 
 
 # ---------------------------------------------------------------------------

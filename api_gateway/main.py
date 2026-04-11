@@ -29,7 +29,8 @@ from api_gateway.error_handlers import register_error_handlers
 from api_gateway.logging_config import setup_logging, logging_middleware
 from api_gateway.game_routes import router as game_router
 from api_gateway.routes.core_routes import router as core_router
-from api_gateway.websocket_hub import websocket_endpoint
+from api_gateway.routes.metrics_routes import router as metrics_router
+from api_gateway.websocket_hub import websocket_endpoint, start_reaper
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -127,10 +128,19 @@ async def add_security_headers(request: Request, call_next):
 register_error_handlers(app)
 
 # ---------------------------------------------------------------------------
+# Startup / shutdown
+# ---------------------------------------------------------------------------
+@app.on_event("startup")
+async def _on_startup():
+    start_reaper()
+
+
+# ---------------------------------------------------------------------------
 # Routers
 # ---------------------------------------------------------------------------
 app.include_router(game_router)
 app.include_router(core_router)
+app.include_router(metrics_router)
 
 
 # ---------------------------------------------------------------------------

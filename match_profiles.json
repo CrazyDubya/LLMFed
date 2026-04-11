@@ -1,0 +1,31 @@
+{
+  "profiles": {
+    "realistic": {
+      "FINISHER_DAMAGE": 25,
+      "BOTCH_MAX_CHANCE": 0.12,
+      "NEAR_FALL_CHANCE": 0.20,
+      "INTERFERENCE_MAX_CHANCE": 0.25,
+      "SHOOT_MAX_CHANCE": 0.04,
+      "UPSET_CHANCE": 0.06,
+      "FINISH_BASE_CHANCE": 0.25
+    },
+    "arcade": {
+      "FINISHER_DAMAGE": 15,
+      "NEAR_FALL_CHANCE": 0.35,
+      "FINISH_BASE_CHANCE": 0.4,
+      "BOTCH_MAX_CHANCE": 0.05,
+      "TAUNT_CHANCE": 0.25,
+      "REVERSAL_DAMAGE_MULTIPLIER": 0.5,
+      "COMEBACK_LOW_HEALTH_BONUS": 0.25
+    },
+    "storyline_heavy": {
+      "INTERFERENCE_MAX_CHANCE": 0.50,
+      "SHOOT_MAX_CHANCE": 0.10,
+      "FACTION_BEATDOWN_CHANCE": 0.40,
+      "FACTION_SAVE_CHANCE": 0.30,
+      "NEAR_FALL_CHANCE": 0.30,
+      "UPSET_CHANCE": 0.12
+    }
+  },
+  "active_profile": null
+}
