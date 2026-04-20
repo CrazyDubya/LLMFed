@@ -1,3 +1,5 @@
+from fastapi_cache.decorator import cache
+from sqlalchemy.future import select
 """
 Core API routes extracted from main.py.
 
@@ -12,8 +14,9 @@ from typing import List
 
 from dataclasses import asdict
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
+from api_gateway.dependencies import get_engine_dependency, get_llm_dependency
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.entities import (
     Agent, AgentCreateData, AgentUpdateData,
@@ -23,7 +26,7 @@ from models.entities import (
 from models.db_models import EngineRequestDB, NarrativeLogDB
 from agent_service import crud
 from agent_service.database import get_db
-from core_engine.engine import get_engine
+
 from core_engine.prompt_builder import PromptBuilder
 from api_gateway.logging_config import performance_monitor
 
@@ -37,7 +40,7 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 @router.post("/agents", summary="Create Agent", response_model=Agent, status_code=201, tags=["agents"])
-def create_agent_endpoint(request: Request, agent_data: AgentCreateData, db: Session = Depends(get_db)):
+async def create_agent_endpoint(request: Request, agent_data: AgentCreateData, db: AsyncSession = Depends(get_db)):
     """Creates a new LLM agent in the database."""
     logger.info(f"Received request to create agent for user: {agent_data.user_id}")
     try:
@@ -48,23 +51,23 @@ def create_agent_endpoint(request: Request, agent_data: AgentCreateData, db: Ses
         raise HTTPException(status_code=422, detail=f"Invalid llm_config format: {e}")
 
     try:
-        db_agent = crud.create_agent(db=db, agent_data=agent_data)
+        db_agent = await crud.create_agent(db=db, agent_data=agent_data)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return db_agent
 
 
 @router.get("/agents/{agent_id}", summary="Get Agent by ID", response_model=Agent, tags=["agents"])
-def get_agent_endpoint(agent_id: str, db: Session = Depends(get_db)):
+async def get_agent_endpoint(agent_id: str, db: AsyncSession = Depends(get_db)):
     """Retrieves details for a specific agent by their ID."""
-    db_agent = crud.get_agent_by_id(db=db, agent_id=agent_id)
+    db_agent = await crud.get_agent_by_id(db=db, agent_id=agent_id)
     if db_agent is None:
         raise HTTPException(status_code=404, detail=f"Agent with ID '{agent_id}' not found.")
     return db_agent
 
 
 @router.patch("/agents/{agent_id}", summary="Update Agent", response_model=Agent, tags=["agents"])
-def update_agent_endpoint(agent_id: str, update_data: AgentUpdateData, db: Session = Depends(get_db)):
+async def update_agent_endpoint(agent_id: str, update_data: AgentUpdateData, db: AsyncSession = Depends(get_db)):
     """Updates specific fields of an existing agent."""
     if update_data.llm_config is not None:
         try:
@@ -74,7 +77,7 @@ def update_agent_endpoint(agent_id: str, update_data: AgentUpdateData, db: Sessi
             raise HTTPException(status_code=422, detail=f"Invalid llm_config format: {e}")
 
     try:
-        updated_agent = crud.update_agent(db=db, agent_id=agent_id, update_data=update_data)
+        updated_agent = await crud.update_agent(db=db, agent_id=agent_id, update_data=update_data)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     if updated_agent is None:
@@ -83,12 +86,12 @@ def update_agent_endpoint(agent_id: str, update_data: AgentUpdateData, db: Sessi
 
 
 @router.delete("/agents/{agent_id}", summary="Delete Agent", status_code=204, tags=["agents"])
-def delete_agent_endpoint(agent_id: str, db: Session = Depends(get_db)):
+async def delete_agent_endpoint(agent_id: str, db: AsyncSession = Depends(get_db)):
     """Deletes an agent from the database."""
-    existing_agent = crud.get_agent_by_id(db=db, agent_id=agent_id)
+    existing_agent = await crud.get_agent_by_id(db=db, agent_id=agent_id)
     if not existing_agent:
         raise HTTPException(status_code=404, detail=f"Agent with ID '{agent_id}' not found.")
-    crud.delete_agent(db=db, agent_id=agent_id)
+    await crud.delete_agent(db=db, agent_id=agent_id)
     return None
 
 
@@ -97,25 +100,26 @@ def delete_agent_endpoint(agent_id: str, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 @router.get("/federations", summary="List All Federations", response_model=List[Federation], tags=["federations"])
-def list_federations_endpoint(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+@cache(expire=60)
+async def list_federations_endpoint(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):
     """Retrieves a list of all federations, with optional pagination."""
-    return crud.get_federations(db=db, skip=skip, limit=limit)
+    return await crud.get_federations(db=db, skip=skip, limit=limit)
 
 
 @router.post("/federations", summary="Create Federation", response_model=Federation, status_code=201, tags=["federations"])
-def create_federation_endpoint(fed_data: FederationCreateData, db: Session = Depends(get_db)):
+async def create_federation_endpoint(fed_data: FederationCreateData, db: AsyncSession = Depends(get_db)):
     """Creates a new Wrestling Federation."""
     try:
-        db_federation = crud.create_federation(db=db, fed_data=fed_data)
+        db_federation = await crud.create_federation(db=db, fed_data=fed_data)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return db_federation
 
 
 @router.get("/federations/{federation_id}", summary="Get Federation by ID", response_model=Federation, tags=["federations"])
-def get_federation_endpoint(federation_id: str, db: Session = Depends(get_db)):
+async def get_federation_endpoint(federation_id: str, db: AsyncSession = Depends(get_db)):
     """Retrieves details for a specific federation by its ID."""
-    db_federation = crud.get_federation_by_id(db=db, federation_id=federation_id)
+    db_federation = await crud.get_federation_by_id(db=db, federation_id=federation_id)
     if db_federation is None:
         raise HTTPException(status_code=404, detail=f"Federation with ID '{federation_id}' not found.")
     return db_federation
@@ -127,19 +131,19 @@ def get_federation_endpoint(federation_id: str, db: Session = Depends(get_db)):
     response_model=List[Agent],
     tags=["federations"],
 )
-def list_agents_in_federation_endpoint(federation_id: str, db: Session = Depends(get_db)):
+def list_agents_in_federation_endpoint(federation_id: str, db: AsyncSession = Depends(get_db)):
     """Retrieves all agents belonging to a specific federation."""
-    db_federation = crud.get_federation_by_id(db=db, federation_id=federation_id)
+    db_federation = await crud.get_federation_by_id(db=db, federation_id=federation_id)
     if db_federation is None:
         raise HTTPException(status_code=404, detail=f"Federation with ID '{federation_id}' not found.")
-    return crud.get_agents_by_federation_id(db=db, federation_id=federation_id)
+    return await crud.get_agents_by_federation_id(db=db, federation_id=federation_id)
 
 
 @router.patch("/federations/{federation_id}", summary="Update Federation", response_model=Federation, tags=["federations"])
-def update_federation_endpoint(federation_id: str, update_data: FederationUpdateData, db: Session = Depends(get_db)):
+async def update_federation_endpoint(federation_id: str, update_data: FederationUpdateData, db: AsyncSession = Depends(get_db)):
     """Updates specific fields of an existing federation."""
     try:
-        updated_federation = crud.update_federation(db=db, federation_id=federation_id, update_data=update_data)
+        updated_federation = await crud.update_federation(db=db, federation_id=federation_id, update_data=update_data)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     if updated_federation is None:
@@ -148,15 +152,15 @@ def update_federation_endpoint(federation_id: str, update_data: FederationUpdate
 
 
 @router.delete("/federations/{federation_id}", summary="Delete Federation", status_code=204, tags=["federations"])
-def delete_federation_endpoint(federation_id: str, db: Session = Depends(get_db)):
+async def delete_federation_endpoint(federation_id: str, db: AsyncSession = Depends(get_db)):
     """Deletes a federation. Requires the federation to be empty of agents."""
-    existing = crud.get_federation_by_id(db=db, federation_id=federation_id)
+    existing = await crud.get_federation_by_id(db=db, federation_id=federation_id)
     if not existing:
         raise HTTPException(status_code=404, detail=f"Federation with ID '{federation_id}' not found.")
 
-    deleted = crud.delete_federation(db=db, federation_id=federation_id)
+    deleted = await crud.delete_federation(db=db, federation_id=federation_id)
     if not deleted:
-        agents = crud.get_agents_by_federation_id(db, federation_id)
+        agents = await crud.get_agents_by_federation_id(db, federation_id)
         if agents:
             raise HTTPException(
                 status_code=409,
@@ -171,14 +175,14 @@ def delete_federation_endpoint(federation_id: str, db: Session = Depends(get_db)
 # ---------------------------------------------------------------------------
 
 @router.post("/agents/{agent_id}/actions", summary="Submit Agent Action", status_code=202, tags=["agents"])
-def submit_agent_action(agent_id: str, action_response: AgentActionResponse, db: Session = Depends(get_db)):
+async def submit_agent_action(agent_id: str, action_response: AgentActionResponse, db: AsyncSession = Depends(get_db)):
     """Endpoint for an agent to submit its chosen action in response to an event."""
-    db_agent = crud.get_agent_by_id(db=db, agent_id=agent_id)
+    db_agent = await crud.get_agent_by_id(db=db, agent_id=agent_id)
     if not db_agent:
         raise HTTPException(status_code=404, detail=f"Agent with ID '{agent_id}' not found.")
 
     if action_response.target_agent_id:
-        db_target = crud.get_agent_by_id(db=db, agent_id=action_response.target_agent_id)
+        db_target = await crud.get_agent_by_id(db=db, agent_id=action_response.target_agent_id)
         if not db_target:
             raise HTTPException(status_code=404, detail=f"Target agent with ID '{action_response.target_agent_id}' not found.")
 
@@ -190,16 +194,16 @@ def submit_agent_action(agent_id: str, action_response: AgentActionResponse, db:
 
 
 @router.post("/agents/{agent_id}/subscribe", summary="Subscribe Agent to Events", tags=["agents"])
-def subscribe_agent(agent_id: str, webhook_url: str = Query(...), db: Session = Depends(get_db)):
-    db_agent = crud.get_agent_by_id(db=db, agent_id=agent_id)
+async def subscribe_agent(agent_id: str, webhook_url: str = Query(...), db: AsyncSession = Depends(get_db)):
+    db_agent = await crud.get_agent_by_id(db=db, agent_id=agent_id)
     if not db_agent:
         raise HTTPException(status_code=404, detail=f"Agent with ID '{agent_id}' not found.")
     return {"message": f"Subscription request for agent {agent_id} to URL: {webhook_url} (DB update TBD)"}
 
 
 @router.post("/federations/{federation_id}/subscribe", summary="Subscribe to Federation Events", tags=["federations"])
-def subscribe_federation(federation_id: str, webhook_url: str = Query(...), db: Session = Depends(get_db)):
-    db_federation = crud.get_federation_by_id(db=db, federation_id=federation_id)
+async def subscribe_federation(federation_id: str, webhook_url: str = Query(...), db: AsyncSession = Depends(get_db)):
+    db_federation = await crud.get_federation_by_id(db=db, federation_id=federation_id)
     if not db_federation:
         raise HTTPException(status_code=404, detail=f"Federation with ID '{federation_id}' not found.")
     return {"message": f"Subscription request for federation {federation_id} to URL: {webhook_url} (DB update TBD)"}
@@ -210,10 +214,10 @@ def subscribe_federation(federation_id: str, webhook_url: str = Query(...), db: 
 # ---------------------------------------------------------------------------
 
 @router.post("/engine/advance", summary="Advance Simulation Ticks", tags=["engine"])
-def advance_engine(n_ticks: int = Query(1, ge=1, description="Number of ticks to advance")):
+async def advance_engine(n_ticks: int = Query(1, ge=1, description="Number of ticks to advance"), engine=Depends(get_engine_dependency)):
     """Advance the core engine by n_ticks ticks."""
     try:
-        results = get_engine().run_ticks(n_ticks)
+        results = await engine.run_ticks(n_ticks)
         return [asdict(r) for r in results]
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -223,9 +227,9 @@ def advance_engine(n_ticks: int = Query(1, ge=1, description="Number of ticks to
 
 
 @router.get("/engine/requests", summary="List Engine Requests", tags=["engine"])
-def list_engine_requests(limit: int = 10, db: Session = Depends(get_db)):
+async def list_engine_requests(limit: int = 10, db: AsyncSession = Depends(get_db)):
     """Show persisted engine requests."""
-    requests = db.query(EngineRequestDB).order_by(EngineRequestDB.due_tick.desc()).limit(limit).all()
+    requests = await db.execute(select(EngineRequestDB)).order_by(EngineRequestDB.due_tick.desc()).limit(limit).scalars().all()
     return [
         {
             "request_id": r.request_id,
@@ -239,9 +243,9 @@ def list_engine_requests(limit: int = 10, db: Session = Depends(get_db)):
 
 
 @router.get("/engine/narrative", summary="List Narrative Logs", tags=["engine"])
-def list_narrative_logs(limit: int = Query(100, ge=1, le=1000), db: Session = Depends(get_db)):
+async def list_narrative_logs(limit: int = Query(100, ge=1, le=1000), db: AsyncSession = Depends(get_db)):
     """Retrieve recent narrative log entries."""
-    logs = db.query(NarrativeLogDB).order_by(NarrativeLogDB.created_at.desc()).limit(limit).all()
+    logs = await db.execute(select(NarrativeLogDB)).order_by(NarrativeLogDB.created_at.desc()).limit(limit).scalars().all()
     return [
         {
             "id": log.id,
@@ -257,7 +261,7 @@ def list_narrative_logs(limit: int = Query(100, ge=1, le=1000), db: Session = De
 
 
 @router.get("/engine/debug", summary="Engine Debug Info", tags=["engine"])
-def engine_debug():
+async def engine_debug():
     """Return engine and database status. Only available in debug mode."""
     debug_enabled = os.getenv("DEBUG_MODE", "false").lower() == "true"
     if not debug_enabled:
@@ -266,7 +270,7 @@ def engine_debug():
     from agent_service.database import engine as db_engine
     from sqlalchemy import inspect
 
-    eng = get_engine()
+    eng = engine
     inspector = inspect(db_engine)
     return {
         "tables": inspector.get_table_names(),
@@ -278,9 +282,9 @@ def engine_debug():
 
 
 @router.post("/prompter/hints", summary="Prompter Hints", tags=["engine"])
-def prompter_hints(request: PrompterHintRequest):
+async def prompter_hints(request: PrompterHintRequest):
     """Accepts promoter hints, stores them, and builds LLM prompt."""
-    eng = get_engine()
+    eng = engine
     eng.set_hints(request.hints)
     prompt = PromptBuilder.build_prompt(request.context, request.hints)
     return prompt
@@ -291,7 +295,7 @@ def prompter_hints(request: PrompterHintRequest):
 # ---------------------------------------------------------------------------
 
 @router.get("/health", tags=["health"])
-def health_check():
+async def health_check():
     """Enhanced health check endpoint."""
     from datetime import datetime, timezone
     return {
@@ -305,7 +309,7 @@ def health_check():
 
 
 @router.get("/metrics", tags=["monitoring"], summary="Performance Metrics")
-def get_performance_metrics():
+async def get_performance_metrics():
     """Get performance metrics for API endpoints."""
     from datetime import datetime, timezone
     return {
@@ -315,14 +319,14 @@ def get_performance_metrics():
 
 
 @router.post("/metrics/reset", tags=["monitoring"], summary="Reset Metrics")
-def reset_performance_metrics():
+async def reset_performance_metrics():
     """Reset performance metrics."""
     performance_monitor.reset_metrics()
     return {"message": "Metrics reset successfully"}
 
 
 @router.get("/api/tags", summary="List available LLM models from proxy", tags=["engine"])
-def list_proxy_models():
+async def list_proxy_models():
     """Fetch model IDs from the local LLM proxy."""
     base = os.getenv("OPENAI_API_BASE", "http://127.0.0.1:11434/v1")
     url = f"{base.rstrip('/')}/models"
@@ -345,7 +349,7 @@ class SchedulerConfig(BaseModel):
 
 
 @router.get("/scheduler/status", summary="Get auto-scheduler status", tags=["engine"])
-def scheduler_status():
+async def scheduler_status():
     from game_service.auto_scheduler import scheduler as auto_scheduler
     return auto_scheduler.status()
 
@@ -365,21 +369,21 @@ async def scheduler_stop():
 
 
 @router.post("/scheduler/interval", summary="Change tick interval", tags=["engine"])
-def scheduler_set_interval(config: SchedulerConfig):
+async def scheduler_set_interval(config: SchedulerConfig):
     from game_service.auto_scheduler import scheduler as auto_scheduler
     auto_scheduler.set_interval(config.interval_seconds)
     return auto_scheduler.status()
 
 
 @router.post("/scheduler/pause/{world_id}", summary="Pause a world", tags=["engine"])
-def scheduler_pause_world(world_id: str):
+async def scheduler_pause_world(world_id: str):
     from game_service.auto_scheduler import scheduler as auto_scheduler
     auto_scheduler.pause_world(world_id)
     return {"paused": world_id}
 
 
 @router.post("/scheduler/resume/{world_id}", summary="Resume a world", tags=["engine"])
-def scheduler_resume_world(world_id: str):
+async def scheduler_resume_world(world_id: str):
     from game_service.auto_scheduler import scheduler as auto_scheduler
     auto_scheduler.resume_world(world_id)
     return {"resumed": world_id}
@@ -390,18 +394,18 @@ def scheduler_resume_world(world_id: str):
 # ---------------------------------------------------------------------------
 
 @router.get("/worlds/{world_id}/shows", summary="List all shows in a world", tags=["engine"])
-def list_world_shows(
+async def list_world_shows(
     world_id: str,
     limit: int = Query(50, ge=1, le=200),
     completed_only: bool = False,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """List all shows across all federations in a world."""
     from models.game_models import ShowDB, GameFederationDB
     query = db.query(ShowDB).filter(ShowDB.world_id == world_id)
     if completed_only:
         query = query.filter(ShowDB.is_completed == True)  # noqa: E712
-    shows = query.order_by(ShowDB.game_date.desc()).limit(limit).all()
+    shows = query.order_by(ShowDB.game_date.desc()).limit(limit).scalars().all()
 
     results = []
     for show in shows:

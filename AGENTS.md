@@ -76,3 +76,39 @@ python -m pytest tests/ -v
 
 - Commits: focused; describe feature and scope (e.g. `🚀 UI: council presets + streaming fixes`).
 - PRs: summary, screenshots for UI changes, reproduction steps. Note backend or dependency changes (e.g. `pip install -e .`, `uv sync`). Update DEVLOG.md for notable changes between commits.
+
+## Architectural Guidelines for Future Agents
+
+When building features or refactoring the LLMFed codebase, adhere to the following architectural principles:
+
+1. **Strict Dependency Injection:**
+   - Avoid global singletons (e.g., `get_engine()`, `get_llm()`).
+   - Use FastAPI's `Depends()` for all service, repository, and database dependencies in route handlers.
+   - Inject dependencies into class constructors rather than importing global instances.
+
+2. **Asynchronous First:**
+   - New endpoints, database operations, and network calls (especially LLM requests) must be fully asynchronous.
+   - Use `async def` for FastAPI routes.
+   - Use `sqlalchemy.ext.asyncio` for database queries.
+   - Use asynchronous HTTP clients (e.g., `httpx` or `aiohttp`) for external API integrations.
+
+3. **Separation of Concerns & Event Sourcing:**
+   - The Core Engine should not interact directly with SQLAlchemy models or manage database commits.
+   - The Engine should yield pure domain events or state changes.
+   - A distinct Repository layer should subscribe to these events and handle persistence asynchronously.
+
+4. **Strict Typing and Validation:**
+   - Use Pydantic models for all data crossing boundaries (e.g., Engine to LLM, API to Engine).
+   - Do not pass raw `dict` objects. Define explicit `ActionRequest` and `ActionResponse` models.
+
+5. **Robust Error Handling:**
+   - Do not catch generic `Exception`.
+   - Use the custom exception hierarchy in `core_engine/exceptions.py` (e.g., `LLMNetworkError`, `GameLogicError`, `LLMFormatError`).
+   - Map domain exceptions to appropriate HTTP status codes in the FastAPI exception handlers.
+
+6. **Observability and Performance:**
+   - Avoid custom performance tracking dictionaries. Instead, integrate and use OpenTelemetry for metrics and tracing.
+   - Utilize Redis (via `fastapi-cache2`) for caching read-heavy or frequently generated static data (like prompts or static configurations).
+
+7. **Prompt Engineering:**
+   - Use Jinja2 templates for constructing LLM prompts instead of Python string formatting. Keep prompt logic declarative and separate from business logic.

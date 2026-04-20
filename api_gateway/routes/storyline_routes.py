@@ -3,7 +3,7 @@
 import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent_service.database import get_db
 from api_gateway.security import get_current_user, TokenData
@@ -29,11 +29,11 @@ def _handle_value_error(e: ValueError):
 # ---------------------------------------------------------------------------
 
 @router.get("/worlds/{world_id}/storylines", response_model=List[StorylineResponse])
-def api_list_storylines(
+async def api_list_storylines(
     world_id: str,
     status: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """List storylines in a world."""
     query = db.query(StorylineDB).filter(StorylineDB.world_id == world_id)
@@ -62,11 +62,11 @@ def api_list_storylines(
 
 
 @router.post("/worlds/{world_id}/storylines", response_model=StorylineResponse, status_code=201)
-def api_create_storyline(
+async def api_create_storyline(
     world_id: str,
     data: StorylineCreate,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Promoter creates a storyline between wrestlers."""
     from game_service.storyline_service import create_storyline as sl_create
@@ -100,11 +100,11 @@ def api_create_storyline(
 
 
 @router.patch("/storylines/{storyline_id}", response_model=StorylineResponse)
-def api_advance_storyline(
+async def api_advance_storyline(
     storyline_id: str,
     data: StorylineAdvance,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Advance a storyline's status or boost its heat."""
     storyline = db.query(StorylineDB).filter_by(id=storyline_id).first()

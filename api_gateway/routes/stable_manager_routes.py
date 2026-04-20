@@ -3,7 +3,7 @@
 import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent_service.database import get_db
 from api_gateway.security import get_current_user, TokenData
@@ -31,11 +31,11 @@ def _handle_value_error(e: ValueError):
 # ---------------------------------------------------------------------------
 
 @router.get("/worlds/{world_id}/managers", response_model=List[ManagerResponse])
-def api_list_managers(
+async def api_list_managers(
     world_id: str,
     federation_id: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """List all managers in a world."""
     managers = manager_service.list_managers(db, world_id, federation_id)
@@ -43,12 +43,12 @@ def api_list_managers(
 
 
 @router.post("/worlds/{world_id}/managers", response_model=ManagerResponse, status_code=201)
-def api_create_manager(
+async def api_create_manager(
     world_id: str,
     data: ManagerCreate,
     federation_id: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Create a new manager character."""
     try:
@@ -65,10 +65,10 @@ def api_create_manager(
 
 
 @router.get("/worlds/{world_id}/manager-bonds")
-def api_list_manager_bonds(
+async def api_list_manager_bonds(
     world_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """List all manager-client bonds in a world."""
     bonds = manager_service.list_manager_bonds(db, world_id)
@@ -83,11 +83,11 @@ def api_list_manager_bonds(
 
 
 @router.post("/worlds/{world_id}/manager-bonds", response_model=ManagerClientResponse, status_code=201)
-def api_assign_manager(
+async def api_assign_manager(
     world_id: str,
     data: ManagerClientCreate,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Assign a manager to a wrestler client."""
     try:
@@ -106,10 +106,10 @@ def api_assign_manager(
 
 
 @router.delete("/manager-bonds/{bond_id}", status_code=204)
-def api_remove_manager_bond(
+async def api_remove_manager_bond(
     bond_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """End a manager-client relationship."""
     if not manager_service.remove_manager(db, bond_id):
@@ -117,13 +117,13 @@ def api_remove_manager_bond(
 
 
 @router.post("/managers/{manager_id}/promo")
-def api_manager_promo(
+async def api_manager_promo(
     manager_id: str,
     client_wrestler_id: str,
     target_wrestler_id: Optional[str] = None,
     promo_type: str = "in_ring",
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Generate a promo where a manager speaks on behalf of their client."""
     result = manager_service.generate_manager_promo(
@@ -139,11 +139,11 @@ def api_manager_promo(
 # ---------------------------------------------------------------------------
 
 @router.get("/worlds/{world_id}/stables", response_model=List[StableResponse])
-def api_list_stables(
+async def api_list_stables(
     world_id: str,
     federation_id: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """List all active stables in a world."""
     stables = stable_service.list_stables(db, world_id, federation_id)
@@ -158,11 +158,11 @@ def api_list_stables(
 
 
 @router.post("/worlds/{world_id}/stables", response_model=StableResponse, status_code=201)
-def api_create_stable(
+async def api_create_stable(
     world_id: str,
     data: StableCreate,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Create a new stable/faction."""
     try:
@@ -199,10 +199,10 @@ def api_create_stable(
 
 
 @router.get("/stables/{stable_id}", response_model=StableResponse)
-def api_get_stable(
+async def api_get_stable(
     stable_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get a stable with its members."""
     data = stable_service.get_stable_with_members(db, stable_id)
@@ -216,11 +216,11 @@ def api_get_stable(
 
 
 @router.post("/stables/{stable_id}/members", status_code=201)
-def api_add_stable_member(
+async def api_add_stable_member(
     stable_id: str,
     data: StableAddMember,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Add a wrestler to a stable."""
     stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
@@ -235,11 +235,11 @@ def api_add_stable_member(
 
 
 @router.delete("/stables/{stable_id}/members/{wrestler_id}", status_code=204)
-def api_remove_stable_member(
+async def api_remove_stable_member(
     stable_id: str,
     wrestler_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Remove a wrestler from a stable."""
     stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
@@ -254,11 +254,11 @@ def api_remove_stable_member(
 
 
 @router.patch("/stables/{stable_id}", response_model=StableResponse)
-def api_update_stable(
+async def api_update_stable(
     stable_id: str,
     data: StableUpdate,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Update a stable's details."""
     stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
