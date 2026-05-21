@@ -14,7 +14,7 @@ _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from fastapi import FastAPI, HTTPException, Depends, Query, Request
+from fastapi import FastAPI, HTTPException, Depends, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from dataclasses import asdict
@@ -25,7 +25,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from models.entities import Agent, AgentCreateData, AgentUpdateData, Federation, FederationCreateData, FederationUpdateData, EventContext, AgentActionResponse, PrompterHintRequest
-from models.db_models import AgentDB, FederationDB, EngineRequestDB, NarrativeLogDB
+from models.db_models import AgentDB, FederationDB, EngineRequestDB, NarrativeLogDB, WorldAnchorDB
 from agent_service import crud
 from agent_service.database import get_db, SessionLocal, engine
 from core_engine.engine import engine_instance
@@ -83,6 +83,8 @@ For complete usage examples, see the [API Usage Examples](https://github.com/Cra
         {"name": "federations", "description": "Federation management operations"},
         {"name": "agents", "description": "Agent management operations"},
         {"name": "engine", "description": "Simulation engine control"},
+        {"name": "simulation", "description": "End-to-end federation simulation"},
+        {"name": "wrestling", "description": "Titles, storylines, wrestling domain"},
         {"name": "monitoring", "description": "Performance monitoring"}
     ]
 )
@@ -279,6 +281,124 @@ def get_federation_endpoint(federation_id: str, db: Session = Depends(get_db)):
     logger.info(f"Federation '{db_federation.name}' ({federation_id}) found and returned.")
     return db_federation
 
+@app.get("/federations/{federation_id}/world_anchor", tags=["wrestling"], summary="Get World Anchor (4-Year Spine)")
+def get_world_anchor(federation_id: str, db: Session = Depends(get_db)):
+    """Get federation's world anchor (marquee show 2 years out). Returns default if not set."""
+    from models.world_anchor import WorldAnchor, build_default_anchor
+    from datetime import datetime
+    row = db.query(WorldAnchorDB).filter(WorldAnchorDB.federation_id == federation_id).first()
+    if not row:
+        anchor = build_default_anchor(federation_id)
+        return {
+            "federation_id": federation_id,
+            "world_start_date": anchor.world_start_date.isoformat(),
+            "anchor_event_name": anchor.anchor_event_name,
+            "anchor_date": anchor.get_anchor_date().isoformat(),
+            "world_end_date": anchor.get_world_end_date().isoformat(),
+            "source": "default",
+        }
+    ws = row.world_start_date.date() if hasattr(row.world_start_date, "date") else row.world_start_date
+    ad = row.anchor_date.date() if row.anchor_date and hasattr(row.anchor_date, "date") else row.anchor_date
+    anchor = WorldAnchor(federation_id=row.federation_id, world_start_date=ws, anchor_event_name=row.anchor_event_name, anchor_date=ad)
+    return {
+        "federation_id": federation_id,
+        "world_start_date": anchor.world_start_date.isoformat(),
+        "anchor_event_name": anchor.anchor_event_name,
+        "anchor_date": anchor.get_anchor_date().isoformat(),
+        "world_end_date": anchor.get_world_end_date().isoformat(),
+        "source": "stored",
+    }
+
+
+class WorldAnchorSet(BaseModel):
+    world_start_date: str  # YYYY-MM-DD
+    anchor_event_name: str = "Grandstand"
+
+@app.post("/federations/{federation_id}/world_anchor", tags=["wrestling"], summary="Set World Anchor")
+def set_world_anchor(federation_id: str, body: WorldAnchorSet, db: Session = Depends(get_db)):
+    """Set federation's world anchor (marquee show will be world_start + 2 years)."""
+    from datetime import datetime
+    from models.world_anchor import _default_anchor_date
+    if crud.get_federation_by_id(db, federation_id) is None:
+        raise HTTPException(status_code=404, detail="Federation not found")
+    try:
+        world_start = datetime.fromisoformat(body.world_start_date.replace("Z", "+00:00")).date() if "T" in body.world_start_date else datetime.strptime(body.world_start_date, "%Y-%m-%d").date()
+    except Exception:
+        world_start = datetime.strptime(body.world_start_date, "%Y-%m-%d").date()
+    anchor_date = _default_anchor_date(world_start)
+    row = db.query(WorldAnchorDB).filter(WorldAnchorDB.federation_id == federation_id).first()
+    if row:
+        row.world_start_date = datetime.combine(world_start, datetime.min.time())
+        row.anchor_event_name = body.anchor_event_name
+        row.anchor_date = datetime.combine(anchor_date, datetime.min.time())
+    else:
+        db.add(WorldAnchorDB(
+            federation_id=federation_id,
+            world_start_date=datetime.combine(world_start, datetime.min.time()),
+            anchor_event_name=body.anchor_event_name,
+            anchor_date=datetime.combine(anchor_date, datetime.min.time()),
+        ))
+    db.commit()
+    return {"federation_id": federation_id, "anchor_event_name": body.anchor_event_name, "anchor_date": anchor_date.isoformat()}
+
+
+@app.get("/federations/{federation_id}/anchor_card", tags=["simulation"], summary="Build Anchor Card")
+def get_anchor_card(federation_id: str, db: Session = Depends(get_db)):
+    """Build one coherent FullCard for the marquee show at anchor date (roster, tenure mix, titles, storylines)."""
+    from models.world_anchor import WorldAnchor, build_default_anchor
+    from agent_service.anchor_crud import get_conceptual_card
+    from simulation.anchor_card_builder import build_anchor_card
+    row = db.query(WorldAnchorDB).filter(WorldAnchorDB.federation_id == federation_id).first()
+    if row:
+        ws = row.world_start_date.date() if hasattr(row.world_start_date, "date") else row.world_start_date
+        ad = row.anchor_date.date() if row.anchor_date and hasattr(row.anchor_date, "date") else row.anchor_date
+        anchor = WorldAnchor(federation_id=federation_id, world_start_date=ws, anchor_event_name=row.anchor_event_name, anchor_date=ad)
+    else:
+        anchor = build_default_anchor(federation_id)
+    conceptual = get_conceptual_card(db, federation_id)
+    full = build_anchor_card(db, federation_id, anchor, conceptual)
+    return {
+        "card_id": full.card_id,
+        "name": full.name,
+        "card_date": anchor.get_anchor_date().isoformat(),
+        "card_type": "marquee_year",
+        "phase": anchor.phase_for(anchor.get_anchor_date()).value,
+        "segments": [{"order": s.order, "type": s.segment_type.value, "match_id": s.match_id} for s in full.segments],
+        "matches": [{"match_id": m.get("match_id"), "participant_ids": m.get("participant_ids", [])} for m in full.matches],
+    }
+
+
+class ConceptualCardSet(BaseModel):
+    main_event_target: Optional[dict] = None
+    title_matches_target: Optional[list] = None
+    planned_storyline_payoffs: Optional[list] = None
+
+@app.post("/federations/{federation_id}/conceptual_card", tags=["simulation"], summary="Set Conceptual Card Target")
+def set_conceptual_card_endpoint(federation_id: str, body: ConceptualCardSet, db: Session = Depends(get_db)):
+    """Set the conceptual/target card for the marquee show (plan, not run state)."""
+    from agent_service.anchor_crud import set_conceptual_card
+    if crud.get_federation_by_id(db, federation_id) is None:
+        raise HTTPException(status_code=404, detail="Federation not found")
+    ok = set_conceptual_card(
+        db, federation_id,
+        main_event_target=body.main_event_target,
+        title_matches_target=body.title_matches_target,
+        planned_storyline_payoffs=body.planned_storyline_payoffs,
+    )
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to set conceptual card")
+    return {"federation_id": federation_id, "message": "Conceptual card target set"}
+
+@app.get("/federations/{federation_id}/conceptual_card", tags=["simulation"], summary="Get Conceptual Card Target")
+def get_conceptual_card_endpoint(federation_id: str, db: Session = Depends(get_db)):
+    """Get the conceptual/target card for the marquee show."""
+    from agent_service.anchor_crud import get_conceptual_card
+    conceptual = get_conceptual_card(db, federation_id)
+    if conceptual is None:
+        return {"federation_id": federation_id, "main_event_target": None, "title_matches_target": [], "planned_storyline_payoffs": []}
+    return conceptual
+
+
 @app.get("/federations/{federation_id}/agents", summary="List Agents in Federation", response_model=List[Agent])
 def list_agents_in_federation_endpoint(federation_id: str, db: Session = Depends(get_db)):
     """Retrieves a list of all agents belonging to a specific federation."""
@@ -469,6 +589,183 @@ def engine_debug():
         }
     }
 
+# --- Wrestling (Titles, Storylines) ---
+
+class TitleCreateData(BaseModel):
+    federation_id: str
+    name: str
+    tier: str = "mid_card"
+    prestige: int = 50
+
+class StorylineCreateData(BaseModel):
+    federation_id: str
+    title: str
+    participant_ids: Optional[List[str]] = None
+    storyline_type: str = "feud"
+    heat: int = 50
+
+@app.get("/titles", tags=["wrestling"], summary="List Titles")
+def list_titles(
+    federation_id: Optional[str] = Query(None, description="Filter by federation"),
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
+    """List titles, optionally filtered by federation."""
+    try:
+        from agent_service.wrestling_crud import get_titles
+        titles = get_titles(db, federation_id=federation_id, skip=skip, limit=limit)
+        return [
+            {"title_id": t.title_id, "federation_id": t.federation_id, "name": t.name, "tier": t.tier, "prestige": t.prestige}
+            for t in titles
+        ]
+    except Exception as e:
+        logger.error(f"Failed to list titles: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/titles", tags=["wrestling"], summary="Create Title")
+def create_title(data: TitleCreateData, db: Session = Depends(get_db)):
+    """Create a new championship title."""
+    try:
+        from agent_service.wrestling_crud import create_title as crud_create_title
+        title = crud_create_title(db, data.federation_id, data.name, data.tier, data.prestige)
+        if not title:
+            raise HTTPException(status_code=500, detail="Failed to create title")
+        return {"title_id": title.title_id, "name": title.name, "tier": title.tier}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create title: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/titles/{title_id}", tags=["wrestling"], summary="Get Title")
+def get_title(title_id: str, db: Session = Depends(get_db)):
+    """Get title by ID."""
+    try:
+        from agent_service.wrestling_crud import get_title_by_id, get_current_champion
+        title = get_title_by_id(db, title_id)
+        if not title:
+            raise HTTPException(status_code=404, detail="Title not found")
+        champion_id = get_current_champion(db, title_id)
+        return {
+            "title_id": title.title_id,
+            "federation_id": title.federation_id,
+            "name": title.name,
+            "tier": title.tier,
+            "prestige": title.prestige,
+            "current_champion_id": champion_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get title: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/titles/{title_id}/champion", tags=["wrestling"], summary="Get Current Champion")
+def get_title_champion(title_id: str, db: Session = Depends(get_db)):
+    """Get current champion (agent_id) for a title."""
+    try:
+        from agent_service.wrestling_crud import get_title_by_id, get_current_champion
+        title = get_title_by_id(db, title_id)
+        if not title:
+            raise HTTPException(status_code=404, detail="Title not found")
+        champion_id = get_current_champion(db, title_id)
+        return {"title_id": title_id, "champion_id": champion_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get champion: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/storylines", tags=["wrestling"], summary="List Storylines")
+def list_storylines(
+    federation_id: Optional[str] = Query(None, description="Filter by federation"),
+    status: Optional[str] = Query(None, description="Filter by status (active, resolved, dropped)"),
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
+    """List storylines."""
+    try:
+        from agent_service.wrestling_crud import get_storylines
+        storylines = get_storylines(db, federation_id=federation_id, status=status, skip=skip, limit=limit)
+        return [
+            {"storyline_id": s.storyline_id, "federation_id": s.federation_id, "title": s.title, "status": s.status, "heat": s.heat, "participant_ids": s.participant_ids}
+            for s in storylines
+        ]
+    except Exception as e:
+        logger.error(f"Failed to list storylines: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/storylines", tags=["wrestling"], summary="Create Storyline")
+def create_storyline(data: StorylineCreateData, db: Session = Depends(get_db)):
+    """Create a new storyline."""
+    try:
+        from agent_service.wrestling_crud import create_storyline as crud_create_storyline
+        story = crud_create_storyline(
+            db, data.federation_id, data.title,
+            participant_ids=data.participant_ids,
+            storyline_type=data.storyline_type,
+            heat=data.heat,
+        )
+        if not story:
+            raise HTTPException(status_code=500, detail="Failed to create storyline")
+        return {"storyline_id": story.storyline_id, "title": story.title, "status": story.status}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create storyline: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/storylines/{storyline_id}", tags=["wrestling"], summary="Get Storyline")
+def get_storyline(storyline_id: str, db: Session = Depends(get_db)):
+    """Get storyline by ID."""
+    try:
+        from agent_service.wrestling_crud import get_storyline_by_id
+        story = get_storyline_by_id(db, storyline_id)
+        if not story:
+            raise HTTPException(status_code=404, detail="Storyline not found")
+        return {
+            "storyline_id": story.storyline_id,
+            "federation_id": story.federation_id,
+            "title": story.title,
+            "storyline_type": story.storyline_type,
+            "participant_ids": story.participant_ids,
+            "status": story.status,
+            "heat": story.heat,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get storyline: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- Simulation (End-to-End) ---
+
+@app.post("/simulation/run", tags=["simulation"], summary="Run End-to-End Simulation")
+def run_simulation(
+    max_ticks_per_match: int = Query(50, ge=1, le=500, description="Max ticks per match"),
+    hints: Optional[dict] = None,
+):
+    """Run a demo card end-to-end: pre_match → match → post_match for each match. Updates records."""
+    try:
+        from simulation.orchestrator import SimulationOrchestrator, build_demo_card
+        card = build_demo_card("demo-fed")
+        orch = SimulationOrchestrator()
+        results = orch.run_card(card, "demo-fed", max_ticks_per_match, hints or {})
+        total_ticks = sum(len(r) for r in results)
+        return {
+            "message": "Simulation completed",
+            "card": card.name,
+            "matches": len(results),
+            "total_tick_results": total_ticks,
+        }
+    except Exception as e:
+        tb = traceback.format_exc()
+        logger.error(f"Simulation failed: {e}\n{tb}")
+        raise HTTPException(status_code=500, detail={"error": str(e), "trace": tb})
+
+
 # --- Federation Interaction & Subscription Placeholders ---
 
 @app.post("/agents/{agent_id}/subscribe", summary="Subscribe Agent to Events", description="(Placeholder) Agent registers a webhook for event notifications.")
@@ -540,6 +837,78 @@ def reset_performance_metrics():
     """
     performance_monitor.reset_metrics()
     return {"message": "Metrics reset successfully"}
+
+# --- WebSocket (Phase 1.2) ---
+
+@app.websocket("/live/federation/{federation_id}")
+async def websocket_federation_live(websocket: WebSocket, federation_id: str):
+    """WebSocket for federation live events."""
+    from api_gateway.websocket import broadcaster
+    await broadcaster.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        await broadcaster.disconnect(websocket)
+
+
+# --- Match Scheduler (Phase 2.2) ---
+
+class ScheduleWeeklyRequest(BaseModel):
+    federation_id: str
+    name: str = "Weekly Show"
+    card_type: str = "major_tv"
+    title_id: Optional[str] = None
+
+@app.post("/scheduling/weekly", tags=["simulation"], summary="Schedule Weekly Show")
+def schedule_weekly_show(req: ScheduleWeeklyRequest):
+    """Generate a match card for a weekly show (MatchScheduler)."""
+    try:
+        from core_engine.scheduling.match_scheduler import MatchScheduler
+        from models.card_structure import CardType
+        from simulation.card_builder import build_full_card
+        ct = getattr(CardType, req.card_type.upper().replace("-", "_"), CardType.MAJOR_TV)
+        sched = MatchScheduler()
+        card = sched.schedule_weekly_show(federation_id=req.federation_id, name=req.name, card_type=ct, title_id=req.title_id)
+        full = build_full_card(card, ct)
+        return {
+            "card_id": card.card_id,
+            "name": card.name,
+            "matches": [{"match_id": m.match_id, "participant_ids": m.participant_ids} for m in card.matches],
+            "segments": len(full.segments),
+        }
+    except Exception as e:
+        logger.error("Schedule failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Agent Stats (Phase 3.3) ---
+
+@app.get("/agents/{agent_id}/stats", tags=["wrestling"], summary="Get Agent Stats")
+def get_agent_stats(agent_id: str, federation_id: Optional[str] = Query(None), db: Session = Depends(get_db)):
+    """Get wrestler stats (wins, losses, win rate)."""
+    try:
+        from models.db_models import WrestlerStatsDB
+        q = db.query(WrestlerStatsDB).filter(WrestlerStatsDB.agent_id == agent_id)
+        if federation_id:
+            q = q.filter(WrestlerStatsDB.federation_id == federation_id)
+        row = q.first()
+        if not row:
+            return {"agent_id": agent_id, "wins": 0, "losses": 0, "total_matches": 0, "win_rate": 0.0}
+        total = (row.total_matches or 0)
+        wins = (row.wins or 0)
+        return {
+            "agent_id": agent_id,
+            "wins": wins,
+            "losses": row.losses or 0,
+            "draws": row.draws or 0,
+            "total_matches": total,
+            "win_rate": round(wins / total, 2) if total > 0 else 0.0,
+        }
+    except Exception as e:
+        logger.error("Get agent stats failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/tags", summary="List available LLM models from proxy")
 def list_proxy_models():

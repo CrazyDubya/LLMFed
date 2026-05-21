@@ -8,8 +8,9 @@
 - `llm_abstraction/` – Multi-provider LLM interface (OpenAI, Ollama, custom).
 - `models/` – Pydantic entities and SQLAlchemy DB models.
 - `frontend/` – Static single-page UI (`index.html`); serve with any static file server.
-- `docs/` – Long-form documentation (usage guide, analysis, roadmap, codebase, security, etc.).
-- `scripts/` – Demo and helper scripts (e.g. `demo.py`, `demo_multi.py`).
+- `docs/` – Long-form documentation (usage guide, analysis, roadmap, calendar_concepts, wrestling_concepts, codebase, security, etc.).
+- `simulation/` – End-to-end simulation (orchestrator runs cards: pre_match → match → post_match, persists records).
+- `scripts/` – Demo and helper scripts (e.g. `demo.py`, `demo_multi.py`, `run_simulation.py`).
 - `tests/` – Pytest suite (validation, security, engine, CRUD, LLM, heat, etc.).
 - `config.py` – Environment-based config (database URL, API host/port, etc.).
 
@@ -55,6 +56,15 @@ Then open http://localhost:8080 (or use any static server).
 ```bash
 python scripts/demo.py
 ```
+
+**End-to-end simulation**
+
+```bash
+python scripts/run_simulation.py --dry-run   # Preview card only
+python scripts/run_simulation.py --ticks 20  # Run demo card (requires Ollama)
+```
+
+Or via API: `POST /simulation/run?max_ticks_per_match=50`
 
 **Tests**
 

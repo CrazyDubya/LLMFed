@@ -77,7 +77,16 @@ class BackstageActionResponse(BaseModel):
 
 
 # Agent CRUD Models
-VALID_ROLES = ("promoter", "participant", "referee", "crowd", "announcer", "backstage")
+VALID_ROLES = (
+    "promoter",
+    "participant",
+    "referee",
+    "crowd",
+    "announcer",
+    "backstage",
+    "valet",
+    "manager",
+)
 
 
 class AgentCreateData(BaseModel):
@@ -100,6 +109,11 @@ class AgentUpdateData(BaseModel):
     gimmick_description: Optional[str] = Field(default=None, description="Updated gimmick description")
     llm_config: Optional[Dict[str, Any]] = Field(default=None, description="Updated LLM configuration")
     federation_id: Optional[str] = Field(default=None, description="Updated federation assignment")
+    current_heat: Optional[int] = Field(default=None, description="Updated crowd heat")
+    momentum: Optional[int] = Field(default=None, description="Updated momentum")
+    win_streak: Optional[int] = Field(default=None, description="Updated win streak")
+    loss_streak: Optional[int] = Field(default=None, description="Updated loss streak")
+    alignment: Optional[str] = Field(default=None, description="babyface, heel, tweener")
 
 
 class Agent(BaseModel):

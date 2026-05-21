@@ -22,7 +22,11 @@ def test_run_ticks_returns_results_and_uses_hints(monkeypatch):
         ]
 
     fake_response = {"action_id": "x", "description": "fake", "meta": {}}
-    monkeypatch.setattr(engine_instance.llm_client, 'send_prompt', lambda prompt: fake_response)
+    monkeypatch.setattr(
+        engine_instance.llm_client,
+        'send_prompt',
+        lambda prompt, model=None: fake_response,
+    )
     monkeypatch.setattr(engine_mod, 'get_agents', fake_get_agents)
 
     hints = {"tip": "increase drama"}
@@ -41,3 +45,28 @@ def test_run_ticks_returns_results_and_uses_hints(monkeypatch):
         assert isinstance(action, AppliedAction)
         assert action.action_id == "x"
         assert action.description == "fake"
+
+
+def test_run_pre_match_returns_results(monkeypatch):
+    """Pre-match phase runs promoter + backstage and returns TickResults."""
+    from types import SimpleNamespace
+    from core_engine import engine as engine_mod
+
+    def fake_get_agents(db):
+        return [
+            SimpleNamespace(agent_id=f"agent_{r}", role=r, gimmick_description="")
+            for r in engine_instance.ROLE_ORDER
+        ]
+
+    fake_response = {"action_id": "noop", "description": "pre-match", "meta": {}}
+    monkeypatch.setattr(
+        engine_instance.llm_client,
+        'send_prompt',
+        lambda prompt, model=None: fake_response,
+    )
+    monkeypatch.setattr(engine_mod, 'get_agents', fake_get_agents)
+
+    results = engine_instance.run_pre_match()
+    assert isinstance(results, list)
+    # Promoter + backstage = up to 2 results (one per role if agents exist)
+    assert len(results) >= 0

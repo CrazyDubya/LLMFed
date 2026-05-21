@@ -8,6 +8,7 @@ Thank you for your interest in contributing to LLMFed! This document provides gu
 - [Getting Started](#getting-started)
 - [Development Setup](#development-setup)
 - [Contributing Process](#contributing-process)
+- [Simulation: One Card and World Anchor](#simulation-one-card-and-world-anchor)
 - [Coding Standards](#coding-standards)
 - [Testing Guidelines](#testing-guidelines)
 - [Documentation](#documentation)
@@ -163,6 +164,37 @@ mypy .
 - Push your branch to your fork
 - Create a pull request against the main repository
 - Follow the [Pull Request Process](#pull-request-process)
+
+## 🎯 Simulation: One Card and World Anchor
+
+The engine builds **one coherent FullCard** for the marquee show at a target date. Contributors working on simulation, scheduling, or promoter flows should understand this structure.
+
+### Key Paths
+
+| Purpose | Path |
+|---------|------|
+| Card structure | `models/card_structure.py` |
+| World anchor (4-year spine) | `models/world_anchor.py` |
+| Anchor card builder | `simulation/anchor_card_builder.py` |
+| Roster/tenure at date | `simulation/roster_timeline.py` |
+| Promoter guidance | `core_engine/promoter_guidance.py` |
+| Conceptual target CRUD | `agent_service/anchor_crud.py` |
+| Design doc | `docs/world_anchor_framework.md` |
+| Venues, critics, viewing, fan prefs | `docs/world_bubbles.md` |
+| Week/month, day before/after, roster split, fatigue, personal vs kayfabe | `docs/week_month_and_life_design.md` |
+| Conducting cards: promoter, federation, world, wrestlers; week→month→season→annual | `docs/conducting_cards_and_events.md` |
+
+### Workflow
+
+1. **World anchor**: A federation has an anchor date and 4-year spine (2-year build-up, anchor, 2-year aftermath).
+2. **Conceptual card**: The promoter sets targets (`main_event_target`, `title_matches_target`, `planned_storyline_payoffs`).
+3. **Anchor card builder**: `build_anchor_card(db, federation_id, anchor, conceptual_target)` produces a FullCard for the anchor date using available roster, tenure mix (veteran main event, rising title match, newcomer opener), and storylines with `payoff_phase=anchor`.
+4. **Promoter hints**: Orchestrator injects `world_anchor`, `conceptual_card`, `promoter_guidance`, `anchor_stakes` into the promoter LLM context.
+
+### API Endpoints
+
+- `GET /federations/{id}/anchor_card` — Build the one FullCard for the marquee show.
+- `GET/POST /federations/{id}/conceptual_card` — Get/set target main event, title matches, planned storylines.
 
 ## 📝 Coding Standards
 

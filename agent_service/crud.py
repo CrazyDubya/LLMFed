@@ -20,7 +20,10 @@ from models.db_models import AgentDB, FederationDB
 logger = logging.getLogger(__name__)
 
 # Whitelists for update operations (Rule 9 — no blind setattr)
-_AGENT_UPDATE_FIELDS = frozenset({"name", "role", "gimmick_description", "llm_config", "federation_id"})
+_AGENT_UPDATE_FIELDS = frozenset({
+    "name", "role", "gimmick_description", "llm_config", "federation_id",
+    "current_heat", "momentum", "win_streak", "loss_streak", "alignment",
+})
 _FEDERATION_UPDATE_FIELDS = frozenset({"name", "description", "tier"})
 
 # --- Agent CRUD ---
