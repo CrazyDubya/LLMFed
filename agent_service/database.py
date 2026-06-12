@@ -1,53 +1,46 @@
-"""Database engine, session factory, and initialization for LLMFed.
-
-init_db() is NOT called at import time (Rule 3, Rule 8). Callers
-must invoke it explicitly during application startup.
-"""
+import os
 import logging
-import time
-
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-from config import DATABASE_URL
-from models.db_models import Base
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.orm import declarative_base
 
 logger = logging.getLogger(__name__)
 
-# For SQLite, connect_args are needed for FastAPI compatibility
-_engine_args = {}
-if DATABASE_URL.startswith("sqlite"):
-    _engine_args["connect_args"] = {"check_same_thread": False}
+# Use aiosqlite for async sqlite
+DEFAULT_URL = "sqlite+aiosqlite:///./llmfed.db"
+DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_URL)
 
-engine = create_engine(DATABASE_URL, **_engine_args)
+# Fallback conversion for sqlite URLs missing +aiosqlite
+if DATABASE_URL.startswith("sqlite:///") and not DATABASE_URL.startswith("sqlite+aiosqlite:///"):
+    DATABASE_URL = DATABASE_URL.replace("sqlite:///", "sqlite+aiosqlite:///")
+# Fallback conversion for postgres URLs missing +asyncpg
+if DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+asyncpg://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=os.getenv("SQL_ECHO", "false").lower() == "true",
+    # connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
+)
 
+AsyncSessionLocal = async_sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autoflush=False
+)
 
-def get_db():
-    """FastAPI dependency that yields a DB session and ensures cleanup."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+Base = declarative_base()
 
-
-_MAX_INIT_RETRIES = 3
-
-
-def init_db() -> None:
-    """Initialize database tables with retry logic.
-
-    Retries up to _MAX_INIT_RETRIES times with 1-second backoff (Rule 7).
-    """
-    for attempt in range(_MAX_INIT_RETRIES):
+async def get_db():
+    """Async dependency to yield a database session."""
+    async with AsyncSessionLocal() as session:
         try:
-            Base.metadata.create_all(bind=engine)
-            logger.info(f"Database tables verified: {list(Base.metadata.tables.keys())}")
-            return
-        except Exception as e:
-            logger.warning(f"init_db attempt {attempt + 1}/{_MAX_INIT_RETRIES} failed: {e}")
-            if attempt == _MAX_INIT_RETRIES - 1:
-                raise
-            time.sleep(1)
+            yield session
+        finally:
+            await session.close()
+
+async def init_db():
+    """Initialize the database tables asynchronously."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database initialized successfully.")

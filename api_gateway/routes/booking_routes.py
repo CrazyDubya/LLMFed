@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent_service.database import get_db
 from api_gateway.security import get_current_user, TokenData
@@ -35,11 +35,11 @@ def _handle_value_error(e: ValueError):
 # ---------------------------------------------------------------------------
 
 @router.post("/federations/{federation_id}/shows", response_model=ShowResponse, status_code=201)
-def api_create_show(
+async def api_create_show(
     federation_id: str,
     data: ShowCreate,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Create a new show for a federation (promoter action)."""
     try:
@@ -68,10 +68,10 @@ def api_create_show(
 # ---------------------------------------------------------------------------
 
 @router.get("/shows/{show_id}/card", response_model=ShowCardResponse)
-def api_get_show_card(
+async def api_get_show_card(
     show_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get the full card for a show."""
     show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
@@ -90,11 +90,11 @@ def api_get_show_card(
 # ---------------------------------------------------------------------------
 
 @router.post("/shows/{show_id}/matches", response_model=ShowSegmentResponse, status_code=201)
-def api_book_match(
+async def api_book_match(
     show_id: str,
     data: MatchBooking,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Book a match on a show."""
     show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
@@ -125,13 +125,13 @@ def api_book_match(
 # ---------------------------------------------------------------------------
 
 @router.post("/shows/{show_id}/promos", response_model=ShowSegmentResponse, status_code=201)
-def api_book_promo(
+async def api_book_promo(
     show_id: str,
     wrestler_id: str,
     target_wrestler_id: Optional[str] = None,
     promo_type: str = "in_ring",
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Book a promo segment on a show."""
     show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
@@ -156,10 +156,10 @@ def api_book_promo(
 # ---------------------------------------------------------------------------
 
 @router.get("/matches/{match_id}", response_model=MatchResultResponse)
-def api_get_match(
+async def api_get_match(
     match_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get match result details."""
     match = db.query(MatchDB).filter(MatchDB.id == match_id).first()
@@ -173,11 +173,11 @@ def api_get_match(
 # ---------------------------------------------------------------------------
 
 @router.get("/matches/{match_id}/play-by-play")
-def api_get_play_by_play(
+async def api_get_play_by_play(
     match_id: str,
     highlights_only: bool = False,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get match play-by-play from simulation log."""
     match = db.query(MatchDB).filter(MatchDB.id == match_id).first()

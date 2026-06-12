@@ -1,3 +1,4 @@
+from sqlalchemy.ext.asyncio import AsyncSession
 """
 Observability routes — metrics, LLM health, and match config.
 
@@ -22,13 +23,13 @@ router = APIRouter(tags=["monitoring"])
 # -------------------------------------------------------------------------
 
 @router.get("/metrics", summary="System metrics snapshot")
-def get_metrics() -> Dict[str, Any]:
+async def get_metrics() -> Dict[str, Any]:
     """Return a snapshot of runtime metrics for monitoring/alerting."""
     metrics: Dict[str, Any] = {"timestamp": time.time()}
 
     # LLM budget
     try:
-        from llm_abstraction.provider import get_llm
+
         llm = get_llm()
         metrics["llm_budget"] = llm.get_budget_summary()
         metrics["llm_provider"] = llm.provider_name
@@ -67,14 +68,14 @@ def get_metrics() -> Dict[str, Any]:
 # -------------------------------------------------------------------------
 
 @router.get("/health/llm", summary="LLM provider health probe")
-def llm_health() -> Dict[str, Any]:
+async def llm_health() -> Dict[str, Any]:
     """Probe the active LLM provider and return status + latency.
 
     Useful for load-balancer health checks and operator dashboards.
     """
     result: Dict[str, Any] = {"status": "unknown", "provider": None}
     try:
-        from llm_abstraction.provider import get_llm
+
         llm = get_llm()
         result["provider"] = llm.provider_name
         result["model"] = llm.model
@@ -104,7 +105,7 @@ def llm_health() -> Dict[str, Any]:
 # -------------------------------------------------------------------------
 
 @router.get("/match-profiles", summary="List match simulation profiles")
-def list_match_profiles() -> Dict[str, Any]:
+async def list_match_profiles() -> Dict[str, Any]:
     """Return available match simulation profiles and the active one."""
     from core_engine.match_config import list_profiles, get_match_config
 

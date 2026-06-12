@@ -10,7 +10,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent_service.database import get_db
 from game_service.snapshot_service import (
@@ -66,7 +66,7 @@ class SnapshotDiff(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("", response_model=SnapshotMeta, status_code=201)
-def api_create_snapshot(body: SnapshotCreate, db: Session = Depends(get_db)):
+async def api_create_snapshot(body: SnapshotCreate, db: AsyncSession = Depends(get_db)):
     """Create a snapshot of the current world state."""
     try:
         result = create_snapshot(
@@ -96,7 +96,7 @@ def api_create_snapshot(body: SnapshotCreate, db: Session = Depends(get_db)):
 
 
 @router.get("", response_model=List[SnapshotMeta])
-def api_list_snapshots(world_id: Optional[str] = Query(None)):
+async def api_list_snapshots(world_id: Optional[str] = Query(None)):
     """List all saved snapshots, optionally filtered by world_id."""
     results = []
     for sid, snap in _snapshots.items():
@@ -119,7 +119,7 @@ def api_list_snapshots(world_id: Optional[str] = Query(None)):
 
 
 @router.post("/restore")
-def api_restore_snapshot(body: SnapshotRestore, db: Session = Depends(get_db)):
+async def api_restore_snapshot(body: SnapshotRestore, db: AsyncSession = Depends(get_db)):
     """Restore a world from a previously saved snapshot."""
     snap = _snapshots.get(body.snapshot_id)
     if snap is None:
@@ -133,7 +133,7 @@ def api_restore_snapshot(body: SnapshotRestore, db: Session = Depends(get_db)):
 
 
 @router.get("/compare", response_model=List[SnapshotDiff])
-def api_compare_snapshots(
+async def api_compare_snapshots(
     snapshot_a: str = Query(..., description="First snapshot ID"),
     snapshot_b: str = Query(..., description="Second snapshot ID"),
 ):

@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent_service.database import get_db
 
@@ -13,18 +13,18 @@ router = APIRouter(prefix="/game/analytics", tags=["analytics"])
 
 
 @router.get("/world/{world_id}/summary")
-def api_world_summary(world_id: str, db: Session = Depends(get_db)):
+async def api_world_summary(world_id: str, db: AsyncSession = Depends(get_db)):
     """Get high-level world summary statistics."""
     from game_service.analytics_service import world_summary
     return world_summary(db, world_id)
 
 
 @router.get("/world/{world_id}/wrestler/{wrestler_id}")
-def api_wrestler_performance(
+async def api_wrestler_performance(
     world_id: str,
     wrestler_id: str,
     limit: int = Query(50, ge=1, le=200),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get wrestler performance analytics."""
     from game_service.analytics_service import wrestler_performance
@@ -32,10 +32,10 @@ def api_wrestler_performance(
 
 
 @router.get("/world/{world_id}/federation/{federation_id}")
-def api_federation_health(
+async def api_federation_health(
     world_id: str,
     federation_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get federation health metrics."""
     from game_service.analytics_service import federation_health
@@ -43,10 +43,10 @@ def api_federation_health(
 
 
 @router.get("/world/{world_id}/match-quality")
-def api_match_quality(
+async def api_match_quality(
     world_id: str,
     federation_id: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get match rating distribution."""
     from game_service.analytics_service import match_quality_distribution
@@ -54,11 +54,11 @@ def api_match_quality(
 
 
 @router.get("/world/{world_id}/head-to-head")
-def api_head_to_head(
+async def api_head_to_head(
     world_id: str,
     wrestler_a: str = Query(..., alias="a"),
     wrestler_b: str = Query(..., alias="b"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get head-to-head comparison between two wrestlers."""
     from game_service.analytics_service import head_to_head
@@ -66,18 +66,18 @@ def api_head_to_head(
 
 
 @router.get("/llm-usage")
-def api_llm_usage():
+async def api_llm_usage():
     """Get LLM cost/usage summary (API calls, total cost, budget remaining)."""
     from game_service.analytics_service import llm_usage_summary
     return llm_usage_summary()
 
 
 @router.get("/world/{world_id}/leaderboard")
-def api_leaderboard(
+async def api_leaderboard(
     world_id: str,
     metric: str = Query("win_rate", description="Sort by: win_rate, avg_match_rating, total_matches, wins"),
     limit: int = Query(10, ge=1, le=50),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get top performers leaderboard."""
     from game_service.analytics_service import top_performers

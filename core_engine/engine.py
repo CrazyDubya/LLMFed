@@ -25,7 +25,7 @@ from models.entities import (
 from core_engine.dispatcher import LLMDispatcher
 from core_engine.rulebook import RuleBook
 from core_engine.prompt_builder import PromptBuilder
-from core_engine.llm_client import LLMClient
+
 from models.db_models import EngineRequestDB, NarrativeLogDB
 from agent_service.database import SessionLocal, init_db
 from agent_service.crud import get_agents
@@ -166,7 +166,7 @@ class Engine:
         self.state = GameState()
         self.scheduler = TickScheduler()
         self.dispatcher = LLMDispatcher()
-        self.llm_client = LLMClient()
+        self.llm_client = get_llm()
         init_db()
         self.promoter_hints: Dict[str, Any] = {}
 
@@ -178,7 +178,7 @@ class Engine:
     # Public API
     # ------------------------------------------------------------------
 
-    def run_ticks(self, n: int = 1) -> List[TickResult]:
+    async def run_ticks(self, n: int = 1) -> List[TickResult]:
         """Advance the simulation by *n* ticks.
 
         Raises ValueError if n < 1 or n > MAX_TICKS_PER_CALL (Rule 2, 7).
