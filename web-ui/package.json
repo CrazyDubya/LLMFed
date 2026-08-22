@@ -14,7 +14,7 @@
     "@tanstack/react-query": "^5.95.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-router-dom": "^7.13.2",
+    "react-router-dom": "^7.18.2",
     "tailwindcss": "^4.2.2"
   },
   "devDependencies": {
@@ -30,5 +30,10 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.57.0",
     "vite": "^8.0.1"
+  },
+  "overrides": {
+    "js-yaml": "^4.3.1",
+    "nanoid": "^3.3.16",
+    "brace-expansion": "^5.0.8"
   }
 }
