@@ -11,9 +11,9 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
+import jwt
 from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
 
@@ -167,7 +167,7 @@ def decode_token(token: str, expected_type: str = "access") -> TokenData:
             username=payload.get("username"),
             role=payload.get("role", "player"),
         )
-    except JWTError:
+    except jwt.InvalidTokenError:
         raise credentials_exception
 
 
