@@ -23,9 +23,10 @@ jobs:
           cache: npm
           cache-dependency-path: web-ui/package-lock.json
 
-      - name: Apply non-breaking npm audit fixes and validate
+      - name: Regenerate lockfile, remediate audit findings, and validate
         working-directory: web-ui
         run: |
+          npm install --package-lock-only
           npm ci
           npm audit fix
           npm audit --audit-level=high
