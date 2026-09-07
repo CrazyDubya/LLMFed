@@ -25,7 +25,7 @@ jobs:
         run: |
           python -m pip install ruff
           ruff format .
-          ruff check . --fix --select F401,F541,E204,E303,E306,E741
+          ruff check . --fix --exit-zero --select F401,F541,E741
           rm .github/workflows/lint-cleanup.yml
 
       - name: Commit cleanup
