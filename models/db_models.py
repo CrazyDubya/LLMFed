@@ -14,11 +14,13 @@ import uuid
 def _utc_now():
     return datetime.now(timezone.utc)
 
+
 Base = declarative_base()
 
 
 class AgentDB(Base):
     """SQLAlchemy model for the agents table."""
+
     __tablename__ = "agents"
 
     agent_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -27,7 +29,9 @@ class AgentDB(Base):
     role = Column(String, nullable=False, default="participant")
     gimmick_description = Column(Text, nullable=False)
     llm_config = Column(JSON, nullable=False)
-    federation_id = Column(String, ForeignKey("federations.federation_id"), nullable=True)
+    federation_id = Column(
+        String, ForeignKey("federations.federation_id"), nullable=True
+    )
     current_heat = Column(Integer, default=0)
     momentum = Column(Integer, default=0)
     created_at = Column(DateTime, default=_utc_now)
@@ -39,6 +43,7 @@ class AgentDB(Base):
 
 class FederationDB(Base):
     """SQLAlchemy model for the federations table."""
+
     __tablename__ = "federations"
 
     federation_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -55,6 +60,7 @@ class FederationDB(Base):
 
 class EngineRequestDB(Base):
     """SQLAlchemy model for engine requests."""
+
     __tablename__ = "engine_requests"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -69,6 +75,7 @@ class EngineRequestDB(Base):
 
 class NarrativeLogDB(Base):
     """SQLAlchemy model for narrative logs."""
+
     __tablename__ = "narrative_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -79,6 +86,4 @@ class NarrativeLogDB(Base):
     description = Column(Text, nullable=False)
     created_at = Column(DateTime, default=_utc_now)
 
-    __table_args__ = (
-        Index("ix_narrative_tick_time", "tick_id", "time_index"),
-    )
+    __table_args__ = (Index("ix_narrative_tick_time", "tick_id", "time_index"),)

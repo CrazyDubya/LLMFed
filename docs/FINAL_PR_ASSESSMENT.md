@@ -204,10 +204,10 @@ Coverage: 52% → 65% (+13%)
 
 ### New Production Dependencies
 ```python
-python-jose[cryptography]  # JWT handling
-passlib[bcrypt]            # Password hashing
-python-multipart           # Form data
-slowapi                    # Rate limiting
+python - jose[cryptography]  # JWT handling
+passlib[bcrypt]  # Password hashing
+python - multipart  # Form data
+slowapi  # Rate limiting
 ```
 
 **All dependencies**: ✅ Security scanned, no vulnerabilities

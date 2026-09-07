@@ -8,11 +8,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agent_service.database import get_db
 from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
-    ManagerCreate, ManagerResponse, ManagerClientCreate, ManagerClientResponse,
-    StableCreate, StableResponse, StableMemberResponse, StableAddMember, StableUpdate,
+    ManagerCreate,
+    ManagerResponse,
+    ManagerClientCreate,
+    ManagerClientResponse,
+    StableCreate,
+    StableResponse,
+    StableMemberResponse,
+    StableAddMember,
+    StableUpdate,
 )
 from models.game_models import (
-    GameWrestlerDB, ContractDB, StableDB,
+    GameWrestlerDB,
+    ContractDB,
+    StableDB,
 )
 from game_service.world_service import get_world
 from game_service import stable_service, manager_service
@@ -30,6 +39,7 @@ def _handle_value_error(e: ValueError):
 # Managers & Valets
 # ---------------------------------------------------------------------------
 
+
 @router.get("/worlds/{world_id}/managers", response_model=List[ManagerResponse])
 async def api_list_managers(
     world_id: str,
@@ -42,7 +52,9 @@ async def api_list_managers(
     return [ManagerResponse.model_validate(m) for m in managers]
 
 
-@router.post("/worlds/{world_id}/managers", response_model=ManagerResponse, status_code=201)
+@router.post(
+    "/worlds/{world_id}/managers", response_model=ManagerResponse, status_code=201
+)
 async def api_create_manager(
     world_id: str,
     data: ManagerCreate,
@@ -53,9 +65,14 @@ async def api_create_manager(
     """Create a new manager character."""
     try:
         mgr = manager_service.create_manager(
-            db, world_id, name=data.name, alignment=data.alignment,
-            archetype=data.archetype, federation_id=federation_id,
-            real_name=data.real_name, gender=data.gender,
+            db,
+            world_id,
+            name=data.name,
+            alignment=data.alignment,
+            archetype=data.archetype,
+            federation_id=federation_id,
+            real_name=data.real_name,
+            gender=data.gender,
             personality_traits=data.personality_traits,
             catchphrase=data.catchphrase,
         )
@@ -82,7 +99,11 @@ async def api_list_manager_bonds(
     return results
 
 
-@router.post("/worlds/{world_id}/manager-bonds", response_model=ManagerClientResponse, status_code=201)
+@router.post(
+    "/worlds/{world_id}/manager-bonds",
+    response_model=ManagerClientResponse,
+    status_code=201,
+)
 async def api_assign_manager(
     world_id: str,
     data: ManagerClientCreate,
@@ -95,9 +116,12 @@ async def api_assign_manager(
         if not world:
             raise HTTPException(status_code=404, detail="World not found")
         bond = manager_service.assign_manager(
-            db, world_id, manager_id=data.manager_id,
+            db,
+            world_id,
+            manager_id=data.manager_id,
             client_wrestler_id=data.client_wrestler_id,
-            role=data.role, specialization=data.specialization,
+            role=data.role,
+            specialization=data.specialization,
             game_date=world.current_game_date,
         )
         return ManagerClientResponse.model_validate(bond)
@@ -138,6 +162,7 @@ async def api_manager_promo(
 # Stables / Factions
 # ---------------------------------------------------------------------------
 
+
 @router.get("/worlds/{world_id}/stables", response_model=List[StableResponse])
 async def api_list_stables(
     world_id: str,
@@ -157,7 +182,9 @@ async def api_list_stables(
     return results
 
 
-@router.post("/worlds/{world_id}/stables", response_model=StableResponse, status_code=201)
+@router.post(
+    "/worlds/{world_id}/stables", response_model=StableResponse, status_code=201
+)
 async def api_create_stable(
     world_id: str,
     data: StableCreate,
@@ -170,16 +197,21 @@ async def api_create_stable(
         leader = db.query(GameWrestlerDB).filter_by(id=data.leader_id).first()
         if not leader:
             raise HTTPException(status_code=404, detail="Leader wrestler not found")
-        contract = db.query(ContractDB).filter_by(
-            wrestler_id=data.leader_id, status="active"
-        ).first()
+        contract = (
+            db.query(ContractDB)
+            .filter_by(wrestler_id=data.leader_id, status="active")
+            .first()
+        )
         fed_id = contract.federation_id if contract else None
         if not fed_id:
             raise HTTPException(status_code=400, detail="Leader has no active contract")
 
         world = get_world(db, world_id)
         stable = stable_service.create_stable(
-            db, world_id, fed_id, name=data.name,
+            db,
+            world_id,
+            fed_id,
+            name=data.name,
             leader_id=data.leader_id,
             founding_member_ids=data.founding_member_ids,
             alignment=data.alignment,
@@ -228,7 +260,10 @@ async def api_add_stable_member(
         raise HTTPException(status_code=404, detail="Stable not found")
     world = get_world(db, stable.world_id)
     member = stable_service.add_member(
-        db, stable_id, data.wrestler_id, data.role,
+        db,
+        stable_id,
+        data.wrestler_id,
+        data.role,
         game_date=world.current_game_date if world else None,
     )
     return {"id": member.id, "wrestler_id": member.wrestler_id, "role": member.role}
@@ -247,7 +282,9 @@ async def api_remove_stable_member(
         raise HTTPException(status_code=404, detail="Stable not found")
     world = get_world(db, stable.world_id)
     if not stable_service.remove_member(
-        db, stable_id, wrestler_id,
+        db,
+        stable_id,
+        wrestler_id,
         game_date=world.current_game_date if world else None,
     ):
         raise HTTPException(status_code=404, detail="Member not found")

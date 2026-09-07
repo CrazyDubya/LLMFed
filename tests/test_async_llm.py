@@ -1,8 +1,7 @@
 """Tests for async LLM support."""
 
-import asyncio
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from llm_abstraction.provider import (
     LLMAbstraction,
@@ -46,9 +45,7 @@ class TestAsyncLLM:
         def _mock_generate(messages, temperature=0.7, max_tokens=None, **kw):
             nonlocal call_count
             call_count += 1
-            return LLMResponse(
-                content=f"response_{call_count}", model="test-model"
-            )
+            return LLMResponse(content=f"response_{call_count}", model="test-model")
 
         with patch.object(OpenAIProvider, "generate", side_effect=_mock_generate):
             allm = AsyncLLM(llm=llm, enable_cache=True, cache_ttl=60.0)
@@ -69,9 +66,7 @@ class TestAsyncLLM:
                 content="batch response", model="test-model"
             )
             allm = AsyncLLM(llm=llm, enable_cache=False)
-            responses = await allm.generate_batch(
-                ["Q1", "Q2", "Q3"], max_concurrent=2
-            )
+            responses = await allm.generate_batch(["Q1", "Q2", "Q3"], max_concurrent=2)
             assert len(responses) == 3
             assert all(r.content == "batch response" for r in responses)
 

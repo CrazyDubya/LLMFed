@@ -11,10 +11,16 @@ import logging
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    StorylineDB, StorylineParticipantDB, GameWrestlerDB, GameFederationDB,
-    ContractDB, MatchDB, MatchParticipantDB, ChampionshipDB,
-    GameNarrativeLogDB, LifeEventDB, WrestlerRelationshipDB,
-    WrestlerBackstoryDB,
+    StorylineDB,
+    StorylineParticipantDB,
+    GameWrestlerDB,
+    GameFederationDB,
+    ContractDB,
+    MatchDB,
+    MatchParticipantDB,
+    GameNarrativeLogDB,
+    LifeEventDB,
+    WrestlerRelationshipDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,33 +51,64 @@ BETRAYAL_TRIGGERS = [
 
 STORYLINE_NAMES = {
     "feud": [
-        "War of Wills", "Bad Blood", "The Grudge", "No Mercy",
-        "Unfinished Business", "Path of Destruction", "Personal Vendetta",
-        "The Rivalry", "Collision Course", "Score to Settle",
+        "War of Wills",
+        "Bad Blood",
+        "The Grudge",
+        "No Mercy",
+        "Unfinished Business",
+        "Path of Destruction",
+        "Personal Vendetta",
+        "The Rivalry",
+        "Collision Course",
+        "Score to Settle",
     ],
     "alliance": [
-        "The Alliance", "Brothers in Arms", "United Front", "Power Pact",
-        "The Partnership", "Dynamic Duo",
+        "The Alliance",
+        "Brothers in Arms",
+        "United Front",
+        "Power Pact",
+        "The Partnership",
+        "Dynamic Duo",
     ],
     "betrayal": [
-        "The Betrayal", "Backstabbed", "Trust No One", "Fallen Alliance",
-        "Broken Bond", "The Turn",
+        "The Betrayal",
+        "Backstabbed",
+        "Trust No One",
+        "Fallen Alliance",
+        "Broken Bond",
+        "The Turn",
     ],
     "championship_chase": [
-        "Road to Gold", "Championship Pursuit", "Title or Bust",
-        "The Contender", "Golden Opportunity",
+        "Road to Gold",
+        "Championship Pursuit",
+        "Title or Bust",
+        "The Contender",
+        "Golden Opportunity",
     ],
     "faction_war": [
-        "War Games", "Gang Warfare", "Hostile Takeover", "Turf War",
-        "The Invasion", "All-Out War", "Blood & Gold",
+        "War Games",
+        "Gang Warfare",
+        "Hostile Takeover",
+        "Turf War",
+        "The Invasion",
+        "All-Out War",
+        "Blood & Gold",
     ],
     "power_struggle": [
-        "Civil War", "The Coup", "Throne Games", "Crown or Nothing",
-        "House Divided", "Internal Combustion",
+        "Civil War",
+        "The Coup",
+        "Throne Games",
+        "Crown or Nothing",
+        "House Divided",
+        "Internal Combustion",
     ],
     "manager_betrayal": [
-        "The Snake Sheds Its Skin", "Business Decision", "Free Agent",
-        "Behind My Back", "Sold Out", "New Management",
+        "The Snake Sheds Its Skin",
+        "Business Decision",
+        "Free Agent",
+        "Behind My Back",
+        "Sold Out",
+        "New Management",
     ],
 }
 
@@ -94,20 +131,27 @@ MANAGER_BETRAYAL_TRIGGERS = [
 # Create storylines
 # ---------------------------------------------------------------------------
 
-def create_storyline(db: Session, world_id: str, federation_id: str,
-                     wrestler_ids: list, storyline_type: str = "feud",
-                     name: str = None, description: str = None,
-                     game_date: str = None,
-                     kayfabe_level: int = 100) -> StorylineDB:
+
+def create_storyline(
+    db: Session,
+    world_id: str,
+    federation_id: str,
+    wrestler_ids: list,
+    storyline_type: str = "feud",
+    name: str = None,
+    description: str = None,
+    game_date: str = None,
+    kayfabe_level: int = 100,
+) -> StorylineDB:
     """Create a new storyline between wrestlers."""
     if not name:
         names = STORYLINE_NAMES.get(storyline_type, STORYLINE_NAMES["feud"])
         name = random.choice(names)
 
     if not description:
-        wrestlers = db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id.in_(wrestler_ids)
-        ).all()
+        wrestlers = (
+            db.query(GameWrestlerDB).filter(GameWrestlerDB.id.in_(wrestler_ids)).all()
+        )
         w_names = {w.id: w.name for w in wrestlers}
 
         if storyline_type == "feud" and len(wrestler_ids) >= 2:
@@ -133,12 +177,15 @@ def create_storyline(db: Session, world_id: str, federation_id: str,
 
     # LLM-as-booker: the head booker AI crafts the storyline
     import os
+
     if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
         try:
             from game_service.character_agent import booker_decide_storyline
+
             names = [w_names.get(wid, "Unknown") for wid in wrestler_ids[:2]]
             booker_result = booker_decide_storyline(
-                db, federation_id,
+                db,
+                federation_id,
                 names[0] if names else "Unknown",
                 names[1] if len(names) > 1 else "Unknown",
                 context=f"Creating a {storyline_type} storyline.",
@@ -170,12 +217,14 @@ def create_storyline(db: Session, world_id: str, federation_id: str,
     roles = ["protagonist", "antagonist"] + ["ally"] * (len(wrestler_ids) - 2)
     for i, wid in enumerate(wrestler_ids):
         role = roles[i] if i < len(roles) else "ally"
-        db.add(StorylineParticipantDB(
-            storyline_id=storyline.id,
-            wrestler_id=wid,
-            role=role,
-            joined_date=game_date,
-        ))
+        db.add(
+            StorylineParticipantDB(
+                storyline_id=storyline.id,
+                wrestler_id=wid,
+                role=role,
+                joined_date=game_date,
+            )
+        )
 
     return storyline
 
@@ -184,8 +233,14 @@ def create_storyline(db: Session, world_id: str, federation_id: str,
 # Storyline progression
 # ---------------------------------------------------------------------------
 
-def progress_storyline(db: Session, storyline: StorylineDB, event_type: str,
-                       heat_delta: int = 5, description: str = None):
+
+def progress_storyline(
+    db: Session,
+    storyline: StorylineDB,
+    event_type: str,
+    heat_delta: int = 5,
+    description: str = None,
+):
     """Advance a storyline based on an event."""
     storyline.heat = max(0, min(100, storyline.heat + heat_delta))
 
@@ -196,15 +251,17 @@ def progress_storyline(db: Session, storyline: StorylineDB, event_type: str,
         storyline.status = "climax"
 
     if description:
-        db.add(GameNarrativeLogDB(
-            world_id=storyline.world_id,
-            game_date="",  # Caller should set this
-            tick=0,
-            event_type="storyline",
-            description=description,
-            involved_entities=[storyline.id],
-            importance=6,
-        ))
+        db.add(
+            GameNarrativeLogDB(
+                world_id=storyline.world_id,
+                game_date="",  # Caller should set this
+                tick=0,
+                event_type="storyline",
+                description=description,
+                involved_entities=[storyline.id],
+                importance=6,
+            )
+        )
 
 
 def resolve_storyline(db: Session, storyline: StorylineDB, resolution: str = None):
@@ -218,33 +275,46 @@ def resolve_storyline(db: Session, storyline: StorylineDB, resolution: str = Non
 # Auto-generate storylines for NPC federations
 # ---------------------------------------------------------------------------
 
+
 def auto_generate_storylines(db: Session, world_id: str, game_date: str):
     """Generate new storylines for NPC federations that need them.
 
     Called periodically from the world ticker.
     """
-    npc_feds = db.query(GameFederationDB).filter(
-        GameFederationDB.world_id == world_id,
-        GameFederationDB.is_npc == True,
-        GameFederationDB.is_active == True,
-    ).all()
+    npc_feds = (
+        db.query(GameFederationDB)
+        .filter(
+            GameFederationDB.world_id == world_id,
+            GameFederationDB.is_npc == True,
+            GameFederationDB.is_active == True,
+        )
+        .all()
+    )
 
     new_storylines = []
     for fed in npc_feds:
         # Count active storylines
-        active_count = db.query(StorylineDB).filter(
-            StorylineDB.federation_id == fed.id,
-            StorylineDB.status.in_(["brewing", "active", "climax"]),
-        ).count()
+        active_count = (
+            db.query(StorylineDB)
+            .filter(
+                StorylineDB.federation_id == fed.id,
+                StorylineDB.status.in_(["brewing", "active", "climax"]),
+            )
+            .count()
+        )
 
         if active_count >= 3:
             continue  # Enough storylines already
 
         # Get roster
-        contracts = db.query(ContractDB).filter(
-            ContractDB.federation_id == fed.id,
-            ContractDB.status == "active",
-        ).all()
+        contracts = (
+            db.query(ContractDB)
+            .filter(
+                ContractDB.federation_id == fed.id,
+                ContractDB.status == "active",
+            )
+            .all()
+        )
         wrestler_ids = [c.wrestler_id for c in contracts]
 
         if len(wrestler_ids) < 2:
@@ -252,14 +322,20 @@ def auto_generate_storylines(db: Session, world_id: str, game_date: str):
 
         # Get wrestlers not already in active storylines
         in_storylines = set()
-        active_sl = db.query(StorylineDB).filter(
-            StorylineDB.federation_id == fed.id,
-            StorylineDB.status.in_(["brewing", "active", "climax"]),
-        ).all()
+        active_sl = (
+            db.query(StorylineDB)
+            .filter(
+                StorylineDB.federation_id == fed.id,
+                StorylineDB.status.in_(["brewing", "active", "climax"]),
+            )
+            .all()
+        )
         for sl in active_sl:
-            parts = db.query(StorylineParticipantDB).filter(
-                StorylineParticipantDB.storyline_id == sl.id
-            ).all()
+            parts = (
+                db.query(StorylineParticipantDB)
+                .filter(StorylineParticipantDB.storyline_id == sl.id)
+                .all()
+            )
             for p in parts:
                 in_storylines.add(p.wrestler_id)
 
@@ -276,7 +352,10 @@ def auto_generate_storylines(db: Session, world_id: str, game_date: str):
         )[0]
 
         sl = create_storyline(
-            db, world_id, fed.id, pair,
+            db,
+            world_id,
+            fed.id,
+            pair,
             storyline_type=stype,
             game_date=game_date,
         )
@@ -289,15 +368,20 @@ def auto_generate_storylines(db: Session, world_id: str, game_date: str):
 # Match result → storyline trigger
 # ---------------------------------------------------------------------------
 
+
 def check_match_storyline_triggers(db: Session, match: MatchDB, game_date: str):
     """After a match completes, check if it should spawn or progress storylines."""
     if not match.is_completed:
         return
 
-    participants = db.query(MatchParticipantDB).filter(
-        MatchParticipantDB.match_id == match.id,
-        MatchParticipantDB.role == "competitor",
-    ).all()
+    participants = (
+        db.query(MatchParticipantDB)
+        .filter(
+            MatchParticipantDB.match_id == match.id,
+            MatchParticipantDB.role == "competitor",
+        )
+        .all()
+    )
 
     if len(participants) < 2:
         return
@@ -316,28 +400,38 @@ def check_match_storyline_triggers(db: Session, match: MatchDB, game_date: str):
         rating = match.match_rating or 3.0
         base_heat = 8 if match.is_title_match else 6
         quality_bonus = max(0, int((rating - 3.0) * 3))  # +3 per star above 3.0
-        card_bonus = 3 if getattr(match, 'card_position', '') == 'main_event' else 0
+        card_bonus = 3 if getattr(match, "card_position", "") == "main_event" else 0
         heat_delta = base_heat + quality_bonus + card_bonus
 
         # Seasonal heat multiplier: storylines get a boost during PPV build windows
         try:
             from game_service.ppv_calendar_service import get_next_ppv, is_build_window
-            from models.game_models import ShowDB, ShowSegmentDB
+            from models.game_models import ShowDB
+
             seg = match.segment
             if seg:
                 show = db.query(ShowDB).filter(ShowDB.id == seg.show_id).first()
                 if show:
                     next_ppv = get_next_ppv(db, show.federation_id, show.game_date)
-                    if next_ppv and is_build_window(show.game_date, next_ppv.scheduled_date):
-                        if getattr(next_ppv, 'is_crown_jewel', False):
-                            heat_delta = int(heat_delta * 2.0)  # Crown Jewel build: +100%
+                    if next_ppv and is_build_window(
+                        show.game_date, next_ppv.scheduled_date
+                    ):
+                        if getattr(next_ppv, "is_crown_jewel", False):
+                            heat_delta = int(
+                                heat_delta * 2.0
+                            )  # Crown Jewel build: +100%
                         else:
-                            heat_delta = int(heat_delta * 1.5)  # Regular PPV build: +50%
+                            heat_delta = int(
+                                heat_delta * 1.5
+                            )  # Regular PPV build: +50%
         except Exception:
             pass  # PPV calendar system is optional
 
         progress_storyline(
-            db, existing, "match_result", heat_delta,
+            db,
+            existing,
+            "match_result",
+            heat_delta,
             description=f"Their rivalry intensified after a {rating:.1f}-star match!",
         )
     else:
@@ -351,7 +445,9 @@ def check_match_storyline_triggers(db: Session, match: MatchDB, game_date: str):
 
             if fed_id:
                 create_storyline(
-                    db, match.world_id, fed_id,
+                    db,
+                    match.world_id,
+                    fed_id,
                     [winner.wrestler_id, loser.wrestler_id],
                     storyline_type="feud",
                     game_date=game_date,
@@ -360,21 +456,31 @@ def check_match_storyline_triggers(db: Session, match: MatchDB, game_date: str):
 
 def _find_storyline_between(db: Session, w1_id: str, w2_id: str):
     """Find an active storyline involving both wrestlers."""
-    sl_ids_1 = {sp.storyline_id for sp in db.query(StorylineParticipantDB).filter(
-        StorylineParticipantDB.wrestler_id == w1_id
-    ).all()}
-    sl_ids_2 = {sp.storyline_id for sp in db.query(StorylineParticipantDB).filter(
-        StorylineParticipantDB.wrestler_id == w2_id
-    ).all()}
+    sl_ids_1 = {
+        sp.storyline_id
+        for sp in db.query(StorylineParticipantDB)
+        .filter(StorylineParticipantDB.wrestler_id == w1_id)
+        .all()
+    }
+    sl_ids_2 = {
+        sp.storyline_id
+        for sp in db.query(StorylineParticipantDB)
+        .filter(StorylineParticipantDB.wrestler_id == w2_id)
+        .all()
+    }
 
     common = sl_ids_1 & sl_ids_2
     if not common:
         return None
 
-    return db.query(StorylineDB).filter(
-        StorylineDB.id.in_(common),
-        StorylineDB.status.in_(["brewing", "active", "climax"]),
-    ).first()
+    return (
+        db.query(StorylineDB)
+        .filter(
+            StorylineDB.id.in_(common),
+            StorylineDB.status.in_(["brewing", "active", "climax"]),
+        )
+        .first()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -382,8 +488,13 @@ def _find_storyline_between(db: Session, w1_id: str, w2_id: str):
 # ---------------------------------------------------------------------------
 
 WORKED_SHOOT_NAMES = [
-    "Breaking Point", "Shoot to Kill", "Off Script", "Real Talk",
-    "Behind the Curtain", "No Character Required", "The Unscripted",
+    "Breaking Point",
+    "Shoot to Kill",
+    "Off Script",
+    "Real Talk",
+    "Behind the Curtain",
+    "No Character Required",
+    "The Unscripted",
 ]
 
 WORKED_SHOOT_DESCRIPTIONS = [
@@ -402,32 +513,48 @@ def check_life_event_storylines(db: Session, world_id: str, game_date: str):
     new_storylines = []
 
     # Find public, storyline-potential life events not yet used
-    events = db.query(LifeEventDB).filter(
-        LifeEventDB.world_id == world_id,
-        LifeEventDB.is_public == True,
-        LifeEventDB.storyline_potential == True,
-        LifeEventDB.was_used_in_storyline == False,
-        LifeEventDB.is_active == True,
-    ).all()
+    events = (
+        db.query(LifeEventDB)
+        .filter(
+            LifeEventDB.world_id == world_id,
+            LifeEventDB.is_public == True,
+            LifeEventDB.storyline_potential == True,
+            LifeEventDB.was_used_in_storyline == False,
+            LifeEventDB.is_active == True,
+        )
+        .all()
+    )
 
     for event in events:
-        wrestler = db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == event.wrestler_id,
-        ).first()
+        wrestler = (
+            db.query(GameWrestlerDB)
+            .filter(
+                GameWrestlerDB.id == event.wrestler_id,
+            )
+            .first()
+        )
         if not wrestler:
             continue
 
         # Find the wrestler's federation
-        contract = db.query(ContractDB).filter(
-            ContractDB.wrestler_id == wrestler.id,
-            ContractDB.status == "active",
-        ).first()
+        contract = (
+            db.query(ContractDB)
+            .filter(
+                ContractDB.wrestler_id == wrestler.id,
+                ContractDB.status == "active",
+            )
+            .first()
+        )
         if not contract:
             continue
 
-        fed = db.query(GameFederationDB).filter(
-            GameFederationDB.id == contract.federation_id,
-        ).first()
+        fed = (
+            db.query(GameFederationDB)
+            .filter(
+                GameFederationDB.id == contract.federation_id,
+            )
+            .first()
+        )
         if not fed:
             continue
 
@@ -442,21 +569,35 @@ def check_life_event_storylines(db: Session, world_id: str, game_date: str):
             continue
 
         # Find a foil — someone the wrestler has a relationship with
-        rel = db.query(WrestlerRelationshipDB).filter(
-            ((WrestlerRelationshipDB.wrestler1_id == wrestler.id) |
-             (WrestlerRelationshipDB.wrestler2_id == wrestler.id)),
-            WrestlerRelationshipDB.rivalry_heat > 30,
-        ).first()
+        rel = (
+            db.query(WrestlerRelationshipDB)
+            .filter(
+                (
+                    (WrestlerRelationshipDB.wrestler1_id == wrestler.id)
+                    | (WrestlerRelationshipDB.wrestler2_id == wrestler.id)
+                ),
+                WrestlerRelationshipDB.rivalry_heat > 30,
+            )
+            .first()
+        )
 
         if rel:
-            foil_id = rel.wrestler2_id if rel.wrestler1_id == wrestler.id else rel.wrestler1_id
+            foil_id = (
+                rel.wrestler2_id
+                if rel.wrestler1_id == wrestler.id
+                else rel.wrestler1_id
+            )
         else:
             # Pick a random roster member
-            roster = db.query(ContractDB).filter(
-                ContractDB.federation_id == fed.id,
-                ContractDB.status == "active",
-                ContractDB.wrestler_id != wrestler.id,
-            ).all()
+            roster = (
+                db.query(ContractDB)
+                .filter(
+                    ContractDB.federation_id == fed.id,
+                    ContractDB.status == "active",
+                    ContractDB.wrestler_id != wrestler.id,
+                )
+                .all()
+            )
             if not roster:
                 continue
             foil_id = random.choice(roster).wrestler_id
@@ -465,7 +606,9 @@ def check_life_event_storylines(db: Session, world_id: str, game_date: str):
         kayfabe_level = max(10, 50 - event.severity * 4)
 
         sl = create_storyline(
-            db, world_id, fed.id,
+            db,
+            world_id,
+            fed.id,
             [wrestler.id, foil_id],
             storyline_type="feud",
             name=random.choice(WORKED_SHOOT_NAMES),
@@ -475,8 +618,11 @@ def check_life_event_storylines(db: Session, world_id: str, game_date: str):
         )
         event.was_used_in_storyline = True
         new_storylines.append(sl)
-        logger.info("Created worked-shoot storyline '%s' from life event for %s",
-                     sl.name, wrestler.name)
+        logger.info(
+            "Created worked-shoot storyline '%s' from life event for %s",
+            sl.name,
+            wrestler.name,
+        )
 
     return new_storylines
 
@@ -489,9 +635,13 @@ def check_relationship_collision_storylines(db: Session, world_id: str, game_dat
     new_storylines = []
 
     # Find relationships where real and kayfabe are in tension
-    rels = db.query(WrestlerRelationshipDB).filter(
-        WrestlerRelationshipDB.world_id == world_id,
-    ).all()
+    rels = (
+        db.query(WrestlerRelationshipDB)
+        .filter(
+            WrestlerRelationshipDB.world_id == world_id,
+        )
+        .all()
+    )
 
     for rel in rels:
         real = rel.real_relationship
@@ -500,9 +650,8 @@ def check_relationship_collision_storylines(db: Session, world_id: str, game_dat
             continue
 
         # Real friends, kayfabe rivals — potential worked-shoot tension
-        is_collision = (
-            (real == "friends" and kayfabe == "rivals") or
-            (real == "enemies" and kayfabe in ("allies", "tag_partners"))
+        is_collision = (real == "friends" and kayfabe == "rivals") or (
+            real == "enemies" and kayfabe in ("allies", "tag_partners")
         )
         if not is_collision:
             continue
@@ -517,22 +666,32 @@ def check_relationship_collision_storylines(db: Session, world_id: str, game_dat
             continue
 
         # Find federation
-        contract = db.query(ContractDB).filter(
-            ContractDB.wrestler_id == rel.wrestler1_id,
-            ContractDB.status == "active",
-        ).first()
+        contract = (
+            db.query(ContractDB)
+            .filter(
+                ContractDB.wrestler_id == rel.wrestler1_id,
+                ContractDB.status == "active",
+            )
+            .first()
+        )
         if not contract:
             continue
 
-        fed = db.query(GameFederationDB).filter(
-            GameFederationDB.id == contract.federation_id,
-        ).first()
+        fed = (
+            db.query(GameFederationDB)
+            .filter(
+                GameFederationDB.id == contract.federation_id,
+            )
+            .first()
+        )
         if not fed or (fed.kayfabe_strictness or 50) > 70:
             continue
 
         collision_type = "feud" if real == "enemies" else "betrayal"
         sl = create_storyline(
-            db, world_id, fed.id,
+            db,
+            world_id,
+            fed.id,
             [rel.wrestler1_id, rel.wrestler2_id],
             storyline_type=collision_type,
             name=random.choice(WORKED_SHOOT_NAMES),

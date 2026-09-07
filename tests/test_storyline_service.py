@@ -6,13 +6,16 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    StorylineDB, StorylineParticipantDB, GameWrestlerDB,
-    GameFederationDB, MatchDB, MatchParticipantDB, ShowDB, ShowSegmentDB,
+    StorylineParticipantDB,
+    GameWrestlerDB,
+    GameFederationDB,
 )
 from game_service.world_service import create_world
 from game_service.storyline_service import (
-    create_storyline, progress_storyline, resolve_storyline,
-    auto_generate_storylines, check_match_storyline_triggers,
+    create_storyline,
+    progress_storyline,
+    resolve_storyline,
+    auto_generate_storylines,
 )
 
 
@@ -29,12 +32,17 @@ def db_session():
 @pytest.fixture
 def world_data(db_session):
     world = create_world(db_session, "Storyline World")
-    fed = db_session.query(GameFederationDB).filter(
-        GameFederationDB.world_id == world.id
-    ).first()
-    wrestlers = db_session.query(GameWrestlerDB).filter(
-        GameWrestlerDB.world_id == world.id
-    ).limit(4).all()
+    fed = (
+        db_session.query(GameFederationDB)
+        .filter(GameFederationDB.world_id == world.id)
+        .first()
+    )
+    wrestlers = (
+        db_session.query(GameWrestlerDB)
+        .filter(GameWrestlerDB.world_id == world.id)
+        .limit(4)
+        .all()
+    )
     return world, fed, wrestlers
 
 
@@ -42,7 +50,9 @@ class TestCreateStoryline:
     def test_creates_feud(self, db_session, world_data):
         world, fed, wrestlers = world_data
         sl = create_storyline(
-            db_session, world.id, fed.id,
+            db_session,
+            world.id,
+            fed.id,
             [wrestlers[0].id, wrestlers[1].id],
             storyline_type="feud",
             game_date="2026-01-01",
@@ -54,9 +64,11 @@ class TestCreateStoryline:
         assert sl.storyline_type == "feud"
         assert sl.heat >= 30
 
-        parts = db_session.query(StorylineParticipantDB).filter(
-            StorylineParticipantDB.storyline_id == sl.id
-        ).all()
+        parts = (
+            db_session.query(StorylineParticipantDB)
+            .filter(StorylineParticipantDB.storyline_id == sl.id)
+            .all()
+        )
         assert len(parts) == 2
         roles = {p.role for p in parts}
         assert "protagonist" in roles
@@ -65,7 +77,9 @@ class TestCreateStoryline:
     def test_creates_alliance(self, db_session, world_data):
         world, fed, wrestlers = world_data
         sl = create_storyline(
-            db_session, world.id, fed.id,
+            db_session,
+            world.id,
+            fed.id,
             [wrestlers[0].id, wrestlers[1].id],
             storyline_type="alliance",
         )
@@ -77,7 +91,9 @@ class TestCreateStoryline:
     def test_custom_name_and_description(self, db_session, world_data):
         world, fed, wrestlers = world_data
         sl = create_storyline(
-            db_session, world.id, fed.id,
+            db_session,
+            world.id,
+            fed.id,
             [wrestlers[0].id, wrestlers[1].id],
             name="The Ultimate Rivalry",
             description="A bitter feud over respect.",
@@ -92,7 +108,9 @@ class TestStorylineProgression:
     def test_heat_increases(self, db_session, world_data):
         world, fed, wrestlers = world_data
         sl = create_storyline(
-            db_session, world.id, fed.id,
+            db_session,
+            world.id,
+            fed.id,
             [wrestlers[0].id, wrestlers[1].id],
         )
         initial_heat = sl.heat
@@ -103,7 +121,9 @@ class TestStorylineProgression:
     def test_escalation_to_active(self, db_session, world_data):
         world, fed, wrestlers = world_data
         sl = create_storyline(
-            db_session, world.id, fed.id,
+            db_session,
+            world.id,
+            fed.id,
             [wrestlers[0].id, wrestlers[1].id],
         )
         sl.heat = 50
@@ -113,7 +133,9 @@ class TestStorylineProgression:
     def test_escalation_to_climax(self, db_session, world_data):
         world, fed, wrestlers = world_data
         sl = create_storyline(
-            db_session, world.id, fed.id,
+            db_session,
+            world.id,
+            fed.id,
             [wrestlers[0].id, wrestlers[1].id],
         )
         sl.heat = 75
@@ -124,7 +146,9 @@ class TestStorylineProgression:
     def test_resolve_storyline(self, db_session, world_data):
         world, fed, wrestlers = world_data
         sl = create_storyline(
-            db_session, world.id, fed.id,
+            db_session,
+            world.id,
+            fed.id,
             [wrestlers[0].id, wrestlers[1].id],
         )
         resolve_storyline(db_session, sl, "Settled in a cage match")
@@ -146,12 +170,18 @@ class TestAutoGeneration:
 
         # Create 3 active storylines for this fed
         for i in range(3):
-            w_pair = db_session.query(GameWrestlerDB).filter(
-                GameWrestlerDB.world_id == world.id
-            ).offset(i * 2).limit(2).all()
+            w_pair = (
+                db_session.query(GameWrestlerDB)
+                .filter(GameWrestlerDB.world_id == world.id)
+                .offset(i * 2)
+                .limit(2)
+                .all()
+            )
             if len(w_pair) == 2:
                 create_storyline(
-                    db_session, world.id, fed.id,
+                    db_session,
+                    world.id,
+                    fed.id,
                     [w_pair[0].id, w_pair[1].id],
                 )
         db_session.commit()

@@ -44,9 +44,14 @@ class AsyncLLM:
     ):
         if llm is None:
             from llm_abstraction.provider import get_llm
+
             llm = get_llm()
         self._llm = llm
-        self._cache = LLMResponseCache(max_size=cache_max_size, ttl_seconds=cache_ttl) if enable_cache else None
+        self._cache = (
+            LLMResponseCache(max_size=cache_max_size, ttl_seconds=cache_ttl)
+            if enable_cache
+            else None
+        )
         self._max_retries = max_retries
 
     async def generate(
@@ -89,7 +94,8 @@ class AsyncLLM:
             )
 
         response = await _async_retry_with_backoff(
-            _attempt, max_retries=self._max_retries,
+            _attempt,
+            max_retries=self._max_retries,
         )
 
         # Store in cache
@@ -133,7 +139,8 @@ class AsyncLLM:
             )
 
         response = await _async_retry_with_backoff(
-            _attempt, max_retries=self._max_retries,
+            _attempt,
+            max_retries=self._max_retries,
         )
 
         if use_cache and self._cache is not None:

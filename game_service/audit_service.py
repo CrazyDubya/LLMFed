@@ -42,18 +42,20 @@ def record_change(
     The entry is staged (``db.add``) but NOT committed — the caller is
     responsible for committing as part of its own transaction.
     """
-    db.add(AuditLogDB(
-        entity_type=entity_type,
-        entity_id=str(entity_id),
-        field_name=field_name,
-        old_value=old_value,
-        new_value=new_value,
-        action=action,
-        actor_type=actor_type,
-        actor_id=str(actor_id) if actor_id else None,
-        world_id=str(world_id) if world_id else None,
-        reason=reason,
-    ))
+    db.add(
+        AuditLogDB(
+            entity_type=entity_type,
+            entity_id=str(entity_id),
+            field_name=field_name,
+            old_value=old_value,
+            new_value=new_value,
+            action=action,
+            actor_type=actor_type,
+            actor_id=str(actor_id) if actor_id else None,
+            world_id=str(world_id) if world_id else None,
+            reason=reason,
+        )
+    )
 
 
 def record_creation(

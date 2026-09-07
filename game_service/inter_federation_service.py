@@ -16,8 +16,12 @@ from typing import Callable, List
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    WorldDB, GameFederationDB, GameWrestlerDB,
-    ContractDB, ShowDB, TalentOfferDB,
+    WorldDB,
+    GameFederationDB,
+    GameWrestlerDB,
+    ContractDB,
+    ShowDB,
+    TalentOfferDB,
 )
 from game_service.player_action_handler import get_active_contract
 from game_service.salary_calculator import calculate_salary_from_db
@@ -32,6 +36,7 @@ def _get_news_service():
     global _news_service
     if _news_service is None:
         from game_service import news_service as _ns
+
         _news_service = _ns
     return _news_service
 
@@ -39,6 +44,7 @@ def _get_news_service():
 def advance_game_date(date_str: str, days: int = 1) -> str:
     """Advance a YYYY-MM-DD date string by N days."""
     from datetime import datetime, timedelta
+
     dt = datetime.strptime(date_str, "%Y-%m-%d")
     dt += timedelta(days=days)
     return dt.strftime("%Y-%m-%d")
@@ -47,6 +53,7 @@ def advance_game_date(date_str: str, days: int = 1) -> str:
 def get_day_of_week(date_str: str) -> int:
     """Get day of week (0=Monday, 6=Sunday) from date string."""
     from datetime import datetime
+
     return datetime.strptime(date_str, "%Y-%m-%d").weekday()
 
 
@@ -54,23 +61,33 @@ def get_day_of_week(date_str: str) -> int:
 # Public API — each function mirrors the old WorldTicker method
 # -----------------------------------------------------------------
 
-def update_federation_momentum(db: Session, world: WorldDB, events: List[str],
-                               log_event: Callable, game_date: str):
+
+def update_federation_momentum(
+    db: Session, world: WorldDB, events: List[str], log_event: Callable, game_date: str
+):
     """Daily federation momentum adjustment."""
-    feds = db.query(GameFederationDB).filter(
-        GameFederationDB.world_id == world.id,
-        GameFederationDB.is_active == True,
-    ).all()
+    feds = (
+        db.query(GameFederationDB)
+        .filter(
+            GameFederationDB.world_id == world.id,
+            GameFederationDB.is_active == True,
+        )
+        .all()
+    )
 
     for fed in feds:
         momentum = fed.momentum or 50
 
         # Recent show quality (check last show)
-        last_show = db.query(ShowDB).filter(
-            ShowDB.federation_id == fed.id,
-            ShowDB.is_completed == True,
-            ShowDB.game_date == game_date,
-        ).first()
+        last_show = (
+            db.query(ShowDB)
+            .filter(
+                ShowDB.federation_id == fed.id,
+                ShowDB.is_completed == True,
+                ShowDB.game_date == game_date,
+            )
+            .first()
+        )
 
         if last_show and last_show.overall_rating:
             if last_show.overall_rating >= 4.0:
@@ -81,15 +98,23 @@ def update_federation_momentum(db: Session, world: WorldDB, events: List[str],
                 momentum -= 2
 
         # Roster morale check
-        contracts = db.query(ContractDB).filter(
-            ContractDB.federation_id == fed.id,
-            ContractDB.status == "active",
-        ).all()
+        contracts = (
+            db.query(ContractDB)
+            .filter(
+                ContractDB.federation_id == fed.id,
+                ContractDB.status == "active",
+            )
+            .all()
+        )
         if contracts:
             wrestler_ids = [c.wrestler_id for c in contracts]
-            wrestlers = db.query(GameWrestlerDB).filter(
-                GameWrestlerDB.id.in_(wrestler_ids),
-            ).all()
+            wrestlers = (
+                db.query(GameWrestlerDB)
+                .filter(
+                    GameWrestlerDB.id.in_(wrestler_ids),
+                )
+                .all()
+            )
             if wrestlers:
                 avg_morale = sum(w.morale for w in wrestlers) / len(wrestlers)
                 if avg_morale < 40:
@@ -104,13 +129,18 @@ def update_federation_momentum(db: Session, world: WorldDB, events: List[str],
         fed.momentum = max(0, min(100, momentum))
 
 
-def redistribute_market_share(db: Session, world: WorldDB, events: List[str],
-                              log_event: Callable):
+def redistribute_market_share(
+    db: Session, world: WorldDB, events: List[str], log_event: Callable
+):
     """Redistribute market share based on momentum and show quality."""
-    feds = db.query(GameFederationDB).filter(
-        GameFederationDB.world_id == world.id,
-        GameFederationDB.is_active == True,
-    ).all()
+    feds = (
+        db.query(GameFederationDB)
+        .filter(
+            GameFederationDB.world_id == world.id,
+            GameFederationDB.is_active == True,
+        )
+        .all()
+    )
 
     if not feds:
         return
@@ -127,30 +157,39 @@ def redistribute_market_share(db: Session, world: WorldDB, events: List[str],
         fed.market_share = round(current + (target_share - current) * 0.1, 1)
 
 
-def generate_talent_offers(db: Session, world: WorldDB, events: List[str],
-                           log_event: Callable, game_date: str):
+def generate_talent_offers(
+    db: Session, world: WorldDB, events: List[str], log_event: Callable, game_date: str
+):
     """NPC feds make talent offers to rivals' wrestlers."""
-    npc_feds = db.query(GameFederationDB).filter(
-        GameFederationDB.world_id == world.id,
-        GameFederationDB.is_npc == True,
-        GameFederationDB.is_active == True,
-        GameFederationDB.budget > 50000,
-    ).all()
+    npc_feds = (
+        db.query(GameFederationDB)
+        .filter(
+            GameFederationDB.world_id == world.id,
+            GameFederationDB.is_npc == True,
+            GameFederationDB.is_active == True,
+            GameFederationDB.budget > 50000,
+        )
+        .all()
+    )
 
     for fed in npc_feds:
         if random.random() > 0.15:  # 15% chance per week
             continue
 
         # Find targets: popular wrestlers from other feds with low morale
-        targets = db.query(GameWrestlerDB).join(ContractDB).filter(
-            GameWrestlerDB.world_id == world.id,
-            GameWrestlerDB.is_active == True,
-            GameWrestlerDB.is_npc == True,
-            ContractDB.federation_id != fed.id,
-            ContractDB.status == "active",
-        ).filter(
-            (GameWrestlerDB.popularity > 60) | (GameWrestlerDB.morale < 40)
-        ).all()
+        targets = (
+            db.query(GameWrestlerDB)
+            .join(ContractDB)
+            .filter(
+                GameWrestlerDB.world_id == world.id,
+                GameWrestlerDB.is_active == True,
+                GameWrestlerDB.is_npc == True,
+                ContractDB.federation_id != fed.id,
+                ContractDB.status == "active",
+            )
+            .filter((GameWrestlerDB.popularity > 60) | (GameWrestlerDB.morale < 40))
+            .all()
+        )
 
         if not targets:
             continue
@@ -158,39 +197,51 @@ def generate_talent_offers(db: Session, world: WorldDB, events: List[str],
         target = random.choice(targets)
 
         # Check no existing pending offer
-        existing = db.query(TalentOfferDB).filter(
-            TalentOfferDB.wrestler_id == target.id,
-            TalentOfferDB.status == "pending",
-        ).first()
+        existing = (
+            db.query(TalentOfferDB)
+            .filter(
+                TalentOfferDB.wrestler_id == target.id,
+                TalentOfferDB.status == "pending",
+            )
+            .first()
+        )
         if existing:
             continue
 
         salary = calculate_salary_from_db(db, target.id, federation_id=fed.id)
         expires = advance_game_date(game_date, 14)
 
-        db.add(TalentOfferDB(
-            world_id=world.id,
-            federation_id=fed.id,
-            wrestler_id=target.id,
-            salary_offered=salary,
-            contract_length_weeks=52,
-            offered_date=game_date,
-            expires_date=expires,
-        ))
+        db.add(
+            TalentOfferDB(
+                world_id=world.id,
+                federation_id=fed.id,
+                wrestler_id=target.id,
+                salary_offered=salary,
+                contract_length_weeks=52,
+                offered_date=game_date,
+                expires_date=expires,
+            )
+        )
         log_event(
             "talent_offer",
             f"{fed.short_name or fed.name} makes an offer to {target.name}",
-            [fed.id, target.id], importance=5,
+            [fed.id, target.id],
+            importance=5,
         )
 
 
-def process_talent_offers(db: Session, world: WorldDB, events: List[str],
-                          log_event: Callable, game_date: str):
+def process_talent_offers(
+    db: Session, world: WorldDB, events: List[str], log_event: Callable, game_date: str
+):
     """Process pending talent offers -- NPC wrestlers decide."""
-    offers = db.query(TalentOfferDB).filter(
-        TalentOfferDB.world_id == world.id,
-        TalentOfferDB.status == "pending",
-    ).all()
+    offers = (
+        db.query(TalentOfferDB)
+        .filter(
+            TalentOfferDB.world_id == world.id,
+            TalentOfferDB.status == "pending",
+        )
+        .all()
+    )
 
     for offer in offers:
         # Expired?
@@ -198,9 +249,11 @@ def process_talent_offers(db: Session, world: WorldDB, events: List[str],
             offer.status = "expired"
             continue
 
-        wrestler = db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == offer.wrestler_id
-        ).first()
+        wrestler = (
+            db.query(GameWrestlerDB)
+            .filter(GameWrestlerDB.id == offer.wrestler_id)
+            .first()
+        )
         if not wrestler or not wrestler.is_npc:
             continue
 
@@ -232,18 +285,25 @@ def process_talent_offers(db: Session, world: WorldDB, events: List[str],
             db.add(new_contract)
             offer.status = "accepted"
 
-            fed = db.query(GameFederationDB).filter(
-                GameFederationDB.id == offer.federation_id
-            ).first()
+            fed = (
+                db.query(GameFederationDB)
+                .filter(GameFederationDB.id == offer.federation_id)
+                .first()
+            )
             fed_name = fed.short_name or fed.name if fed else "Unknown"
             log_event(
                 "talent_signing",
                 f"BREAKING: {wrestler.name} signs with {fed_name}!",
-                [wrestler.id, offer.federation_id], importance=8,
+                [wrestler.id, offer.federation_id],
+                importance=8,
             )
             events.append(f"{wrestler.name} signs with {fed_name}!")
             _get_news_service().generate_signing_news(
-                db, world.id, wrestler.name, fed_name, game_date,
+                db,
+                world.id,
+                wrestler.name,
+                fed_name,
+                game_date,
             )
 
             # Momentum shifts
@@ -253,17 +313,22 @@ def process_talent_offers(db: Session, world: WorldDB, events: List[str],
             offer.status = "rejected"
 
 
-def adjust_tv_deals(db: Session, world: WorldDB, events: List[str],
-                    log_event: Callable):
+def adjust_tv_deals(
+    db: Session, world: WorldDB, events: List[str], log_event: Callable
+):
     """Quarterly TV deal adjustments based on performance."""
     # Only adjust on first Sunday of each quarter-ish (every ~13 weeks)
     if world.current_tick % 91 != 0:
         return
 
-    feds = db.query(GameFederationDB).filter(
-        GameFederationDB.world_id == world.id,
-        GameFederationDB.is_active == True,
-    ).all()
+    feds = (
+        db.query(GameFederationDB)
+        .filter(
+            GameFederationDB.world_id == world.id,
+            GameFederationDB.is_active == True,
+        )
+        .all()
+    )
 
     for fed in feds:
         momentum = fed.momentum or 50

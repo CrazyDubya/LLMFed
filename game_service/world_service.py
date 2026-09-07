@@ -8,9 +8,14 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    WorldDB, WorldStateDB, PlayerDB,
-    GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    ContractDB, ChampionshipDB,
+    WorldDB,
+    WorldStateDB,
+    PlayerDB,
+    GameFederationDB,
+    GameWrestlerDB,
+    WrestlerStatsDB,
+    ContractDB,
+    ChampionshipDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -20,15 +25,57 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 WRESTLER_FIRST_NAMES = [
-    "Stone", "The", "Big", "Iron", "Lightning", "Shadow", "Diamond", "Golden",
-    "Razor", "Thunder", "Crimson", "Silver", "Black", "White", "Red", "Blue",
-    "King", "Prince", "Duke", "Baron", "Count", "Lord", "Mad", "Wild",
+    "Stone",
+    "The",
+    "Big",
+    "Iron",
+    "Lightning",
+    "Shadow",
+    "Diamond",
+    "Golden",
+    "Razor",
+    "Thunder",
+    "Crimson",
+    "Silver",
+    "Black",
+    "White",
+    "Red",
+    "Blue",
+    "King",
+    "Prince",
+    "Duke",
+    "Baron",
+    "Count",
+    "Lord",
+    "Mad",
+    "Wild",
 ]
 
 WRESTLER_LAST_NAMES = [
-    "Havoc", "Storm", "Wolf", "Dragon", "Phoenix", "Titan", "Cobra", "Viper",
-    "Hawk", "Eagle", "Bull", "Bear", "Panther", "Jaguar", "Fury", "Blaze",
-    "Cross", "Steele", "Hart", "Austin", "Rock", "Edge", "Kane", "Mysterio",
+    "Havoc",
+    "Storm",
+    "Wolf",
+    "Dragon",
+    "Phoenix",
+    "Titan",
+    "Cobra",
+    "Viper",
+    "Hawk",
+    "Eagle",
+    "Bull",
+    "Bear",
+    "Panther",
+    "Jaguar",
+    "Fury",
+    "Blaze",
+    "Cross",
+    "Steele",
+    "Hart",
+    "Austin",
+    "Rock",
+    "Edge",
+    "Kane",
+    "Mysterio",
 ]
 
 GIMMICKS = [
@@ -61,52 +108,142 @@ FEDERATION_NAMES = [
     ("Empire State Wrestling", "ESW"),
 ]
 
-REGIONS = ["Northeast", "Southeast", "Midwest", "Southwest", "West Coast", "International"]
-STYLES = ["Sports Entertainment", "Strong Style", "Lucha Libre", "Technical", "Hardcore", "Old School"]
-WEIGHT_CLASSES = ["lightweight", "cruiserweight", "middleweight", "heavyweight", "super_heavyweight"]
+REGIONS = [
+    "Northeast",
+    "Southeast",
+    "Midwest",
+    "Southwest",
+    "West Coast",
+    "International",
+]
+STYLES = [
+    "Sports Entertainment",
+    "Strong Style",
+    "Lucha Libre",
+    "Technical",
+    "Hardcore",
+    "Old School",
+]
+WEIGHT_CLASSES = [
+    "lightweight",
+    "cruiserweight",
+    "middleweight",
+    "heavyweight",
+    "super_heavyweight",
+]
 
 # Named venue pools by region — gives shows real character
 VENUES = {
     "Northeast": {
-        "club": ["The Hammerstein Ballroom", "The ECW Arena", "The Manhattan Center",
-                  "Webster Hall", "The Palladium"],
-        "arena": ["Madison Square Garden Theater", "Boardwalk Hall", "The Prudential Center",
-                   "Nassau Coliseum", "Barclays Center", "TD Garden"],
+        "club": [
+            "The Hammerstein Ballroom",
+            "The ECW Arena",
+            "The Manhattan Center",
+            "Webster Hall",
+            "The Palladium",
+        ],
+        "arena": [
+            "Madison Square Garden Theater",
+            "Boardwalk Hall",
+            "The Prudential Center",
+            "Nassau Coliseum",
+            "Barclays Center",
+            "TD Garden",
+        ],
         "stadium": ["MetLife Stadium", "Yankee Stadium", "Gillette Stadium"],
     },
     "Southeast": {
-        "club": ["Center Stage Theater", "The Impact Zone", "The Sportatorium",
-                  "The Cajun Dome Club", "The Warehouse"],
-        "arena": ["The Omni", "Greensboro Coliseum", "The Civic Center",
-                   "Amway Center", "Bridgestone Arena", "FedExForum"],
-        "stadium": ["The Georgia Dome", "Raymond James Stadium", "Bank of America Stadium"],
+        "club": [
+            "Center Stage Theater",
+            "The Impact Zone",
+            "The Sportatorium",
+            "The Cajun Dome Club",
+            "The Warehouse",
+        ],
+        "arena": [
+            "The Omni",
+            "Greensboro Coliseum",
+            "The Civic Center",
+            "Amway Center",
+            "Bridgestone Arena",
+            "FedExForum",
+        ],
+        "stadium": [
+            "The Georgia Dome",
+            "Raymond James Stadium",
+            "Bank of America Stadium",
+        ],
     },
     "Midwest": {
-        "club": ["The Odeum", "Davis Arena", "The Rave",
-                  "Harley Race Arena", "The Coliseum Club"],
-        "arena": ["Allstate Arena", "Rupp Arena", "The Kiel Center",
-                   "Joe Louis Arena", "The Bradley Center", "Bankers Life Fieldhouse"],
+        "club": [
+            "The Odeum",
+            "Davis Arena",
+            "The Rave",
+            "Harley Race Arena",
+            "The Coliseum Club",
+        ],
+        "arena": [
+            "Allstate Arena",
+            "Rupp Arena",
+            "The Kiel Center",
+            "Joe Louis Arena",
+            "The Bradley Center",
+            "Bankers Life Fieldhouse",
+        ],
         "stadium": ["Soldier Field", "Ford Field", "Lucas Oil Stadium"],
     },
     "Southwest": {
-        "club": ["The Bomb Factory", "The Aztec Theater", "The Pavilion",
-                  "South Side Ballroom", "The Pit"],
-        "arena": ["The Alamodome Theater", "American Airlines Center", "Dickies Arena",
-                   "The Toyota Center", "Desert Diamond Arena", "Moody Center"],
+        "club": [
+            "The Bomb Factory",
+            "The Aztec Theater",
+            "The Pavilion",
+            "South Side Ballroom",
+            "The Pit",
+        ],
+        "arena": [
+            "The Alamodome Theater",
+            "American Airlines Center",
+            "Dickies Arena",
+            "The Toyota Center",
+            "Desert Diamond Arena",
+            "Moody Center",
+        ],
         "stadium": ["AT&T Stadium", "NRG Stadium", "The Alamodome"],
     },
     "West Coast": {
-        "club": ["The Grand Olympic Auditorium", "The Shrine Expo", "The Cow Palace Club",
-                  "The Hollywood Palladium", "The Showbox"],
-        "arena": ["The Staples Center", "Oracle Arena", "The Forum",
-                   "T-Mobile Arena", "Moda Center", "Climate Pledge Arena"],
+        "club": [
+            "The Grand Olympic Auditorium",
+            "The Shrine Expo",
+            "The Cow Palace Club",
+            "The Hollywood Palladium",
+            "The Showbox",
+        ],
+        "arena": [
+            "The Staples Center",
+            "Oracle Arena",
+            "The Forum",
+            "T-Mobile Arena",
+            "Moda Center",
+            "Climate Pledge Arena",
+        ],
         "stadium": ["SoFi Stadium", "Levi's Stadium", "Allegiant Stadium"],
     },
     "International": {
-        "club": ["The Budokan Hall", "York Hall", "Korakuen Hall",
-                  "Arena Mexico", "Wembley Arena Club"],
-        "arena": ["Tokyo Dome City Hall", "Manchester Arena", "The O2 Arena",
-                   "Osaka-Jo Hall", "Ryogoku Kokugikan", "Wembley Arena"],
+        "club": [
+            "The Budokan Hall",
+            "York Hall",
+            "Korakuen Hall",
+            "Arena Mexico",
+            "Wembley Arena Club",
+        ],
+        "arena": [
+            "Tokyo Dome City Hall",
+            "Manchester Arena",
+            "The O2 Arena",
+            "Osaka-Jo Hall",
+            "Ryogoku Kokugikan",
+            "Wembley Arena",
+        ],
         "stadium": ["Tokyo Dome", "Wembley Stadium", "Melbourne Cricket Ground"],
     },
 }
@@ -135,25 +272,52 @@ def _generate_career_goals(age: int) -> list:
     goals = []
 
     if age < 25:
-        goals.append(random.choice([
-            "win_first_title", "prove_myself", "make_it_to_main_event",
-        ]))
+        goals.append(
+            random.choice(
+                [
+                    "win_first_title",
+                    "prove_myself",
+                    "make_it_to_main_event",
+                ]
+            )
+        )
     elif age < 32:
-        goals.append(random.choice([
-            "become_champion", "main_event_ppv", "build_legacy",
-            "become_top_draw", "win_title_at_crown_jewel",
-        ]))
+        goals.append(
+            random.choice(
+                [
+                    "become_champion",
+                    "main_event_ppv",
+                    "build_legacy",
+                    "become_top_draw",
+                    "win_title_at_crown_jewel",
+                ]
+            )
+        )
     else:
-        goals.append(random.choice([
-            "one_more_title_run", "mentor_next_generation", "retirement_match",
-            "cement_legacy", "prove_doubters_wrong",
-        ]))
+        goals.append(
+            random.choice(
+                [
+                    "one_more_title_run",
+                    "mentor_next_generation",
+                    "retirement_match",
+                    "cement_legacy",
+                    "prove_doubters_wrong",
+                ]
+            )
+        )
 
     # Secondary goal
-    goals.append(random.choice([
-        "earn_respect", "get_rich", "have_5_star_match",
-        "defeat_rival", "headline_biggest_show",
-    ]))
+    goals.append(
+        random.choice(
+            [
+                "earn_respect",
+                "get_rich",
+                "have_5_star_match",
+                "defeat_rival",
+                "headline_biggest_show",
+            ]
+        )
+    )
 
     return goals
 
@@ -199,8 +363,10 @@ def _generate_npc_wrestler(world_id: str) -> tuple:
     exp = max(0, age - 18 - random.randint(0, 5))
 
     from game_service.wrestler_lifecycle_service import (
-        generate_physical_attributes, update_career_phase,
+        generate_physical_attributes,
+        update_career_phase,
     )
+
     phys = generate_physical_attributes()
     peak_age = random.randint(26, 32)
 
@@ -226,17 +392,22 @@ def _generate_npc_wrestler(world_id: str) -> tuple:
     }
 
     alignment = random.choice(["face", "heel", "tweener"])
-    charisma_style = random.choice(["cocky", "humble", "intense", "funny", "mysterious"])
+    charisma_style = random.choice(
+        ["cocky", "humble", "intense", "funny", "mysterious"]
+    )
 
     # Pick archetype and generate archetype-specific finisher + signatures
     archetype = _pick_archetype(alignment, stats_raw)
 
     from core_engine.match_engine import ARCHETYPE_FINISHERS, SIGNATURE_MOVE_POOLS
+
     finisher_pool = ARCHETYPE_FINISHERS.get(archetype, ARCHETYPE_FINISHERS["anti_hero"])
     finisher_name, finisher_type = random.choice(finisher_pool)
 
     sig_pool = SIGNATURE_MOVE_POOLS.get(archetype, SIGNATURE_MOVE_POOLS["anti_hero"])
-    signature_moves = [list(sig) for sig in random.sample(sig_pool, min(3, len(sig_pool)))]
+    signature_moves = [
+        list(sig) for sig in random.sample(sig_pool, min(3, len(sig_pool)))
+    ]
 
     wrestler = GameWrestlerDB(
         world_id=world_id,
@@ -261,7 +432,7 @@ def _generate_npc_wrestler(world_id: str) -> tuple:
         },
         career_goals=_generate_career_goals(age),
         # Group 1: Aging
-        birth_date=f"{2026 - age}-{random.randint(1,12):02d}-{random.randint(1,28):02d}",
+        birth_date=f"{2026 - age}-{random.randint(1, 12):02d}-{random.randint(1, 28):02d}",
         peak_age=peak_age,
         # Group 6: Physical Identity
         height_cm=phys["height_cm"],
@@ -279,9 +450,15 @@ def _generate_npc_wrestler(world_id: str) -> tuple:
 # World creation
 # ---------------------------------------------------------------------------
 
-def create_world(db: Session, name: str, description: str = None,
-                 is_multiplayer: bool = False, max_players: int = 1,
-                 world_config: dict = None) -> WorldDB:
+
+def create_world(
+    db: Session,
+    name: str,
+    description: str = None,
+    is_multiplayer: bool = False,
+    max_players: int = 1,
+    world_config: dict = None,
+) -> WorldDB:
     """Create a new game world with NPC federations and wrestlers."""
     world = WorldDB(
         name=name,
@@ -319,7 +496,9 @@ def create_world(db: Session, name: str, description: str = None,
             home_region=random.choice(REGIONS),
             style=random.choice(STYLES),
             ai_personality={
-                "booking_style": random.choice(["workrate", "entertainment", "hardcore", "storyline"]),
+                "booking_style": random.choice(
+                    ["workrate", "entertainment", "hardcore", "storyline"]
+                ),
                 "risk_tolerance": random.randint(20, 80),
                 "talent_priority": random.choice(["homegrown", "free_agents", "mixed"]),
             },
@@ -329,12 +508,14 @@ def create_world(db: Session, name: str, description: str = None,
         federations.append(fed)
 
         # Create a championship per federation
-        db.add(ChampionshipDB(
-            world_id=world.id,
-            federation_id=fed.id,
-            name=f"{short_name} World Championship",
-            prestige=fed.prestige,
-        ))
+        db.add(
+            ChampionshipDB(
+                world_id=world.id,
+                federation_id=fed.id,
+                name=f"{short_name} World Championship",
+                prestige=fed.prestige,
+            )
+        )
 
     # Generate NPC wrestlers and assign to federations
     num_wrestlers = random.randint(30, 50)
@@ -353,24 +534,31 @@ def create_world(db: Session, name: str, description: str = None,
             contract_weeks = random.randint(26, 78)
             start = datetime.strptime(world.current_game_date, "%Y-%m-%d")
             end_date = (start + timedelta(weeks=contract_weeks)).strftime("%Y-%m-%d")
-            db.add(ContractDB(
-                world_id=world.id,
-                wrestler_id=wrestler.id,
-                federation_id=fed.id,
-                status="active",
-                salary_weekly=random.uniform(500, 10000),
-                start_date=world.current_game_date,
-                end_date=end_date,
-                is_exclusive=random.random() < 0.7,
-            ))
+            db.add(
+                ContractDB(
+                    world_id=world.id,
+                    wrestler_id=wrestler.id,
+                    federation_id=fed.id,
+                    status="active",
+                    salary_weekly=random.uniform(500, 10000),
+                    start_date=world.current_game_date,
+                    end_date=end_date,
+                    is_exclusive=random.random() < 0.7,
+                )
+            )
         else:
             free_agents.append(wrestler)
 
     # Create structured goal records for each wrestler (Group 2)
     from game_service.wrestler_lifecycle_service import create_wrestler_goals
-    all_wrestlers = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.world_id == world.id,
-    ).all()
+
+    all_wrestlers = (
+        db.query(GameWrestlerDB)
+        .filter(
+            GameWrestlerDB.world_id == world.id,
+        )
+        .all()
+    )
     for w in all_wrestlers:
         create_wrestler_goals(db, w, world.current_game_date)
 
@@ -382,13 +570,21 @@ def create_world(db: Session, name: str, description: str = None,
 
     for fed in federations:
         # Get the fed's roster
-        fed_contracts = db.query(ContractDB).filter(
-            ContractDB.federation_id == fed.id,
-            ContractDB.status == "active",
-        ).all()
+        fed_contracts = (
+            db.query(ContractDB)
+            .filter(
+                ContractDB.federation_id == fed.id,
+                ContractDB.status == "active",
+            )
+            .all()
+        )
         fed_roster = []
         for c in fed_contracts:
-            w = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == c.wrestler_id).first()
+            w = (
+                db.query(GameWrestlerDB)
+                .filter(GameWrestlerDB.id == c.wrestler_id)
+                .first()
+            )
             if w:
                 fed_roster.append(w)
 
@@ -400,7 +596,9 @@ def create_world(db: Session, name: str, description: str = None,
 
     db.commit()
     db.refresh(world)
-    logger.info(f"Created world '{name}' with {len(federations)} federations and {num_wrestlers} wrestlers")
+    logger.info(
+        f"Created world '{name}' with {len(federations)} federations and {num_wrestlers} wrestlers"
+    )
     return world
 
 
@@ -408,24 +606,30 @@ def create_world(db: Session, name: str, description: str = None,
 # Player management
 # ---------------------------------------------------------------------------
 
-def create_player(db: Session, user_id: str, world_id: str, player_type: str,
-                  **kwargs) -> PlayerDB:
+
+def create_player(
+    db: Session, user_id: str, world_id: str, player_type: str, **kwargs
+) -> PlayerDB:
     """Create a player in a world (promoter or wrestler)."""
     world = db.query(WorldDB).filter(WorldDB.id == world_id).first()
     if not world:
         raise ValueError("World not found")
 
     # Check player limit
-    existing_count = db.query(PlayerDB).filter(
-        PlayerDB.world_id == world_id, PlayerDB.is_active == True
-    ).count()
+    existing_count = (
+        db.query(PlayerDB)
+        .filter(PlayerDB.world_id == world_id, PlayerDB.is_active == True)
+        .count()
+    )
     if existing_count >= world.max_players:
         raise ValueError("World is full")
 
     # Check user doesn't already have a player in this world
-    existing = db.query(PlayerDB).filter(
-        PlayerDB.user_id == user_id, PlayerDB.world_id == world_id
-    ).first()
+    existing = (
+        db.query(PlayerDB)
+        .filter(PlayerDB.user_id == user_id, PlayerDB.world_id == world_id)
+        .first()
+    )
     if existing:
         raise ValueError("You already have a character in this world")
 
@@ -450,14 +654,18 @@ def create_player(db: Session, user_id: str, world_id: str, player_type: str,
     return player
 
 
-def _create_player_federation(db: Session, world_id: str, kwargs: dict) -> GameFederationDB:
+def _create_player_federation(
+    db: Session, world_id: str, kwargs: dict
+) -> GameFederationDB:
     """Create a player-owned federation."""
     name = kwargs.get("federation_name", "My Wrestling Federation")
     fed = GameFederationDB(
         world_id=world_id,
         name=name,
         short_name=kwargs.get("federation_short_name", name[:3].upper()),
-        description=kwargs.get("federation_description", "A new independent promotion."),
+        description=kwargs.get(
+            "federation_description", "A new independent promotion."
+        ),
         is_npc=False,
         prestige=20,  # Start small
         budget=50000.0,
@@ -468,12 +676,14 @@ def _create_player_federation(db: Session, world_id: str, kwargs: dict) -> GameF
     db.flush()
 
     # Create a starting championship
-    db.add(ChampionshipDB(
-        world_id=world_id,
-        federation_id=fed.id,
-        name=f"{fed.short_name} Championship",
-        prestige=20,
-    ))
+    db.add(
+        ChampionshipDB(
+            world_id=world_id,
+            federation_id=fed.id,
+            name=f"{fed.short_name} Championship",
+            prestige=20,
+        )
+    )
 
     return fed
 
@@ -487,7 +697,9 @@ def _create_player_wrestler(db: Session, world_id: str, kwargs: dict) -> GameWre
         world_id=world_id,
         name=name,
         is_npc=False,
-        gimmick=kwargs.get("wrestler_gimmick", "A hungry newcomer looking to make a name."),
+        gimmick=kwargs.get(
+            "wrestler_gimmick", "A hungry newcomer looking to make a name."
+        ),
         alignment=kwargs.get("wrestler_alignment", "face"),
         popularity=25,  # Start low
         age=22,
@@ -542,6 +754,7 @@ def _create_player_wrestler(db: Session, world_id: str, kwargs: dict) -> GameWre
 # World queries
 # ---------------------------------------------------------------------------
 
+
 def get_world(db: Session, world_id: str) -> WorldDB:
     """Get a world by ID."""
     world = db.query(WorldDB).filter(WorldDB.id == world_id).first()
@@ -560,9 +773,11 @@ def get_player(db: Session, player_id: str) -> PlayerDB:
 
 def get_player_for_user(db: Session, user_id: str, world_id: str) -> PlayerDB:
     """Get a user's player in a specific world."""
-    player = db.query(PlayerDB).filter(
-        PlayerDB.user_id == user_id, PlayerDB.world_id == world_id
-    ).first()
+    player = (
+        db.query(PlayerDB)
+        .filter(PlayerDB.user_id == user_id, PlayerDB.world_id == world_id)
+        .first()
+    )
     if not player:
         raise ValueError("No player found in this world")
     return player
@@ -570,7 +785,9 @@ def get_player_for_user(db: Session, user_id: str, world_id: str) -> PlayerDB:
 
 def get_federation(db: Session, federation_id: str) -> GameFederationDB:
     """Get a federation by ID."""
-    fed = db.query(GameFederationDB).filter(GameFederationDB.id == federation_id).first()
+    fed = (
+        db.query(GameFederationDB).filter(GameFederationDB.id == federation_id).first()
+    )
     if not fed:
         raise ValueError("Federation not found")
     return fed
@@ -578,10 +795,14 @@ def get_federation(db: Session, federation_id: str) -> GameFederationDB:
 
 def get_roster(db: Session, federation_id: str) -> list:
     """Get all wrestlers contracted to a federation."""
-    contracts = db.query(ContractDB).filter(
-        ContractDB.federation_id == federation_id,
-        ContractDB.status == "active",
-    ).all()
+    contracts = (
+        db.query(ContractDB)
+        .filter(
+            ContractDB.federation_id == federation_id,
+            ContractDB.status == "active",
+        )
+        .all()
+    )
     wrestler_ids = [c.wrestler_id for c in contracts]
     if not wrestler_ids:
         return []
@@ -590,30 +811,45 @@ def get_roster(db: Session, federation_id: str) -> list:
 
 def get_free_agents(db: Session, world_id: str) -> list:
     """Get wrestlers not under any active contract."""
-    contracted_ids = db.query(ContractDB.wrestler_id).filter(
-        ContractDB.status == "active"
-    ).scalar_subquery()
-    return db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active == True,
-        ~GameWrestlerDB.id.in_(contracted_ids),
-    ).all()
+    contracted_ids = (
+        db.query(ContractDB.wrestler_id)
+        .filter(ContractDB.status == "active")
+        .scalar_subquery()
+    )
+    return (
+        db.query(GameWrestlerDB)
+        .filter(
+            GameWrestlerDB.world_id == world_id,
+            GameWrestlerDB.is_active == True,
+            ~GameWrestlerDB.id.in_(contracted_ids),
+        )
+        .all()
+    )
 
 
 def get_world_federations(db: Session, world_id: str) -> list:
     """Get all federations in a world."""
-    return db.query(GameFederationDB).filter(
-        GameFederationDB.world_id == world_id,
-        GameFederationDB.is_active == True,
-    ).all()
+    return (
+        db.query(GameFederationDB)
+        .filter(
+            GameFederationDB.world_id == world_id,
+            GameFederationDB.is_active == True,
+        )
+        .all()
+    )
 
 
 def get_world_wrestlers(db: Session, world_id: str, limit: int = 100) -> list:
     """Get wrestlers in a world."""
-    return db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active == True,
-    ).limit(limit).all()
+    return (
+        db.query(GameWrestlerDB)
+        .filter(
+            GameWrestlerDB.world_id == world_id,
+            GameWrestlerDB.is_active == True,
+        )
+        .limit(limit)
+        .all()
+    )
 
 
 def get_wrestler_with_stats(db: Session, wrestler_id: str) -> tuple:
@@ -621,5 +857,9 @@ def get_wrestler_with_stats(db: Session, wrestler_id: str) -> tuple:
     wrestler = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == wrestler_id).first()
     if not wrestler:
         raise ValueError("Wrestler not found")
-    stats = db.query(WrestlerStatsDB).filter(WrestlerStatsDB.wrestler_id == wrestler_id).first()
+    stats = (
+        db.query(WrestlerStatsDB)
+        .filter(WrestlerStatsDB.wrestler_id == wrestler_id)
+        .first()
+    )
     return wrestler, stats

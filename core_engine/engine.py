@@ -4,6 +4,7 @@ Advances the federation simulation in discrete ticks. Each public method
 does one thing; the inner loop is decomposed into private helpers so each
 fits on a screen (Rule 1) and can be tested in isolation.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -39,9 +40,11 @@ MAX_TICKS_PER_CALL = 1000
 # Data classes
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class AppliedAction:
     """A validated and processed action within a tick."""
+
     action_id: str
     description: str = "No-op"
     effects: Dict[str, Any] = field(default_factory=dict)
@@ -50,6 +53,7 @@ class AppliedAction:
 @dataclass
 class TickResult:
     """Result returned by the engine for each processed role within a tick."""
+
     tick_id: str
     time_index: int
     agent_id: str
@@ -61,6 +65,7 @@ class TickResult:
 @dataclass
 class GameState:
     """Global game state."""
+
     current_tick: int = 0
     heat: int = 0
     momentum: int = 0
@@ -90,6 +95,7 @@ class TickScheduler:
 # ---------------------------------------------------------------------------
 class EngineRequest(BaseModel):
     """Schema representing a queued engine request."""
+
     request_id: str
     agent_id: str
     due_tick: int
@@ -111,8 +117,11 @@ _ROLE_PARSERS = {
 
 def _parse_participant(data: dict) -> tuple:
     resp = AgentActionResponse(**data)
-    meta = {k: v for k, v in resp.model_dump().items()
-            if k not in ("event_id", "chosen_action_id", "commentary")}
+    meta = {
+        k: v
+        for k, v in resp.model_dump().items()
+        if k not in ("event_id", "chosen_action_id", "commentary")
+    }
     return resp.chosen_action_id, resp.commentary or "", meta
 
 
@@ -147,6 +156,7 @@ def _parse_backstage(data: dict) -> tuple:
 @dataclass
 class _DefaultAgent:
     """Minimal stand-in when no agents exist in the database."""
+
     agent_id: str = "agent_default"
     role: str = "participant"
     gimmick_description: str = ""
@@ -208,9 +218,11 @@ class Engine:
         """Get pending requests from database."""
         db = SessionLocal()
         try:
-            return db.query(EngineRequestDB).filter(
-                EngineRequestDB.status == "pending"
-            ).all()
+            return (
+                db.query(EngineRequestDB)
+                .filter(EngineRequestDB.status == "pending")
+                .all()
+            )
         except Exception:
             db.rollback()
             raise
@@ -239,7 +251,9 @@ class Engine:
 
         results: List[TickResult] = []
         for role in self.ROLE_ORDER:
-            role_agents = [a for a in agents if getattr(a, "role", "participant") == role]
+            role_agents = [
+                a for a in agents if getattr(a, "role", "participant") == role
+            ]
             for agent_db in role_agents:
                 result = self._process_agent(db, agent_db, role, tick_id, tick_index)
                 if result is None:
@@ -257,7 +271,9 @@ class Engine:
     # Private: one agent in one role
     # ------------------------------------------------------------------
 
-    def _process_agent(self, db, agent_db, role: str, tick_id: str, tick_index: int) -> Optional[TickResult]:
+    def _process_agent(
+        self, db, agent_db, role: str, tick_id: str, tick_index: int
+    ) -> Optional[TickResult]:
         """Process a single agent for a single role in a tick.
 
         Returns TickResult, or None if a finisher ended the match.
@@ -282,10 +298,14 @@ class Engine:
         self._apply_game_effects(role, applied_action, meta, action_data)
 
         # Persist narrative log
-        self._persist_narrative_log(db, tick_id, tick_index, agent_id, role, description)
+        self._persist_narrative_log(
+            db, tick_id, tick_index, agent_id, role, description
+        )
 
         # Check for match-ending finisher
-        if role == "participant" and (action_id == "finisher" or meta.get("move_type") == "finisher"):
+        if role == "participant" and (
+            action_id == "finisher" or meta.get("move_type") == "finisher"
+        ):
             logger.info("Finisher executed, ending match")
             return None
 
@@ -336,7 +356,11 @@ class Engine:
         """Validate and translate raw LLM response into (action_id, description, meta)."""
         # Stub fallback responses pass through without schema validation
         if set(data.keys()) <= {"action_id", "description", "meta"}:
-            return data.get("action_id", "noop"), data.get("description", ""), data.get("meta", {})
+            return (
+                data.get("action_id", "noop"),
+                data.get("description", ""),
+                data.get("meta", {}),
+            )
 
         parser = _ROLE_PARSERS.get(role)
         if parser is None:
@@ -347,13 +371,19 @@ class Engine:
             return parser(data)
         except ValidationError as e:
             logger.warning(f"Response validation failed for role {role}: {e}")
-            return data.get("action_id", "noop"), data.get("description", ""), data.get("meta", {})
+            return (
+                data.get("action_id", "noop"),
+                data.get("description", ""),
+                data.get("meta", {}),
+            )
 
     # ------------------------------------------------------------------
     # Private: game-state effects
     # ------------------------------------------------------------------
 
-    def _apply_game_effects(self, role: str, applied_action: AppliedAction, meta: dict, raw_data: dict) -> None:
+    def _apply_game_effects(
+        self, role: str, applied_action: AppliedAction, meta: dict, raw_data: dict
+    ) -> None:
         """Mutate self.state based on the role and action outcome."""
         if role == "participant" and applied_action.action_id != "noop":
             self.state.momentum += 2
@@ -378,26 +408,34 @@ class Engine:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _persist_engine_request(db, request_id: str, agent_id: str, tick_index: int, context: EventContext) -> None:
+    def _persist_engine_request(
+        db, request_id: str, agent_id: str, tick_index: int, context: EventContext
+    ) -> None:
         """Stage an EngineRequestDB row (no commit — batched per tick)."""
-        db.add(EngineRequestDB(
-            request_id=request_id,
-            agent_id=agent_id,
-            due_tick=tick_index,
-            context_json=context.model_dump_json(),
-            status="processed",
-        ))
+        db.add(
+            EngineRequestDB(
+                request_id=request_id,
+                agent_id=agent_id,
+                due_tick=tick_index,
+                context_json=context.model_dump_json(),
+                status="processed",
+            )
+        )
 
     @staticmethod
-    def _persist_narrative_log(db, tick_id: str, tick_index: int, agent_id: str, role: str, description: str) -> None:
+    def _persist_narrative_log(
+        db, tick_id: str, tick_index: int, agent_id: str, role: str, description: str
+    ) -> None:
         """Stage a NarrativeLogDB row (no commit — batched per tick)."""
-        db.add(NarrativeLogDB(
-            tick_id=tick_id,
-            time_index=tick_index,
-            agent_id=agent_id,
-            role=role,
-            description=description,
-        ))
+        db.add(
+            NarrativeLogDB(
+                tick_id=tick_id,
+                time_index=tick_index,
+                agent_id=agent_id,
+                role=role,
+                description=description,
+            )
+        )
 
 
 # ---------------------------------------------------------------------------

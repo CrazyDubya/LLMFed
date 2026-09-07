@@ -8,17 +8,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agent_service.database import get_db
 from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
-    WorldCreate, WorldResponse,
-    PlayerCreate, PlayerResponse,
-    PlayerActionSubmit, PlayerActionResponse,
-    NarrativeLogResponse, WorldNewsResponse, WorldTickStatus,
-    PromoRequest, PromoResponse,
+    WorldCreate,
+    WorldResponse,
+    PlayerCreate,
+    PlayerResponse,
+    PlayerActionSubmit,
+    PlayerActionResponse,
+    NarrativeLogResponse,
+    WorldNewsResponse,
+    WorldTickStatus,
+    PromoRequest,
+    PromoResponse,
 )
 from models.game_models import (
-    PlayerActionDB, GameNarrativeLogDB, WorldNewsDB,
+    PlayerActionDB,
+    GameNarrativeLogDB,
+    WorldNewsDB,
 )
 from game_service.world_service import (
-    create_world, create_player, get_world, get_player_for_user,
+    create_world,
+    create_player,
+    get_world,
+    get_player_for_user,
 )
 from game_service.world_ticker import WorldTicker
 from api_gateway.websocket_hub import manager as ws_manager
@@ -37,6 +48,7 @@ def _handle_value_error(e: ValueError):
 # World endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.post("/worlds", response_model=WorldResponse, status_code=201)
 async def api_create_world(
     data: WorldCreate,
@@ -45,8 +57,12 @@ async def api_create_world(
 ):
     """Create a new game world."""
     world = create_world(
-        db, data.name, data.description, data.is_multiplayer,
-        data.max_players, data.world_config,
+        db,
+        data.name,
+        data.description,
+        data.is_multiplayer,
+        data.max_players,
+        data.world_config,
     )
     return WorldResponse.model_validate(world)
 
@@ -83,6 +99,7 @@ async def api_get_my_player(
 # Player endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.post("/players", response_model=PlayerResponse, status_code=201)
 async def api_create_player(
     data: PlayerCreate,
@@ -92,7 +109,10 @@ async def api_create_player(
     """Create a player in a world (choose promoter or wrestler)."""
     try:
         player = create_player(
-            db, current_user.user_id, data.world_id, data.player_type,
+            db,
+            current_user.user_id,
+            data.world_id,
+            data.player_type,
             federation_name=data.federation_name,
             federation_description=data.federation_description,
             wrestler_name=data.wrestler_name,
@@ -109,7 +129,10 @@ async def api_create_player(
 # Player action endpoints
 # ---------------------------------------------------------------------------
 
-@router.post("/worlds/{world_id}/actions", response_model=PlayerActionResponse, status_code=202)
+
+@router.post(
+    "/worlds/{world_id}/actions", response_model=PlayerActionResponse, status_code=202
+)
 async def api_submit_action(
     world_id: str,
     data: PlayerActionSubmit,
@@ -161,6 +184,7 @@ async def api_list_actions(
 # World tick (advance game)
 # ---------------------------------------------------------------------------
 
+
 @router.post("/worlds/{world_id}/tick", response_model=WorldTickStatus)
 async def api_advance_world(
     world_id: str,
@@ -177,32 +201,44 @@ async def api_advance_world(
         result = ticker.tick(days)
 
         world = get_world(db, world_id)
-        pending = db.query(PlayerActionDB).filter(
-            PlayerActionDB.world_id == world_id,
-            PlayerActionDB.status == "pending",
-        ).count()
+        pending = (
+            db.query(PlayerActionDB)
+            .filter(
+                PlayerActionDB.world_id == world_id,
+                PlayerActionDB.status == "pending",
+            )
+            .count()
+        )
 
-        events_today = result["day_results"][-1]["events"] if result["day_results"] else []
+        events_today = (
+            result["day_results"][-1]["events"] if result["day_results"] else []
+        )
 
         # Broadcast tick to all connected WebSocket clients
-        await ws_manager.broadcast_to_world(world_id, {
-            "type": "tick",
-            "world_id": world_id,
-            "game_date": world.current_game_date,
-            "tick": world.current_tick,
-            "events": events_today,
-            "auto": False,
-        })
+        await ws_manager.broadcast_to_world(
+            world_id,
+            {
+                "type": "tick",
+                "world_id": world_id,
+                "game_date": world.current_game_date,
+                "tick": world.current_tick,
+                "events": events_today,
+                "auto": False,
+            },
+        )
 
         # Broadcast individual notable events
         for day in result.get("day_results", []):
             for event in day.get("events", []):
                 if "show" in event.lower() and "completed" in event.lower():
-                    await ws_manager.broadcast_to_world(world_id, {
-                        "type": "show_completed",
-                        "world_id": world_id,
-                        "description": event,
-                    })
+                    await ws_manager.broadcast_to_world(
+                        world_id,
+                        {
+                            "type": "show_completed",
+                            "world_id": world_id,
+                            "description": event,
+                        },
+                    )
 
         return WorldTickStatus(
             world_id=world_id,
@@ -219,6 +255,7 @@ async def api_advance_world(
 # Narrative & News
 # ---------------------------------------------------------------------------
 
+
 @router.get("/worlds/{world_id}/narrative", response_model=List[NarrativeLogResponse])
 async def api_get_narrative(
     world_id: str,
@@ -228,10 +265,16 @@ async def api_get_narrative(
     db: AsyncSession = Depends(get_db),
 ):
     """Get recent narrative events for a world."""
-    logs = db.query(GameNarrativeLogDB).filter(
-        GameNarrativeLogDB.world_id == world_id,
-        GameNarrativeLogDB.importance >= min_importance,
-    ).order_by(GameNarrativeLogDB.created_at.desc()).limit(limit).all()
+    logs = (
+        db.query(GameNarrativeLogDB)
+        .filter(
+            GameNarrativeLogDB.world_id == world_id,
+            GameNarrativeLogDB.importance >= min_importance,
+        )
+        .order_by(GameNarrativeLogDB.created_at.desc())
+        .limit(limit)
+        .all()
+    )
     return [NarrativeLogResponse.model_validate(l) for l in logs]
 
 
@@ -243,15 +286,22 @@ async def api_get_news(
     db: AsyncSession = Depends(get_db),
 ):
     """Get world news articles."""
-    news = db.query(WorldNewsDB).filter(
-        WorldNewsDB.world_id == world_id,
-    ).order_by(WorldNewsDB.created_at.desc()).limit(limit).all()
+    news = (
+        db.query(WorldNewsDB)
+        .filter(
+            WorldNewsDB.world_id == world_id,
+        )
+        .order_by(WorldNewsDB.created_at.desc())
+        .limit(limit)
+        .all()
+    )
     return [WorldNewsResponse.model_validate(n) for n in news]
 
 
 # ---------------------------------------------------------------------------
 # Promo endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.post("/worlds/{world_id}/promos", response_model=PromoResponse, status_code=201)
 async def api_generate_promo(
@@ -264,7 +314,9 @@ async def api_generate_promo(
     world = get_world(db, world_id)
     try:
         promo = svc_generate_promo(
-            db, world_id, data.wrestler_id,
+            db,
+            world_id,
+            data.wrestler_id,
             target_wrestler_id=data.target_wrestler_id,
             promo_type=data.promo_type,
             player_direction=data.player_direction,

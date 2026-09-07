@@ -8,17 +8,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agent_service.database import get_db
 from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
-    ShowCreate, ShowResponse, ShowSegmentResponse, ShowCardResponse,
+    ShowCreate,
+    ShowResponse,
+    ShowSegmentResponse,
+    ShowCardResponse,
     MatchResultResponse,
     MatchBooking,
 )
 from models.game_models import (
-    GameFederationDB, ShowDB, MatchDB,
+    GameFederationDB,
+    ShowDB,
+    MatchDB,
 )
 from game_service.world_service import get_player_for_user
 from game_service.show_service import (
-    create_show as svc_create_show, book_match as svc_book_match,
-    book_promo_segment as svc_book_promo_segment, get_show_card,
+    create_show as svc_create_show,
+    book_match as svc_book_match,
+    book_promo_segment as svc_book_promo_segment,
+    get_show_card,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,7 +41,10 @@ def _handle_value_error(e: ValueError):
 # Show creation
 # ---------------------------------------------------------------------------
 
-@router.post("/federations/{federation_id}/shows", response_model=ShowResponse, status_code=201)
+
+@router.post(
+    "/federations/{federation_id}/shows", response_model=ShowResponse, status_code=201
+)
 async def api_create_show(
     federation_id: str,
     data: ShowCreate,
@@ -47,16 +57,21 @@ async def api_create_show(
     except ValueError:
         player = None
 
-    fed = db.query(GameFederationDB).filter(
-        GameFederationDB.id == federation_id
-    ).first()
+    fed = (
+        db.query(GameFederationDB).filter(GameFederationDB.id == federation_id).first()
+    )
     if not fed:
         raise HTTPException(status_code=404, detail="Federation not found")
 
     show = svc_create_show(
-        db, fed.world_id, federation_id,
-        data.name, data.show_type, data.venue or "Arena",
-        data.capacity, data.game_date,
+        db,
+        fed.world_id,
+        federation_id,
+        data.name,
+        data.show_type,
+        data.venue or "Arena",
+        data.capacity,
+        data.game_date,
     )
     db.commit()
     db.refresh(show)
@@ -66,6 +81,7 @@ async def api_create_show(
 # ---------------------------------------------------------------------------
 # Show card
 # ---------------------------------------------------------------------------
+
 
 @router.get("/shows/{show_id}/card", response_model=ShowCardResponse)
 async def api_get_show_card(
@@ -89,7 +105,10 @@ async def api_get_show_card(
 # Match booking
 # ---------------------------------------------------------------------------
 
-@router.post("/shows/{show_id}/matches", response_model=ShowSegmentResponse, status_code=201)
+
+@router.post(
+    "/shows/{show_id}/matches", response_model=ShowSegmentResponse, status_code=201
+)
 async def api_book_match(
     show_id: str,
     data: MatchBooking,
@@ -103,7 +122,9 @@ async def api_book_match(
 
     try:
         seg = svc_book_match(
-            db, show_id, show.world_id,
+            db,
+            show_id,
+            show.world_id,
             wrestler_ids=data.participant_ids,
             match_type=data.match_type,
             stipulation=data.stipulation,
@@ -124,7 +145,10 @@ async def api_book_match(
 # Promo booking
 # ---------------------------------------------------------------------------
 
-@router.post("/shows/{show_id}/promos", response_model=ShowSegmentResponse, status_code=201)
+
+@router.post(
+    "/shows/{show_id}/promos", response_model=ShowSegmentResponse, status_code=201
+)
 async def api_book_promo(
     show_id: str,
     wrestler_id: str,
@@ -139,7 +163,9 @@ async def api_book_promo(
         raise HTTPException(status_code=404, detail="Show not found")
     try:
         seg = svc_book_promo_segment(
-            db, show_id, show.world_id,
+            db,
+            show_id,
+            show.world_id,
             wrestler_id=wrestler_id,
             target_wrestler_id=target_wrestler_id,
             promo_type=promo_type,
@@ -154,6 +180,7 @@ async def api_book_promo(
 # ---------------------------------------------------------------------------
 # Match details
 # ---------------------------------------------------------------------------
+
 
 @router.get("/matches/{match_id}", response_model=MatchResultResponse)
 async def api_get_match(
@@ -171,6 +198,7 @@ async def api_get_match(
 # ---------------------------------------------------------------------------
 # Match play-by-play
 # ---------------------------------------------------------------------------
+
 
 @router.get("/matches/{match_id}/play-by-play")
 async def api_get_play_by_play(

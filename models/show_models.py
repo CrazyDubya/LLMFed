@@ -4,8 +4,16 @@ match events, promos, and narrative/news logs.
 """
 
 from sqlalchemy import (
-    Column, String, Integer, Float, DateTime, JSON, ForeignKey, Text, Boolean,
-    UniqueConstraint, Index,
+    Column,
+    String,
+    Integer,
+    Float,
+    DateTime,
+    JSON,
+    ForeignKey,
+    Text,
+    Boolean,
+    Index,
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
@@ -26,13 +34,17 @@ def _uuid():
 # Shows & Segments
 # ---------------------------------------------------------------------------
 
+
 class ShowDB(Base):
     """A wrestling show/event."""
+
     __tablename__ = "shows"
 
     id = Column(String, primary_key=True, default=_uuid)
     world_id = Column(String, ForeignKey("worlds.id"), nullable=False, index=True)
-    federation_id = Column(String, ForeignKey("game_federations.id"), nullable=False, index=True)
+    federation_id = Column(
+        String, ForeignKey("game_federations.id"), nullable=False, index=True
+    )
     name = Column(String(100), nullable=False)
     show_type = Column(String(20), default="weekly")
     venue = Column(String(100), nullable=True)
@@ -49,8 +61,12 @@ class ShowDB(Base):
 
     world = relationship("WorldDB", back_populates="shows")
     federation = relationship("GameFederationDB", back_populates="shows")
-    segments = relationship("ShowSegmentDB", back_populates="show",
-                            order_by="ShowSegmentDB.position", cascade="all, delete-orphan")
+    segments = relationship(
+        "ShowSegmentDB",
+        back_populates="show",
+        order_by="ShowSegmentDB.position",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         Index("ix_shows_world_date", "world_id", "game_date"),
@@ -60,6 +76,7 @@ class ShowDB(Base):
 
 class ShowSegmentDB(Base):
     """A segment within a show (match, promo, backstage, etc.)."""
+
     __tablename__ = "show_segments"
 
     id = Column(String, primary_key=True, default=_uuid)
@@ -85,8 +102,10 @@ class ShowSegmentDB(Base):
 # Matches
 # ---------------------------------------------------------------------------
 
+
 class MatchDB(Base):
     """A wrestling match within a show."""
+
     __tablename__ = "matches"
 
     id = Column(String, primary_key=True, default=_uuid)
@@ -107,21 +126,31 @@ class MatchDB(Base):
     created_at = Column(DateTime, default=_utc_now)
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
-    participants = relationship("MatchParticipantDB", back_populates="match",
-                                cascade="all, delete-orphan")
-    events = relationship("MatchEventDB", back_populates="match",
-                          order_by="MatchEventDB.tick", cascade="all, delete-orphan")
+    participants = relationship(
+        "MatchParticipantDB", back_populates="match", cascade="all, delete-orphan"
+    )
+    events = relationship(
+        "MatchEventDB",
+        back_populates="match",
+        order_by="MatchEventDB.tick",
+        cascade="all, delete-orphan",
+    )
     segment = relationship("ShowSegmentDB", back_populates="match", uselist=False)
 
 
 class MatchParticipantDB(Base):
     """A wrestler's participation in a match."""
+
     __tablename__ = "match_participants"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     match_id = Column(String, ForeignKey("matches.id"), nullable=False, index=True)
-    wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
-    role = Column(String(20), default="competitor")  # competitor, manager, referee, enforcer
+    wrestler_id = Column(
+        String, ForeignKey("game_wrestlers.id"), nullable=False, index=True
+    )
+    role = Column(
+        String(20), default="competitor"
+    )  # competitor, manager, referee, enforcer
     team = Column(Integer, nullable=True)  # Team number for tag matches
     is_winner = Column(Boolean, default=False)
     performance_rating = Column(Float, nullable=True)
@@ -132,6 +161,7 @@ class MatchParticipantDB(Base):
 
 class MatchEventDB(Base):
     """A single event within a match (move, reversal, highspot, etc.)."""
+
     __tablename__ = "match_events"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -139,7 +169,9 @@ class MatchEventDB(Base):
     tick = Column(Integer, nullable=False)
     acting_wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=True)
     target_wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=True)
-    event_type = Column(String(30), nullable=False)  # move, reversal, highspot, finish, etc.
+    event_type = Column(
+        String(30), nullable=False
+    )  # move, reversal, highspot, finish, etc.
     description = Column(Text, nullable=False)
     crowd_reaction = Column(String(30), nullable=True)
     heat_change = Column(Integer, default=0)
@@ -153,14 +185,20 @@ class MatchEventDB(Base):
 # Promos
 # ---------------------------------------------------------------------------
 
+
 class PromoDB(Base):
     """An in-character promo/speech segment."""
+
     __tablename__ = "promos"
 
     id = Column(String, primary_key=True, default=_uuid)
     world_id = Column(String, ForeignKey("worlds.id"), nullable=False, index=True)
-    wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
-    content = Column(Text, nullable=False)  # The promo text (LLM generated or player written)
+    wrestler_id = Column(
+        String, ForeignKey("game_wrestlers.id"), nullable=False, index=True
+    )
+    content = Column(
+        Text, nullable=False
+    )  # The promo text (LLM generated or player written)
     target_wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=True)
     promo_type = Column(String(30), default="in_ring")  # in_ring, backstage, interview
     crowd_reaction = Column(String(30), nullable=True)
@@ -171,10 +209,12 @@ class PromoDB(Base):
     player_direction = Column(Text, nullable=True)  # Player's general direction for AI
     created_at = Column(DateTime, default=_utc_now)
 
-    wrestler = relationship("GameWrestlerDB", back_populates="promos",
-                            foreign_keys="PromoDB.wrestler_id")
-    target_wrestler = relationship("GameWrestlerDB",
-                                   foreign_keys="PromoDB.target_wrestler_id")
+    wrestler = relationship(
+        "GameWrestlerDB", back_populates="promos", foreign_keys="PromoDB.wrestler_id"
+    )
+    target_wrestler = relationship(
+        "GameWrestlerDB", foreign_keys="PromoDB.target_wrestler_id"
+    )
     segment = relationship("ShowSegmentDB", back_populates="promo", uselist=False)
 
 
@@ -182,8 +222,10 @@ class PromoDB(Base):
 # Player Actions (the queue)
 # ---------------------------------------------------------------------------
 
+
 class PlayerActionDB(Base):
     """A player's queued decision awaiting world tick processing."""
+
     __tablename__ = "player_actions"
 
     id = Column(String, primary_key=True, default=_uuid)
@@ -196,24 +238,26 @@ class PlayerActionDB(Base):
     submitted_at = Column(DateTime, default=_utc_now)
     processed_at = Column(DateTime, nullable=True)
 
-    __table_args__ = (
-        Index("ix_player_actions_pending", "world_id", "status"),
-    )
+    __table_args__ = (Index("ix_player_actions_pending", "world_id", "status"),)
 
 
 # ---------------------------------------------------------------------------
 # Narrative & History
 # ---------------------------------------------------------------------------
 
+
 class GameNarrativeLogDB(Base):
     """World event log - what happened in the game world."""
+
     __tablename__ = "game_narrative_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     world_id = Column(String, ForeignKey("worlds.id"), nullable=False, index=True)
     game_date = Column(String(10), nullable=False)
     tick = Column(Integer, nullable=False)
-    event_type = Column(String(30), nullable=False)  # match, promo, signing, injury, etc.
+    event_type = Column(
+        String(30), nullable=False
+    )  # match, promo, signing, injury, etc.
     description = Column(Text, nullable=False)
     involved_entities = Column(JSON, default=list)  # List of wrestler/federation IDs
     importance = Column(Integer, default=5)  # 1-10 scale for filtering
@@ -221,20 +265,21 @@ class GameNarrativeLogDB(Base):
 
     world = relationship("WorldDB", back_populates="narrative_logs")
 
-    __table_args__ = (
-        Index("ix_narrative_world_date", "world_id", "game_date"),
-    )
+    __table_args__ = (Index("ix_narrative_world_date", "world_id", "game_date"),)
 
 
 class WorldNewsDB(Base):
     """LLM-generated news articles about the wrestling world."""
+
     __tablename__ = "world_news"
 
     id = Column(String, primary_key=True, default=_uuid)
     world_id = Column(String, ForeignKey("worlds.id"), nullable=False, index=True)
     headline = Column(String(200), nullable=False)
     body = Column(Text, nullable=False)
-    category = Column(String(30), default="general")  # results, rumors, injury, business
+    category = Column(
+        String(30), default="general"
+    )  # results, rumors, injury, business
     game_date = Column(String(10), nullable=False)
     is_kayfabe = Column(Boolean, default=True)  # In-character vs "dirt sheet"
     source = Column(String(50), default="Wrestling Observer")

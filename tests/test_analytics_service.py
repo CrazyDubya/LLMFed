@@ -17,6 +17,7 @@ def db_session():
     import models.show_models  # noqa
     import models.social_models  # noqa
     import models.federation_models  # noqa
+
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     session = Session()

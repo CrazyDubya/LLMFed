@@ -8,13 +8,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agent_service.database import get_db
 from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
-    WrestlerResponse, WrestlerStatsResponse, WrestlerDetailResponse,
+    WrestlerResponse,
+    WrestlerStatsResponse,
+    WrestlerDetailResponse,
 )
 from models.game_models import (
-    ContractDB, ChampionshipDB, StorylineParticipantDB,
+    ContractDB,
+    ChampionshipDB,
+    StorylineParticipantDB,
 )
 from game_service.world_service import (
-    get_world_wrestlers, get_wrestler_with_stats,
+    get_world_wrestlers,
+    get_wrestler_with_stats,
 )
 from game_service import stable_service, manager_service
 
@@ -26,6 +31,7 @@ router = APIRouter(prefix="/game", tags=["game-wrestler"])
 # ---------------------------------------------------------------------------
 # Wrestler endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.get("/worlds/{world_id}/wrestlers", response_model=List[WrestlerResponse])
 async def api_list_wrestlers(
@@ -49,24 +55,37 @@ async def api_get_wrestler(
     try:
         wrestler, stats = get_wrestler_with_stats(db, wrestler_id)
         # Get current federation
-        contract = db.query(ContractDB).filter(
-            ContractDB.wrestler_id == wrestler_id,
-            ContractDB.status == "active",
-        ).first()
+        contract = (
+            db.query(ContractDB)
+            .filter(
+                ContractDB.wrestler_id == wrestler_id,
+                ContractDB.status == "active",
+            )
+            .first()
+        )
 
         # Get championships
-        champs = db.query(ChampionshipDB).filter(
-            ChampionshipDB.current_holder_id == wrestler_id,
-        ).all()
+        champs = (
+            db.query(ChampionshipDB)
+            .filter(
+                ChampionshipDB.current_holder_id == wrestler_id,
+            )
+            .all()
+        )
 
         # Get active storylines
-        storyline_parts = db.query(StorylineParticipantDB).filter(
-            StorylineParticipantDB.wrestler_id == wrestler_id,
-            StorylineParticipantDB.left_date == None,
-        ).all()
+        storyline_parts = (
+            db.query(StorylineParticipantDB)
+            .filter(
+                StorylineParticipantDB.wrestler_id == wrestler_id,
+                StorylineParticipantDB.left_date == None,
+            )
+            .all()
+        )
 
         # Compute win/loss record
         from core_engine.match_aftermath import compute_win_loss
+
         win_loss = compute_win_loss(db, wrestler_id)
 
         return WrestlerDetailResponse(

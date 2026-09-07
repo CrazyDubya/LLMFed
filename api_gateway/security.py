@@ -9,7 +9,7 @@ import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Tuple
+from typing import Optional
 
 import jwt
 from fastapi import Depends, HTTPException, status, Header
@@ -44,8 +44,10 @@ security = HTTPBearer(auto_error=False)
 # Models
 # ---------------------------------------------------------------------------
 
+
 class TokenData(BaseModel):
     """Decoded token payload."""
+
     user_id: str
     username: Optional[str] = None
     role: str = "player"
@@ -53,12 +55,14 @@ class TokenData(BaseModel):
 
 class Token(BaseModel):
     """Token response model."""
+
     access_token: str
     token_type: str
 
 
 class TokenPair(BaseModel):
     """Access + refresh token pair."""
+
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
@@ -67,6 +71,7 @@ class TokenPair(BaseModel):
 # ---------------------------------------------------------------------------
 # Production safety check
 # ---------------------------------------------------------------------------
+
 
 def validate_production_config() -> None:
     """Reject the default JWT secret in production.
@@ -86,6 +91,7 @@ def validate_production_config() -> None:
 # Password utilities
 # ---------------------------------------------------------------------------
 
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash."""
     return pwd_context.verify(plain_password, hashed_password)
@@ -100,6 +106,7 @@ def get_password_hash(password: str) -> str:
 # API key utilities
 # ---------------------------------------------------------------------------
 
+
 def generate_api_key() -> str:
     """Generate a random 48-character API key."""
     return secrets.token_urlsafe(36)
@@ -108,6 +115,7 @@ def generate_api_key() -> str:
 # ---------------------------------------------------------------------------
 # Token creation
 # ---------------------------------------------------------------------------
+
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create a JWT access token."""
@@ -139,6 +147,7 @@ def create_token_pair(user_id: str, username: str, role: str = "player") -> Toke
 # ---------------------------------------------------------------------------
 # Token decoding
 # ---------------------------------------------------------------------------
+
 
 def decode_token(token: str, expected_type: str = "access") -> TokenData:
     """Decode and validate a JWT token.
@@ -174,6 +183,7 @@ def decode_token(token: str, expected_type: str = "access") -> TokenData:
 # ---------------------------------------------------------------------------
 # FastAPI dependencies
 # ---------------------------------------------------------------------------
+
 
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
@@ -229,6 +239,7 @@ def require_role(*allowed_roles: str):
         def mixed_endpoint(user: TokenData = Depends(require_role("admin", "owner"))):
             ...
     """
+
     async def _check(
         current_user: TokenData = Depends(get_current_user),
     ) -> TokenData:
@@ -266,6 +277,7 @@ def require_minimum_role(minimum_role: str):
 # ---------------------------------------------------------------------------
 # API key authentication (internal helper)
 # ---------------------------------------------------------------------------
+
 
 def _authenticate_api_key(api_key: str) -> TokenData:
     """Look up a user by API key. Raises 401 if not found."""

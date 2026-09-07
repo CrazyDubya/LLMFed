@@ -19,10 +19,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from models.game_models import (
-    BookingVisionDB, WrestlerPushDB, PPVEventDB,
-    GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    ContractDB, ChampionshipDB, StorylineDB, StorylineParticipantDB,
-    WrestlerRelationshipDB,
+    BookingVisionDB,
+    WrestlerPushDB,
+    GameFederationDB,
+    GameWrestlerDB,
+    WrestlerStatsDB,
+    ChampionshipDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,6 +72,7 @@ LONG_TERM_GOALS = [
 # Vision generation
 # ---------------------------------------------------------------------------
 
+
 def generate_federation_vision(
     db: Session,
     federation: GameFederationDB,
@@ -80,10 +83,14 @@ def generate_federation_vision(
 
     Called at world creation for NPC feds and as a suggestion for players.
     """
-    booking_style = (federation.ai_personality or {}).get("booking_style", "entertainment")
+    booking_style = (federation.ai_personality or {}).get(
+        "booking_style", "entertainment"
+    )
 
     # Strategic identity
-    identity = random.choice(IDENTITY_TEMPLATES.get(booking_style, IDENTITY_TEMPLATES["entertainment"]))
+    identity = random.choice(
+        IDENTITY_TEMPLATES.get(booking_style, IDENTITY_TEMPLATES["entertainment"])
+    )
     goal = random.choice(LONG_TERM_GOALS).format(region=federation.home_region)
 
     # Sort roster by draw potential for tier assignment
@@ -102,7 +109,7 @@ def generate_federation_vision(
     main_eventers = push_tiers.get("main_event", [])
     crown_jewel = {
         "theme": "The biggest show of the year",
-        "main_event_dream": f"Championship match between the top two stars",
+        "main_event_dream": "Championship match between the top two stars",
         "ideal_wrestlers": main_eventers[:4] if main_eventers else [],
     }
 
@@ -140,9 +147,11 @@ def _score_roster_for_tiers(
     """Score each wrestler for tier placement based on booking style."""
     scored = []
     for w in roster:
-        stats = db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == w.id
-        ).first()
+        stats = (
+            db.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == w.id)
+            .first()
+        )
 
         if not stats:
             scored.append({"wrestler": w, "score": w.popularity})
@@ -163,7 +172,7 @@ def _score_roster_for_tiers(
 
         # Group 3: Backstage politics modifier
         politics_bonus = (stats.backstage_politics or 50) / 200  # 0 to 0.5
-        score *= (1.0 + politics_bonus)
+        score *= 1.0 + politics_bonus
 
         scored.append({"wrestler": w, "score": score, "stats": stats})
 
@@ -251,10 +260,14 @@ def _build_title_pipelines(
     push_tiers: Dict[str, List[str]],
 ) -> Dict[str, Dict]:
     """Build title pipelines — who challenges next for each belt."""
-    championships = db.query(ChampionshipDB).filter(
-        ChampionshipDB.federation_id == federation.id,
-        ChampionshipDB.is_active == True,
-    ).all()
+    championships = (
+        db.query(ChampionshipDB)
+        .filter(
+            ChampionshipDB.federation_id == federation.id,
+            ChampionshipDB.is_active == True,
+        )
+        .all()
+    )
 
     pipelines = {}
     main_eventers = push_tiers.get("main_event", [])
@@ -266,7 +279,9 @@ def _build_title_pipelines(
         challengers = [wid for wid in main_eventers if wid != holder]
         # Pad with upper midcarders if needed
         if len(challengers) < 2:
-            challengers.extend([wid for wid in upper_mid if wid != holder and wid not in challengers])
+            challengers.extend(
+                [wid for wid in upper_mid if wid != holder and wid not in challengers]
+            )
 
         pipelines[champ.id] = {
             "current_holder": holder,
@@ -306,16 +321,17 @@ def _generate_planned_storylines(
         used.update(pair)
 
         stype = random.choices(
-            ["feud", "championship_chase", "betrayal"],
-            weights=[50, 30, 20], k=1
+            ["feud", "championship_chase", "betrayal"], weights=[50, 30, 20], k=1
         )[0]
 
-        planned.append({
-            "wrestler_ids": pair,
-            "type": stype,
-            "status": "penciled",
-            "notes": f"Planned {stype} between top talent",
-        })
+        planned.append(
+            {
+                "wrestler_ids": pair,
+                "type": stype,
+                "status": "penciled",
+                "notes": f"Planned {stype} between top talent",
+            }
+        )
 
     return planned
 
@@ -331,7 +347,9 @@ def _create_push_records(
         for wid in wrestler_ids:
             traj = trajectories.get(wid, {})
             direction = traj.get("direction", "established")
-            protected = tier in ("main_event", "upper_midcard") and direction != "transitional"
+            protected = (
+                tier in ("main_event", "upper_midcard") and direction != "transitional"
+            )
 
             push = WrestlerPushDB(
                 world_id=federation.world_id,
@@ -351,6 +369,7 @@ def _create_push_records(
 # Vision adaptation — reacting to disruptions
 # ---------------------------------------------------------------------------
 
+
 def adapt_vision_for_injury(
     db: Session,
     vision: BookingVisionDB,
@@ -364,7 +383,11 @@ def adapt_vision_for_injury(
         .filter(GameFederationDB.id == vision.federation_id)
         .first()
     )
-    risk = (risk_tolerance.ai_personality or {}).get("risk_tolerance", 50) if risk_tolerance else 50
+    risk = (
+        (risk_tolerance.ai_personality or {}).get("risk_tolerance", 50)
+        if risk_tolerance
+        else 50
+    )
 
     changes = []
 
@@ -386,7 +409,7 @@ def adapt_vision_for_injury(
             pipeline["next_challengers"] = [
                 c for c in pipeline["next_challengers"] if c != wrestler_id
             ]
-            changes.append(f"Removed from title challenger pipeline (injury)")
+            changes.append("Removed from title challenger pipeline (injury)")
 
     vision.title_pipelines = pipelines
     flag_modified(vision, "title_pipelines")
@@ -397,10 +420,10 @@ def adapt_vision_for_injury(
         if wrestler_id in sl.get("wrestler_ids", []):
             if weeks_out >= 6:
                 sl["status"] = "cancelled"
-                changes.append(f"Planned storyline cancelled (injury)")
+                changes.append("Planned storyline cancelled (injury)")
             else:
                 sl["status"] = "delayed"
-                changes.append(f"Planned storyline delayed (injury)")
+                changes.append("Planned storyline delayed (injury)")
 
     vision.planned_storylines = planned
     flag_modified(vision, "planned_storylines")
@@ -408,7 +431,9 @@ def adapt_vision_for_injury(
     # Log adaptation
     log = list(vision.adaptation_log or [])
     for change in changes:
-        log.append({"date": game_date, "change": change, "reason": f"injury_{weeks_out}w"})
+        log.append(
+            {"date": game_date, "change": change, "reason": f"injury_{weeks_out}w"}
+        )
     vision.adaptation_log = log
     flag_modified(vision, "adaptation_log")
 
@@ -490,9 +515,11 @@ def adapt_vision_for_hot_act(
     game_date: str,
 ):
     """Promote a wrestler who's getting unexpectedly over with the crowd."""
-    fed = db.query(GameFederationDB).filter(
-        GameFederationDB.id == vision.federation_id
-    ).first()
+    fed = (
+        db.query(GameFederationDB)
+        .filter(GameFederationDB.id == vision.federation_id)
+        .first()
+    )
     risk = (fed.ai_personality or {}).get("risk_tolerance", 50) if fed else 50
 
     # High-risk promoters push hot acts faster
@@ -535,21 +562,27 @@ def adapt_vision_for_hot_act(
     flag_modified(vision, "trajectories")
 
     # Update WrestlerPushDB
-    push = db.query(WrestlerPushDB).filter(
-        WrestlerPushDB.federation_id == vision.federation_id,
-        WrestlerPushDB.wrestler_id == wrestler_id,
-    ).first()
+    push = (
+        db.query(WrestlerPushDB)
+        .filter(
+            WrestlerPushDB.federation_id == vision.federation_id,
+            WrestlerPushDB.wrestler_id == wrestler_id,
+        )
+        .first()
+    )
     if push:
         push.push_tier = new_tier
         push.direction = "rising"
         push.confidence = min(100, push.confidence + 15)
 
     log = list(vision.adaptation_log or [])
-    log.append({
-        "date": game_date,
-        "change": f"Promoted from {current_tier} to {new_tier} — hot act",
-        "reason": "hot_act",
-    })
+    log.append(
+        {
+            "date": game_date,
+            "change": f"Promoted from {current_tier} to {new_tier} — hot act",
+            "reason": "hot_act",
+        }
+    )
     vision.adaptation_log = log
     flag_modified(vision, "adaptation_log")
 
@@ -565,9 +598,11 @@ def adapt_vision_for_cold_act(
     game_date: str,
 ):
     """Demote a wrestler whose push isn't connecting with the audience."""
-    fed = db.query(GameFederationDB).filter(
-        GameFederationDB.id == vision.federation_id
-    ).first()
+    fed = (
+        db.query(GameFederationDB)
+        .filter(GameFederationDB.id == vision.federation_id)
+        .first()
+    )
     risk = (fed.ai_personality or {}).get("risk_tolerance", 50) if fed else 50
 
     # Conservative bookers stick with their guy longer
@@ -603,21 +638,27 @@ def adapt_vision_for_cold_act(
     vision.trajectories = trajs
     flag_modified(vision, "trajectories")
 
-    push = db.query(WrestlerPushDB).filter(
-        WrestlerPushDB.federation_id == vision.federation_id,
-        WrestlerPushDB.wrestler_id == wrestler_id,
-    ).first()
+    push = (
+        db.query(WrestlerPushDB)
+        .filter(
+            WrestlerPushDB.federation_id == vision.federation_id,
+            WrestlerPushDB.wrestler_id == wrestler_id,
+        )
+        .first()
+    )
     if push:
         push.push_tier = new_tier
         push.direction = "cooling_off"
         push.confidence = max(10, push.confidence - 15)
 
     log = list(vision.adaptation_log or [])
-    log.append({
-        "date": game_date,
-        "change": f"Demoted from {current_tier} to {new_tier} — cold act",
-        "reason": "cold_act",
-    })
+    log.append(
+        {
+            "date": game_date,
+            "change": f"Demoted from {current_tier} to {new_tier} — cold act",
+            "reason": "cold_act",
+        }
+    )
     vision.adaptation_log = log
     flag_modified(vision, "adaptation_log")
     db.add(vision)
@@ -628,28 +669,41 @@ def adapt_vision_for_cold_act(
 # Querying push status
 # ---------------------------------------------------------------------------
 
+
 def get_push_tier(db: Session, federation_id: str, wrestler_id: str) -> Optional[str]:
     """Get a wrestler's current push tier in a federation."""
-    push = db.query(WrestlerPushDB).filter(
-        WrestlerPushDB.federation_id == federation_id,
-        WrestlerPushDB.wrestler_id == wrestler_id,
-    ).first()
+    push = (
+        db.query(WrestlerPushDB)
+        .filter(
+            WrestlerPushDB.federation_id == federation_id,
+            WrestlerPushDB.wrestler_id == wrestler_id,
+        )
+        .first()
+    )
     return push.push_tier if push else "midcard"
 
 
 def get_tier_roster(db: Session, federation_id: str, tier: str) -> List[str]:
     """Get all wrestler IDs at a specific push tier."""
-    pushes = db.query(WrestlerPushDB).filter(
-        WrestlerPushDB.federation_id == federation_id,
-        WrestlerPushDB.push_tier == tier,
-    ).all()
+    pushes = (
+        db.query(WrestlerPushDB)
+        .filter(
+            WrestlerPushDB.federation_id == federation_id,
+            WrestlerPushDB.push_tier == tier,
+        )
+        .all()
+    )
     return [p.wrestler_id for p in pushes]
 
 
 def is_protected(db: Session, federation_id: str, wrestler_id: str) -> bool:
     """Check if a wrestler is 'protected' (shouldn't lose clean)."""
-    push = db.query(WrestlerPushDB).filter(
-        WrestlerPushDB.federation_id == federation_id,
-        WrestlerPushDB.wrestler_id == wrestler_id,
-    ).first()
+    push = (
+        db.query(WrestlerPushDB)
+        .filter(
+            WrestlerPushDB.federation_id == federation_id,
+            WrestlerPushDB.wrestler_id == wrestler_id,
+        )
+        .first()
+    )
     return push.protected if push else False

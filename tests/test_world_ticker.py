@@ -6,8 +6,10 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    ContractDB, PlayerActionDB, PlayerDB, UserDB, ShowDB,
+    GameWrestlerDB,
+    WrestlerStatsDB,
+    PlayerActionDB,
+    UserDB,
     GameNarrativeLogDB,
 )
 from game_service.world_service import create_world, create_player
@@ -32,7 +34,10 @@ def world_with_player(db_session):
     db_session.add(user)
     db_session.commit()
     player = create_player(
-        db_session, user.id, world.id, "promoter",
+        db_session,
+        user.id,
+        world.id,
+        "promoter",
         federation_name="Test Fed",
     )
     return world, player
@@ -105,15 +110,20 @@ class TestWorldTicker:
         db_session.commit()
 
         player = create_player(
-            db_session, user.id, world.id, "wrestler",
+            db_session,
+            user.id,
+            world.id,
+            "wrestler",
             wrestler_name="Trainee",
             wrestler_style="technical",
         )
 
         # Get initial stat
-        stats = db_session.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == player.wrestler_id
-        ).first()
+        stats = (
+            db_session.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == player.wrestler_id)
+            .first()
+        )
         initial_stamina = stats.stamina
 
         # Submit train action
@@ -136,10 +146,14 @@ class TestWorldTicker:
         world, _ = world_with_player
 
         # Set a wrestler's condition low
-        wrestler = db_session.query(GameWrestlerDB).filter(
-            GameWrestlerDB.world_id == world.id,
-            GameWrestlerDB.is_injured == False,
-        ).first()
+        wrestler = (
+            db_session.query(GameWrestlerDB)
+            .filter(
+                GameWrestlerDB.world_id == world.id,
+                GameWrestlerDB.is_injured == False,
+            )
+            .first()
+        )
         wrestler.condition = 50
         db_session.commit()
 
@@ -156,8 +170,10 @@ class TestWorldTicker:
         ticker = WorldTicker(db_session, world.id)
         ticker.tick(7)
 
-        logs = db_session.query(GameNarrativeLogDB).filter(
-            GameNarrativeLogDB.world_id == world.id
-        ).all()
+        logs = (
+            db_session.query(GameNarrativeLogDB)
+            .filter(GameNarrativeLogDB.world_id == world.id)
+            .all()
+        )
         # Should have some narrative events after a week
         assert len(logs) >= 0  # May or may not have events depending on RNG

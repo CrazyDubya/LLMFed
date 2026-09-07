@@ -4,25 +4,31 @@ import os
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterator, List, Optional, Union
+from typing import Any, Dict, Iterator, List, Optional
 import httpx
 from core_engine.dispatcher import LLMDispatcher
 
 logger = logging.getLogger(__name__)
 
 # Re-use custom exceptions
-from core_engine.exceptions import LLMError, LLMNetworkError, LLMFormatError, GameLogicError
+from core_engine.exceptions import (
+    LLMError,
+    LLMNetworkError,
+)
+
 
 @dataclass
 class LLMMessage:
     role: str
     content: str
 
+
 @dataclass
 class StreamChunk:
     text: str
     is_final: bool = False
     usage: Optional[Dict[str, int]] = None
+
 
 @dataclass
 class LLMResponse:
@@ -34,9 +40,18 @@ class LLMResponse:
     cost_usd: float = 0.0
     latency_ms: float = 0.0
 
-class LLMPermanentError(LLMError): pass
-class LLMTransientError(LLMError): pass
-class BudgetExceededError(LLMError): pass
+
+class LLMPermanentError(LLMError):
+    pass
+
+
+class LLMTransientError(LLMError):
+    pass
+
+
+class BudgetExceededError(LLMError):
+    pass
+
 
 def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
     # simple estimate
@@ -48,6 +63,7 @@ def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> flo
     rate_p, rate_c = rates.get(model, (0.001 / 1000, 0.002 / 1000))
     return (prompt_tokens * rate_p) + (completion_tokens * rate_c)
 
+
 class LLMProviderBase(ABC):
     def __init__(self, model: str, **kwargs):
         self.model = model
@@ -55,18 +71,24 @@ class LLMProviderBase(ABC):
         self.client = httpx.AsyncClient()
 
     @abstractmethod
-    def validate_config(self) -> bool: pass
+    def validate_config(self) -> bool:
+        pass
 
     @abstractmethod
-    async def generate_async(self, messages: List[LLMMessage], **kwargs) -> LLMResponse: pass
+    async def generate_async(self, messages: List[LLMMessage], **kwargs) -> LLMResponse:
+        pass
 
     # We maintain synchronous generate just for testing/fallback if really needed, but it shouldn't be used
     def generate(self, messages: List[LLMMessage], **kwargs) -> LLMResponse:
         import asyncio
+
         return asyncio.run(self.generate_async(messages, **kwargs))
 
-    def generate_stream(self, messages: List[LLMMessage], **kwargs) -> Iterator[StreamChunk]:
+    def generate_stream(
+        self, messages: List[LLMMessage], **kwargs
+    ) -> Iterator[StreamChunk]:
         raise NotImplementedError()
+
 
 class OpenAIProvider(LLMProviderBase):
     def validate_config(self) -> bool:
@@ -81,7 +103,7 @@ class OpenAIProvider(LLMProviderBase):
         payload = {
             "model": self.model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
-            "temperature": kwargs.get("temperature", 0.7)
+            "temperature": kwargs.get("temperature", 0.7),
         }
         if kwargs.get("max_tokens"):
             payload["max_tokens"] = kwargs.get("max_tokens")
@@ -91,16 +113,23 @@ class OpenAIProvider(LLMProviderBase):
                 "https://api.openai.com/v1/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}"},
                 json=payload,
-                timeout=30.0
+                timeout=30.0,
             )
             response.raise_for_status()
             data = response.json()
             content = data["choices"][0]["message"]["content"]
             usage = data.get("usage", {})
             return LLMResponse(
-                content=content, provider="openai", model=self.model, usage=usage,
-                cost_usd=estimate_cost(self.model, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)),
-                latency_ms=(time.monotonic() - t0) * 1000
+                content=content,
+                provider="openai",
+                model=self.model,
+                usage=usage,
+                cost_usd=estimate_cost(
+                    self.model,
+                    usage.get("prompt_tokens", 0),
+                    usage.get("completion_tokens", 0),
+                ),
+                latency_ms=(time.monotonic() - t0) * 1000,
             )
         except httpx.HTTPStatusError as e:
             if e.response.status_code in (401, 403):
@@ -109,6 +138,7 @@ class OpenAIProvider(LLMProviderBase):
         except Exception as e:
             raise LLMNetworkError(f"OpenAI network error: {e}")
 
+
 class OllamaProvider(LLMProviderBase):
     def validate_config(self) -> bool:
         return True
@@ -116,40 +146,45 @@ class OllamaProvider(LLMProviderBase):
     async def generate_async(self, messages: List[LLMMessage], **kwargs) -> LLMResponse:
         base_url = os.getenv("OPENAI_API_BASE", "http://127.0.0.1:11434/v1")
         # Ensure it points to the chat completions endpoint if standard ollama
-        url = base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
+        url = (
+            base_url
+            if base_url.endswith("/chat/completions")
+            else f"{base_url}/chat/completions"
+        )
         if "11434/v1" in base_url and not base_url.endswith("/chat/completions"):
-             url = "http://127.0.0.1:11434/v1/chat/completions"
+            url = "http://127.0.0.1:11434/v1/chat/completions"
 
         t0 = time.monotonic()
         payload = {
             "model": self.model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
-            "temperature": kwargs.get("temperature", 0.7)
+            "temperature": kwargs.get("temperature", 0.7),
         }
         try:
-            response = await self.client.post(
-                url,
-                json=payload,
-                timeout=30.0
-            )
+            response = await self.client.post(url, json=payload, timeout=30.0)
             response.raise_for_status()
             data = response.json()
             content = data["choices"][0]["message"]["content"]
             usage = data.get("usage", {})
             return LLMResponse(
-                content=content, provider="ollama", model=self.model, usage=usage,
+                content=content,
+                provider="ollama",
+                model=self.model,
+                usage=usage,
                 cost_usd=0.0,
-                latency_ms=(time.monotonic() - t0) * 1000
+                latency_ms=(time.monotonic() - t0) * 1000,
             )
         except httpx.HTTPStatusError as e:
             raise LLMTransientError(f"Ollama HTTP Error: {e}")
         except Exception as e:
             raise LLMNetworkError(f"Ollama network error: {e}")
 
+
 _PROVIDER_REGISTRY: Dict[str, type] = {
     "openai": OpenAIProvider,
     "ollama": OllamaProvider,
 }
+
 
 @dataclass
 class TokenBudget:
@@ -173,8 +208,12 @@ class TokenBudget:
 
     def check_budget(self) -> None:
         if self.hard_limit_usd > 0 and self.lifetime_cost_usd >= self.hard_limit_usd:
-            raise BudgetExceededError(f"LLM budget hard limit reached")
-        if self.soft_limit_usd > 0 and self.lifetime_cost_usd >= self.soft_limit_usd and not self._soft_warned:
+            raise BudgetExceededError("LLM budget hard limit reached")
+        if (
+            self.soft_limit_usd > 0
+            and self.lifetime_cost_usd >= self.soft_limit_usd
+            and not self._soft_warned
+        ):
             self._soft_warned = True
 
     def record(self, response: LLMResponse) -> None:
@@ -189,6 +228,7 @@ class TokenBudget:
             self.total_completion_tokens += completion
             self.lifetime_prompt_tokens += prompt
             self.lifetime_completion_tokens += completion
+
 
 class LLMAbstraction:
     """
@@ -275,11 +315,14 @@ class LLMAbstraction:
             "meta": fallback.meta,
         }
 
+
 # Keeping these for backwards compatibility until everything is refactored, but they should be avoided
 # in favor of Dependency Injection
 import threading
+
 _default_llm: Optional[LLMAbstraction] = None
 _default_llm_lock = threading.Lock()
+
 
 def get_llm() -> LLMAbstraction:
     global _default_llm
@@ -288,6 +331,7 @@ def get_llm() -> LLMAbstraction:
             if _default_llm is None:
                 _default_llm = LLMAbstraction(provider="auto")
     return _default_llm
+
 
 def reset_llm() -> None:
     global _default_llm

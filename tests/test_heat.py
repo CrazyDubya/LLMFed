@@ -1,10 +1,10 @@
-import pytest
 from core_engine.heat import (
     calculate_match_heat,
     calculate_segment_heat,
     update_wrestler_heat,
     update_feud_heat,
 )
+
 
 class Dummy:
     def __init__(self, current_heat=0):

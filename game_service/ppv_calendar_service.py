@@ -17,12 +17,13 @@ Each PPV has:
 import random
 import logging
 from datetime import datetime, timedelta
-from typing import List, Optional, Dict
+from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    PPVEventDB, BookingVisionDB, GameFederationDB,
-    ShowDB, StorylineDB, ChampionshipDB,
+    PPVEventDB,
+    BookingVisionDB,
+    GameFederationDB,
     WrestlerPushDB,
 )
 
@@ -33,34 +34,56 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 PPV_NAMES_CROWN_JEWEL = [
-    "WrestleRama", "Clash of Champions", "FinalDestination",
-    "The Grand Spectacle", "Championship Showcase", "Legends Night",
-    "SuperClash", "The Main Event", "GloryBound",
+    "WrestleRama",
+    "Clash of Champions",
+    "FinalDestination",
+    "The Grand Spectacle",
+    "Championship Showcase",
+    "Legends Night",
+    "SuperClash",
+    "The Main Event",
+    "GloryBound",
 ]
 
 PPV_NAMES_GENERAL = [
-    "Bad Blood", "No Mercy", "Backlash", "Vengeance",
-    "Breaking Point", "Judgment Day", "Battleground",
-    "Collision Course", "Showdown", "Payback",
-    "No Way Out", "Lockdown", "Overdrive", "Breakdown",
-    "King of the Ring", "Night of Champions",
-    "Street Fight", "Extreme Rules", "Money in the Bank",
-    "Steel Cage Chaos", "Last Stand", "Uprising",
+    "Bad Blood",
+    "No Mercy",
+    "Backlash",
+    "Vengeance",
+    "Breaking Point",
+    "Judgment Day",
+    "Battleground",
+    "Collision Course",
+    "Showdown",
+    "Payback",
+    "No Way Out",
+    "Lockdown",
+    "Overdrive",
+    "Breakdown",
+    "King of the Ring",
+    "Night of Champions",
+    "Street Fight",
+    "Extreme Rules",
+    "Money in the Bank",
+    "Steel Cage Chaos",
+    "Last Stand",
+    "Uprising",
 ]
 
 PPV_THEMES = [
-    "grudge_matches",    # Blowoff feuds
-    "tournament",        # King of the Ring style
-    "showcase",          # Best matches possible
-    "extreme",           # Gimmick matches
-    "championship",      # Every title defended
-    "grudge_matches",    # More feuds (weighted higher)
+    "grudge_matches",  # Blowoff feuds
+    "tournament",  # King of the Ring style
+    "showcase",  # Best matches possible
+    "extreme",  # Gimmick matches
+    "championship",  # Every title defended
+    "grudge_matches",  # More feuds (weighted higher)
 ]
 
 
 # ---------------------------------------------------------------------------
 # Calendar generation
 # ---------------------------------------------------------------------------
+
 
 def generate_ppv_calendar(
     db: Session,
@@ -94,7 +117,7 @@ def generate_ppv_calendar(
     crown_jewel_name = random.choice(PPV_NAMES_CROWN_JEWEL)
     available_names = list(PPV_NAMES_GENERAL)
     random.shuffle(available_names)
-    ppv_names = available_names[:num_ppvs - 1]  # Reserve slot for crown jewel
+    ppv_names = available_names[: num_ppvs - 1]  # Reserve slot for crown jewel
 
     # Crown jewel goes near end of year (last quarter)
     crown_jewel_month = random.randint(10, 12)
@@ -113,13 +136,25 @@ def generate_ppv_calendar(
             is_crown_jewel = True
             theme = "showcase"
             # Crown jewel gets biggest venue
-            capacity = random.randint(15000, 50000) if prestige >= 60 else random.randint(8000, 20000)
+            capacity = (
+                random.randint(15000, 50000)
+                if prestige >= 60
+                else random.randint(8000, 20000)
+            )
         else:
-            name = ppv_names[name_idx] if name_idx < len(ppv_names) else f"Special Event {i+1}"
+            name = (
+                ppv_names[name_idx]
+                if name_idx < len(ppv_names)
+                else f"Special Event {i + 1}"
+            )
             name_idx += 1
             is_crown_jewel = False
             theme = random.choice(PPV_THEMES)
-            capacity = random.randint(5000, 20000) if prestige >= 50 else random.randint(2000, 8000)
+            capacity = (
+                random.randint(5000, 20000)
+                if prestige >= 50
+                else random.randint(2000, 8000)
+            )
 
         ppv = PPVEventDB(
             world_id=federation.world_id,
@@ -129,7 +164,9 @@ def generate_ppv_calendar(
             scheduled_date=date_str,
             is_crown_jewel=is_crown_jewel,
             capacity=capacity,
-            venue=f"{federation.home_region} Arena" if not is_crown_jewel else f"{federation.home_region} Stadium",
+            venue=f"{federation.home_region} Arena"
+            if not is_crown_jewel
+            else f"{federation.home_region} Stadium",
             planned_main_event={},
             planned_matches=[],
         )
@@ -139,7 +176,9 @@ def generate_ppv_calendar(
     db.flush()
     logger.info(
         "Generated %d PPV events for %s (crown jewel: %s)",
-        len(ppvs), federation.short_name or federation.name, crown_jewel_name,
+        len(ppvs),
+        federation.short_name or federation.name,
+        crown_jewel_name,
     )
     return ppvs
 
@@ -148,7 +187,10 @@ def generate_ppv_calendar(
 # Build cycle management
 # ---------------------------------------------------------------------------
 
-def get_next_ppv(db: Session, federation_id: str, current_date: str) -> Optional[PPVEventDB]:
+
+def get_next_ppv(
+    db: Session, federation_id: str, current_date: str
+) -> Optional[PPVEventDB]:
     """Get the next upcoming PPV for a federation."""
     return (
         db.query(PPVEventDB)
@@ -183,6 +225,7 @@ def is_go_home_week(current_date: str, ppv_date: str) -> bool:
 # ---------------------------------------------------------------------------
 # PPV card planning
 # ---------------------------------------------------------------------------
+
 
 def pencil_in_ppv_match(
     db: Session,
@@ -251,7 +294,8 @@ def plan_ppv_card_from_vision(
         if holder and challengers:
             challenger = challengers[0]
             pencil_in_ppv_match(
-                db, ppv,
+                db,
+                ppv,
                 wrestler_ids=[holder, challenger],
                 match_type="singles",
                 title_id=champ_id,
@@ -267,7 +311,8 @@ def plan_ppv_card_from_vision(
         wrestler_ids = sl.get("wrestler_ids", [])
         if len(wrestler_ids) >= 2:
             pencil_in_ppv_match(
-                db, ppv,
+                db,
+                ppv,
                 wrestler_ids=wrestler_ids,
                 match_type="singles",
                 storyline_id=sl.get("storyline_id"),
@@ -275,16 +320,20 @@ def plan_ppv_card_from_vision(
 
     # Fill remaining card with upper midcard matches
     used = set()
-    for m in (ppv.planned_matches or []):
+    for m in ppv.planned_matches or []:
         used.update(m.get("wrestler_ids", []))
     me = ppv.planned_main_event or {}
     used.update(me.get("wrestler_ids", []))
 
     # Get upper midcard and midcard wrestlers for undercard
-    upper = db.query(WrestlerPushDB).filter(
-        WrestlerPushDB.federation_id == ppv.federation_id,
-        WrestlerPushDB.push_tier.in_(["upper_midcard", "midcard"]),
-    ).all()
+    upper = (
+        db.query(WrestlerPushDB)
+        .filter(
+            WrestlerPushDB.federation_id == ppv.federation_id,
+            WrestlerPushDB.push_tier.in_(["upper_midcard", "midcard"]),
+        )
+        .all()
+    )
 
     available = [p.wrestler_id for p in upper if p.wrestler_id not in used]
     random.shuffle(available)
@@ -292,20 +341,25 @@ def plan_ppv_card_from_vision(
     # Add 2-3 more matches
     for i in range(0, min(len(available) - 1, 6), 2):
         pencil_in_ppv_match(
-            db, ppv,
+            db,
+            ppv,
             wrestler_ids=[available[i], available[i + 1]],
             match_type="singles",
         )
 
     db.add(ppv)
     db.flush()
-    logger.info("Planned card for PPV %s: %d matches", ppv.name,
-                len(ppv.planned_matches or []) + (1 if ppv.planned_main_event else 0))
+    logger.info(
+        "Planned card for PPV %s: %d matches",
+        ppv.name,
+        len(ppv.planned_matches or []) + (1 if ppv.planned_main_event else 0),
+    )
 
 
 # ---------------------------------------------------------------------------
 # Annual rollover
 # ---------------------------------------------------------------------------
+
 
 def rollover_ppv_calendar(
     db: Session,
@@ -315,10 +369,14 @@ def rollover_ppv_calendar(
     """Generate next year's PPV calendar. Called when current year's events are done."""
     # Check if next year's PPVs already exist
     next_year = datetime.strptime(new_year_start, "%Y-%m-%d").year
-    existing = db.query(PPVEventDB).filter(
-        PPVEventDB.federation_id == federation.id,
-        PPVEventDB.scheduled_date >= new_year_start,
-    ).count()
+    existing = (
+        db.query(PPVEventDB)
+        .filter(
+            PPVEventDB.federation_id == federation.id,
+            PPVEventDB.scheduled_date >= new_year_start,
+        )
+        .count()
+    )
 
     if existing > 0:
         return  # Already have next year planned

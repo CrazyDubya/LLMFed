@@ -9,15 +9,18 @@ stable/manager/storyline management, match requests, etc.).
 import logging
 import random
 from datetime import datetime
-from typing import Callable, List
+from typing import Callable
 
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    WorldDB, PlayerActionDB, GameFederationDB,
-    GameWrestlerDB, WrestlerStatsDB, ContractDB, ShowDB,
-    StorylineDB, StorylineParticipantDB,
-    TalentOfferDB,
+    WorldDB,
+    PlayerActionDB,
+    GameWrestlerDB,
+    WrestlerStatsDB,
+    ContractDB,
+    ShowDB,
+    StorylineDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,6 +35,7 @@ def _get_storyline_service():
     global _storyline_service
     if _storyline_service is None:
         from game_service import storyline_service as _sls
+
         _storyline_service = _sls
     return _storyline_service
 
@@ -40,6 +44,7 @@ def _get_stable_service():
     global _stable_service
     if _stable_service is None:
         from game_service import stable_service as _stbs
+
         _stable_service = _stbs
     return _stable_service
 
@@ -48,6 +53,7 @@ def _get_manager_service():
     global _manager_service
     if _manager_service is None:
         from game_service import manager_service as _mgrs
+
         _manager_service = _mgrs
     return _manager_service
 
@@ -56,17 +62,23 @@ def _get_manager_service():
 # DRY helper for the repeated active-contract query
 # -----------------------------------------------------------------
 
+
 def get_active_contract(db: Session, wrestler_id: str):
     """Return the active ContractDB for a wrestler, or None."""
-    return db.query(ContractDB).filter(
-        ContractDB.wrestler_id == wrestler_id,
-        ContractDB.status == "active",
-    ).first()
+    return (
+        db.query(ContractDB)
+        .filter(
+            ContractDB.wrestler_id == wrestler_id,
+            ContractDB.status == "active",
+        )
+        .first()
+    )
 
 
 # -----------------------------------------------------------------
 # PlayerActionHandler
 # -----------------------------------------------------------------
+
 
 class PlayerActionHandler:
     """Handles player-submitted actions during the tick.
@@ -125,9 +137,11 @@ class PlayerActionHandler:
         federation_id = data.get("federation_id")
         salary = data.get("salary_weekly", 1000)
 
-        wrestler = self.db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == wrestler_id
-        ).first()
+        wrestler = (
+            self.db.query(GameWrestlerDB)
+            .filter(GameWrestlerDB.id == wrestler_id)
+            .first()
+        )
         if not wrestler:
             raise ValueError("Wrestler not found")
 
@@ -145,7 +159,11 @@ class PlayerActionHandler:
             is_exclusive=True,
         )
         self.db.add(contract)
-        self._log_event("signing", f"{wrestler.name} signed with federation", [wrestler_id, federation_id])
+        self._log_event(
+            "signing",
+            f"{wrestler.name} signed with federation",
+            [wrestler_id, federation_id],
+        )
         return {"contract_id": contract.id, "wrestler": wrestler.name}
 
     def _action_book_show(self, data: dict) -> dict:
@@ -168,9 +186,11 @@ class PlayerActionHandler:
         wrestler_id = data.get("wrestler_id")
         stat_name = data.get("stat", "stamina")
 
-        stats = self.db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == wrestler_id
-        ).first()
+        stats = (
+            self.db.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == wrestler_id)
+            .first()
+        )
         if not stats:
             raise ValueError("Wrestler stats not found")
 
@@ -184,6 +204,7 @@ class PlayerActionHandler:
         # Mentor bonus (Group 4)
         try:
             from game_service.wrestler_lifecycle_service import training_with_mentor
+
             gain += training_with_mentor(self.db, wrestler_id, stat_name)
         except (ValueError, AttributeError) as e:
             logger.debug("Mentor bonus skipped for %s: %s", wrestler_id, e)
@@ -192,13 +213,20 @@ class PlayerActionHandler:
         setattr(stats, stat_name, new_val)
 
         # Training fatigues the wrestler slightly
-        wrestler = self.db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == wrestler_id
-        ).first()
+        wrestler = (
+            self.db.query(GameWrestlerDB)
+            .filter(GameWrestlerDB.id == wrestler_id)
+            .first()
+        )
         if wrestler:
             wrestler.condition = max(0, wrestler.condition - random.randint(2, 5))
 
-        return {"stat": stat_name, "old": current, "new": new_val, "gain": new_val - current}
+        return {
+            "stat": stat_name,
+            "old": current,
+            "new": new_val,
+            "gain": new_val - current,
+        }
 
     def _action_cut_promo(self, data: dict) -> dict:
         """Wrestler cuts a promo -- gains popularity, boosts storyline heat."""
@@ -206,15 +234,19 @@ class PlayerActionHandler:
         target_id = data.get("target_wrestler_id")
         direction = data.get("direction", "")
 
-        wrestler = self.db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == wrestler_id
-        ).first()
+        wrestler = (
+            self.db.query(GameWrestlerDB)
+            .filter(GameWrestlerDB.id == wrestler_id)
+            .first()
+        )
         if not wrestler:
             raise ValueError("Wrestler not found")
 
-        stats = self.db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == wrestler_id
-        ).first()
+        stats = (
+            self.db.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == wrestler_id)
+            .first()
+        )
 
         # Promo quality based on charisma + mic skill
         charisma = stats.charisma if stats else 50
@@ -251,7 +283,10 @@ class PlayerActionHandler:
             if existing:
                 heat_boost = 5 if quality >= 60 else 3
                 sl_svc.progress_storyline(
-                    self.db, existing, "promo", heat_boost,
+                    self.db,
+                    existing,
+                    "promo",
+                    heat_boost,
                     description=f"{wrestler.name} cut a fiery promo targeting their rival!",
                 )
                 result["storyline_heat_boost"] = heat_boost
@@ -274,9 +309,11 @@ class PlayerActionHandler:
         Cooldown: 1 request per game week (7 ticks).
         """
         wrestler_id = data.get("wrestler_id")
-        wrestler = self.db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == wrestler_id
-        ).first()
+        wrestler = (
+            self.db.query(GameWrestlerDB)
+            .filter(GameWrestlerDB.id == wrestler_id)
+            .first()
+        )
         if not wrestler:
             raise ValueError("Wrestler not found")
 
@@ -295,30 +332,42 @@ class PlayerActionHandler:
             if req.get("wrestler_id") == wrestler_id:
                 last_date = req.get("date", "")
                 try:
-                    days_since = (datetime.strptime(game_date, "%Y-%m-%d") -
-                                  datetime.strptime(last_date, "%Y-%m-%d")).days
+                    days_since = (
+                        datetime.strptime(game_date, "%Y-%m-%d")
+                        - datetime.strptime(last_date, "%Y-%m-%d")
+                    ).days
                     if days_since < 7:
-                        return {"message": f"Match request on cooldown ({7 - days_since} days remaining)"}
+                        return {
+                            "message": f"Match request on cooldown ({7 - days_since} days remaining)"
+                        }
                 except (ValueError, TypeError):
                     pass
 
         # Remove old request for this wrestler if any, add new one
-        match_requests = [r for r in match_requests if r.get("wrestler_id") != wrestler_id]
-        match_requests.append({
-            "wrestler_id": wrestler_id,
-            "federation_id": contract.federation_id,
-            "date": game_date,
-            "type": "request_match",
-        })
+        match_requests = [
+            r for r in match_requests if r.get("wrestler_id") != wrestler_id
+        ]
+        match_requests.append(
+            {
+                "wrestler_id": wrestler_id,
+                "federation_id": contract.federation_id,
+                "date": game_date,
+                "type": "request_match",
+            }
+        )
         meta["pending_match_requests"] = match_requests
         self.world.world_config = meta
 
         self._log_event(
             "match_request",
             f"{wrestler.name} has requested a match on the next show!",
-            [wrestler_id], importance=4,
+            [wrestler_id],
+            importance=4,
         )
-        return {"message": f"{wrestler.name} is booked for a match on the next show", "status": "pending"}
+        return {
+            "message": f"{wrestler.name} is booked for a match on the next show",
+            "status": "pending",
+        }
 
     def _action_open_challenge(self, data: dict) -> dict:
         """Player issues an open challenge -- higher risk/reward than request_match.
@@ -327,9 +376,11 @@ class PlayerActionHandler:
         Can spark a storyline if player popularity > 40.
         """
         wrestler_id = data.get("wrestler_id")
-        wrestler = self.db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == wrestler_id
-        ).first()
+        wrestler = (
+            self.db.query(GameWrestlerDB)
+            .filter(GameWrestlerDB.id == wrestler_id)
+            .first()
+        )
         if not wrestler:
             raise ValueError("Wrestler not found")
 
@@ -338,28 +389,40 @@ class PlayerActionHandler:
             raise ValueError("Wrestler has no active contract")
 
         # Find a suitable opponent: +/-10 popularity from same federation
-        roster_contracts = self.db.query(ContractDB).filter(
-            ContractDB.federation_id == contract.federation_id,
-            ContractDB.status == "active",
-            ContractDB.wrestler_id != wrestler_id,
-        ).all()
+        roster_contracts = (
+            self.db.query(ContractDB)
+            .filter(
+                ContractDB.federation_id == contract.federation_id,
+                ContractDB.status == "active",
+                ContractDB.wrestler_id != wrestler_id,
+            )
+            .all()
+        )
 
         candidates = []
         for c in roster_contracts:
-            opp = self.db.query(GameWrestlerDB).filter(
-                GameWrestlerDB.id == c.wrestler_id,
-                GameWrestlerDB.is_injured == False,
-            ).first()
+            opp = (
+                self.db.query(GameWrestlerDB)
+                .filter(
+                    GameWrestlerDB.id == c.wrestler_id,
+                    GameWrestlerDB.is_injured == False,
+                )
+                .first()
+            )
             if opp and abs(opp.popularity - wrestler.popularity) <= 15:
                 candidates.append(opp)
 
         if not candidates:
             # Fallback: anyone on the roster who isn't injured
             for c in roster_contracts:
-                opp = self.db.query(GameWrestlerDB).filter(
-                    GameWrestlerDB.id == c.wrestler_id,
-                    GameWrestlerDB.is_injured == False,
-                ).first()
+                opp = (
+                    self.db.query(GameWrestlerDB)
+                    .filter(
+                        GameWrestlerDB.id == c.wrestler_id,
+                        GameWrestlerDB.is_injured == False,
+                    )
+                    .first()
+                )
                 if opp:
                     candidates.append(opp)
 
@@ -371,21 +434,26 @@ class PlayerActionHandler:
         # Store in metadata for show booking
         meta = self.world.world_config or {}
         match_requests = meta.get("pending_match_requests", [])
-        match_requests = [r for r in match_requests if r.get("wrestler_id") != wrestler_id]
-        match_requests.append({
-            "wrestler_id": wrestler_id,
-            "federation_id": contract.federation_id,
-            "opponent_id": opponent.id,
-            "date": self.world.current_game_date,
-            "type": "open_challenge",
-        })
+        match_requests = [
+            r for r in match_requests if r.get("wrestler_id") != wrestler_id
+        ]
+        match_requests.append(
+            {
+                "wrestler_id": wrestler_id,
+                "federation_id": contract.federation_id,
+                "opponent_id": opponent.id,
+                "date": self.world.current_game_date,
+                "type": "open_challenge",
+            }
+        )
         meta["pending_match_requests"] = match_requests
         self.world.world_config = meta
 
         self._log_event(
             "open_challenge",
             f"{wrestler.name} issues an open challenge! {opponent.name} answers!",
-            [wrestler_id, opponent.id], importance=6,
+            [wrestler_id, opponent.id],
+            importance=6,
         )
         return {
             "message": f"{wrestler.name} issues an open challenge — {opponent.name} has accepted!",
@@ -412,8 +480,11 @@ class PlayerActionHandler:
             raise ValueError("Leader has no active contract")
 
         stable = stable_svc.create_stable(
-            self.db, self.world.id, contract.federation_id,
-            name=name, leader_id=leader_id,
+            self.db,
+            self.world.id,
+            contract.federation_id,
+            name=name,
+            leader_id=leader_id,
             founding_member_ids=member_ids,
             alignment=data.get("alignment", "heel"),
             short_name=data.get("short_name"),
@@ -433,11 +504,18 @@ class PlayerActionHandler:
         if not stable_id or not wrestler_id:
             raise ValueError("stable_id and wrestler_id required")
         member = stable_svc.add_member(
-            self.db, stable_id, wrestler_id, role,
+            self.db,
+            stable_id,
+            wrestler_id,
+            role,
             game_date=self.world.current_game_date,
         )
         wrestler = self.db.query(GameWrestlerDB).filter_by(id=wrestler_id).first()
-        return {"member_id": member.id, "role": member.role, "wrestler_name": wrestler.name if wrestler else wrestler_id}
+        return {
+            "member_id": member.id,
+            "role": member.role,
+            "wrestler_name": wrestler.name if wrestler else wrestler_id,
+        }
 
     def _action_leave_stable(self, data: dict) -> dict:
         """Remove a wrestler from a stable."""
@@ -447,7 +525,9 @@ class PlayerActionHandler:
         if not stable_id or not wrestler_id:
             raise ValueError("stable_id and wrestler_id required")
         result = stable_svc.remove_member(
-            self.db, stable_id, wrestler_id,
+            self.db,
+            stable_id,
+            wrestler_id,
             game_date=self.world.current_game_date,
         )
         if not result:
@@ -461,10 +541,13 @@ class PlayerActionHandler:
         if not stable_id:
             raise ValueError("stable_id required")
         from models.game_models import StableDB
+
         stable = self.db.query(StableDB).filter_by(id=stable_id).first()
         if not stable:
             raise ValueError("Stable not found")
-        stable_svc.dissolve_stable(self.db, stable_id, game_date=self.world.current_game_date)
+        stable_svc.dissolve_stable(
+            self.db, stable_id, game_date=self.world.current_game_date
+        )
         return {"dissolved": True, "name": stable.name}
 
     # --- Manager actions ---
@@ -477,7 +560,10 @@ class PlayerActionHandler:
         if not manager_id or not client_id:
             raise ValueError("manager_id and client_wrestler_id required")
         bond = mgr_svc.assign_manager(
-            self.db, self.world.id, manager_id, client_id,
+            self.db,
+            self.world.id,
+            manager_id,
+            client_id,
             role=data.get("role", "manager"),
             specialization=data.get("specialization", "all_around"),
             game_date=self.world.current_game_date,
@@ -491,7 +577,9 @@ class PlayerActionHandler:
         if not name:
             raise ValueError("name required")
         mgr = mgr_svc.create_manager(
-            self.db, self.world.id, name=name,
+            self.db,
+            self.world.id,
+            name=name,
             alignment=data.get("alignment", "heel"),
             archetype=data.get("archetype", "scheming_manager"),
             federation_id=data.get("federation_id"),
@@ -506,7 +594,9 @@ class PlayerActionHandler:
         if not bond_id:
             raise ValueError("bond_id required")
         result = mgr_svc.remove_manager(
-            self.db, bond_id, game_date=self.world.current_game_date,
+            self.db,
+            bond_id,
+            game_date=self.world.current_game_date,
         )
         if not result:
             raise ValueError("Bond not found")
@@ -526,7 +616,9 @@ class PlayerActionHandler:
             contract = get_active_contract(self.db, wrestler_ids[0])
             federation_id = contract.federation_id if contract else None
         storyline = sl_svc.create_storyline(
-            self.db, self.world.id, federation_id,
+            self.db,
+            self.world.id,
+            federation_id,
             wrestler_ids=wrestler_ids,
             storyline_type=data.get("storyline_type", "feud"),
             name=data.get("name"),

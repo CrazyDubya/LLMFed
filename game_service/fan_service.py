@@ -16,7 +16,7 @@ Fan Archetypes:
 import logging
 import random
 from dataclasses import dataclass, field
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -91,6 +91,7 @@ MERCH_MULTIPLIER = {
 @dataclass
 class FanSegment:
     """A segment of the fan base with shared preferences."""
+
     archetype: FanArchetype
     population: int = 0
     satisfaction: float = 50.0  # 0-100
@@ -120,6 +121,7 @@ class FanSegment:
 @dataclass
 class FanBase:
     """Complete fan base for a federation."""
+
     federation_id: str
     segments: Dict[FanArchetype, FanSegment] = field(default_factory=dict)
     total_merch_revenue: float = 0.0
@@ -138,9 +140,10 @@ class FanBase:
         total_pop = self.total_population
         if total_pop == 0:
             return 50.0
-        return sum(
-            s.satisfaction * s.population for s in self.segments.values()
-        ) / total_pop
+        return (
+            sum(s.satisfaction * s.population for s in self.segments.values())
+            / total_pop
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -150,9 +153,7 @@ class FanBase:
             "overall_satisfaction": round(self.overall_satisfaction, 1),
             "total_merch_revenue": round(self.total_merch_revenue, 2),
             "shows_processed": self.shows_processed,
-            "segments": {
-                k.value: v.to_dict() for k, v in self.segments.items()
-            },
+            "segments": {k.value: v.to_dict() for k, v in self.segments.items()},
         }
 
 
@@ -294,7 +295,9 @@ def predict_attendance(
     star_mult = 0.8 + (card_star_power / 100) * 0.4
 
     # Buzz boost
-    avg_buzz = sum(s.buzz for s in fan_base.segments.values()) / max(len(fan_base.segments), 1)
+    avg_buzz = sum(s.buzz for s in fan_base.segments.values()) / max(
+        len(fan_base.segments), 1
+    )
     buzz_mult = 1.0 + (avg_buzz / 100) * 0.2
 
     predicted = int(base * type_mult * star_mult * buzz_mult)

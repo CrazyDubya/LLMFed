@@ -51,7 +51,8 @@ class ConnectionManager:
         self._ws_to_world[websocket] = world_id
         logger.info(
             "WebSocket connected to world %s (%d connections)",
-            world_id, len(self.active_connections[world_id]),
+            world_id,
+            len(self.active_connections[world_id]),
         )
 
     def disconnect(self, websocket: WebSocket, world_id: str):
@@ -83,7 +84,9 @@ class ConnectionManager:
             except Exception as e:
                 logger.warning(
                     "Failed to send WebSocket message to world %s: %s: %s",
-                    world_id, type(e).__name__, e,
+                    world_id,
+                    type(e).__name__,
+                    e,
                 )
                 dead.add(connection)
 
@@ -100,7 +103,8 @@ class ConnectionManager:
         except Exception as e:
             logger.warning(
                 "Failed to send personal WebSocket message: %s: %s",
-                type(e).__name__, e,
+                type(e).__name__,
+                e,
             )
 
     def get_connection_count(self, world_id: Optional[str] = None) -> int:
@@ -182,6 +186,7 @@ def start_reaper():
 # Public helpers for game services to push updates
 # ---------------------------------------------------------------------------
 
+
 async def notify_world(world_id: str, event_type: str, data: dict):
     """Push a typed event to all subscribers of a world.
 
@@ -190,27 +195,34 @@ async def notify_world(world_id: str, event_type: str, data: dict):
         from api_gateway.websocket_hub import notify_world
         await notify_world(world_id, "show_completed", {...})
     """
-    await manager.broadcast_to_world(world_id, {
-        "type": event_type,
-        "data": data,
-        "timestamp": time.time(),
-    })
+    await manager.broadcast_to_world(
+        world_id,
+        {
+            "type": event_type,
+            "data": data,
+            "timestamp": time.time(),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
 # WebSocket endpoint handler
 # ---------------------------------------------------------------------------
 
+
 async def websocket_endpoint(websocket: WebSocket, world_id: str):
     """WebSocket endpoint for world updates."""
     await manager.connect(websocket, world_id)
     try:
         # Send welcome message
-        await manager.send_personal(websocket, {
-            "type": "connected",
-            "world_id": world_id,
-            "message": "Connected to world feed",
-        })
+        await manager.send_personal(
+            websocket,
+            {
+                "type": "connected",
+                "world_id": world_id,
+                "message": "Connected to world feed",
+            },
+        )
 
         # Keep connection alive, handle incoming messages.
         # asyncio.wait_for enforces a receive timeout so silent clients
@@ -224,10 +236,13 @@ async def websocket_endpoint(websocket: WebSocket, world_id: str):
             except asyncio.TimeoutError:
                 # Client hasn't sent anything within the heartbeat window
                 logger.info("WebSocket timed out for world %s", world_id)
-                await manager.send_personal(websocket, {
-                    "type": "error",
-                    "message": "Heartbeat timeout — closing connection",
-                })
+                await manager.send_personal(
+                    websocket,
+                    {
+                        "type": "error",
+                        "message": "Heartbeat timeout — closing connection",
+                    },
+                )
                 break
 
             manager.touch(websocket)
@@ -238,23 +253,34 @@ async def websocket_endpoint(websocket: WebSocket, world_id: str):
                 if msg_type == "ping":
                     await manager.send_personal(websocket, {"type": "pong"})
                 elif msg_type == "subscribe":
-                    await manager.send_personal(websocket, {
-                        "type": "subscribed",
-                        "channel": msg.get("channel", "all"),
-                    })
+                    await manager.send_personal(
+                        websocket,
+                        {
+                            "type": "subscribed",
+                            "channel": msg.get("channel", "all"),
+                        },
+                    )
                 else:
-                    await manager.send_personal(websocket, {
-                        "type": "error",
-                        "message": f"Unknown message type: {msg_type}",
-                    })
+                    await manager.send_personal(
+                        websocket,
+                        {
+                            "type": "error",
+                            "message": f"Unknown message type: {msg_type}",
+                        },
+                    )
             except json.JSONDecodeError:
-                await manager.send_personal(websocket, {
-                    "type": "error",
-                    "message": "Invalid JSON",
-                })
+                await manager.send_personal(
+                    websocket,
+                    {
+                        "type": "error",
+                        "message": "Invalid JSON",
+                    },
+                )
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected from world %s", world_id)
     except Exception as e:
-        logger.error("WebSocket error for world %s: %s: %s", world_id, type(e).__name__, e)
+        logger.error(
+            "WebSocket error for world %s: %s: %s", world_id, type(e).__name__, e
+        )
     finally:
         manager.disconnect(websocket, world_id)

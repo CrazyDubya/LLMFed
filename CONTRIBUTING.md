@@ -232,33 +232,31 @@ logger = logging.getLogger(__name__)
 
 class AgentService:
     """Service for managing wrestling agents.
-    
+
     This service provides CRUD operations for agents and handles
     the business logic for agent lifecycle management.
     """
-    
+
     def __init__(self, db: Session) -> None:
         """Initialize the agent service.
-        
+
         Args:
             db: Database session for operations.
         """
         self.db = db
-    
+
     def create_agent(
-        self, 
-        agent_data: AgentCreateData,
-        federation_id: Optional[str] = None
+        self, agent_data: AgentCreateData, federation_id: Optional[str] = None
     ) -> Agent:
         """Create a new agent.
-        
+
         Args:
             agent_data: Agent creation data.
             federation_id: Optional federation to assign agent to.
-            
+
         Returns:
             Created agent instance.
-            
+
         Raises:
             ValueError: If agent data is invalid.
             DatabaseError: If database operation fails.
@@ -304,35 +302,35 @@ from tests.fixtures.sample_data import sample_agent_data
 
 class TestAgentCRUD:
     """Test suite for agent CRUD operations."""
-    
+
     def test_create_agent_success(self, db_session: Session) -> None:
         """Test successful agent creation."""
         # Arrange
         agent_data = AgentCreateData(**sample_agent_data)
-        
+
         # Act
         result = create_agent(db_session, agent_data)
-        
+
         # Assert
         assert result.name == agent_data.name
         assert result.role == agent_data.role
         assert result.agent_id is not None
-    
+
     def test_create_agent_invalid_data(self, db_session: Session) -> None:
         """Test agent creation with invalid data."""
         # Arrange
         invalid_data = AgentCreateData(name="", role="invalid")
-        
+
         # Act & Assert
         with pytest.raises(ValueError):
             create_agent(db_session, invalid_data)
-    
-    @patch('core_engine.llm_client.LLMClient.generate')
+
+    @patch("core_engine.llm_client.LLMClient.generate")
     def test_agent_llm_interaction(self, mock_generate: Mock) -> None:
         """Test agent LLM interaction."""
         # Arrange
         mock_generate.return_value = {"action": "grapple", "target": "opponent"}
-        
+
         # Act & Assert
         # Test implementation
 ```
@@ -384,28 +382,26 @@ Use Google-style docstrings:
 
 ```python
 def process_agent_action(
-    agent_id: str, 
-    context: EventContext, 
-    timeout: float = 30.0
+    agent_id: str, context: EventContext, timeout: float = 30.0
 ) -> AgentActionResponse:
     """Process an agent's action in response to an event context.
-    
+
     This function sends the event context to the specified agent's LLM
     and processes the response according to the game rules.
-    
+
     Args:
         agent_id: Unique identifier for the agent.
         context: Event context containing available actions and game state.
         timeout: Maximum time to wait for LLM response in seconds.
-        
+
     Returns:
         Validated agent action response.
-        
+
     Raises:
         AgentNotFoundError: If agent_id doesn't exist.
         LLMTimeoutError: If LLM doesn't respond within timeout.
         ValidationError: If agent response is invalid.
-        
+
     Example:
         >>> context = EventContext(
         ...     requesting_agent_id="agent_123",

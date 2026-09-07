@@ -37,6 +37,7 @@ You MUST respond strictly in the following JSON schema:
 {{ response_schema | tojson(indent=2) }}
 """
 
+
 class PromptBuilder:
     """Builds prompts for LLM interactions using Jinja2 templates."""
 
@@ -50,13 +51,17 @@ class PromptBuilder:
     }
 
     _jinja_env = Environment(loader=BaseLoader())
-    _jinja_env.filters['tojson'] = lambda obj, indent=None: json.dumps(obj, indent=indent)
+    _jinja_env.filters["tojson"] = lambda obj, indent=None: json.dumps(
+        obj, indent=indent
+    )
 
     @classmethod
     def build_prompt(cls, context: EventContext, hints: Dict[str, Any]) -> str:
         """Constructs a rendered string prompt using Jinja2."""
         if context.role not in VALID_ROLES:
-            raise ValueError(f"Unknown role '{context.role}', expected one of {VALID_ROLES}")
+            raise ValueError(
+                f"Unknown role '{context.role}', expected one of {VALID_ROLES}"
+            )
 
         ResponseModel = cls._SCHEMA_MAP[context.role]
         schema = ResponseModel.model_json_schema()
@@ -70,16 +75,22 @@ class PromptBuilder:
             description=context.description,
             requesting_agent_id=context.requesting_agent_id,
             state=context.state,
-            available_actions=[action.model_dump() for action in context.available_actions],
+            available_actions=[
+                action.model_dump() for action in context.available_actions
+            ],
             hints=hints,
             response_schema=schema,
         )
 
     @classmethod
-    def build_prompt_dict(cls, context: EventContext, hints: Dict[str, Any]) -> Dict[str, Any]:
+    def build_prompt_dict(
+        cls, context: EventContext, hints: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Legacy method to maintain compatibility with dict-based LLM routing."""
         if context.role not in VALID_ROLES:
-            raise ValueError(f"Unknown role '{context.role}', expected one of {VALID_ROLES}")
+            raise ValueError(
+                f"Unknown role '{context.role}', expected one of {VALID_ROLES}"
+            )
 
         ResponseModel = cls._SCHEMA_MAP[context.role]
         schema = ResponseModel.model_json_schema()
@@ -92,8 +103,10 @@ class PromptBuilder:
             "description": context.description,
             "requesting_agent_id": context.requesting_agent_id,
             "state": context.state,
-            "available_actions": [action.model_dump() for action in context.available_actions],
+            "available_actions": [
+                action.model_dump() for action in context.available_actions
+            ],
             "hints": hints,
             "response_schema": schema,
-            "rendered_prompt": cls.build_prompt(context, hints)
+            "rendered_prompt": cls.build_prompt(context, hints),
         }

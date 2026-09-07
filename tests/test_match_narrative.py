@@ -1,6 +1,5 @@
 """Tests for match narrative engine — LLM commentary and chemistry system."""
 
-import pytest
 from unittest.mock import patch
 
 from core_engine.match_narrative import (
@@ -133,33 +132,49 @@ class TestNarrateMatchFinish:
 
 class TestNarrateMatchPsychology:
     def test_early_match(self):
-        result = narrate_match_psychology({
-            "tick": 3, "target_length": 20,
-            "attacker_health": 90, "defender_health": 90,
-            "crowd_heat": 30,
-        })
+        result = narrate_match_psychology(
+            {
+                "tick": 3,
+                "target_length": 20,
+                "attacker_health": 90,
+                "defender_health": 90,
+                "crowd_heat": 30,
+            }
+        )
         assert result == "feeling_out"
 
     def test_mid_match(self):
-        result = narrate_match_psychology({
-            "tick": 10, "target_length": 20,
-            "attacker_health": 70, "defender_health": 60,
-            "crowd_heat": 50,
-        })
+        result = narrate_match_psychology(
+            {
+                "tick": 10,
+                "target_length": 20,
+                "attacker_health": 70,
+                "defender_health": 60,
+                "crowd_heat": 50,
+            }
+        )
         assert result == "build_heat"
 
     def test_late_match_low_health(self):
-        result = narrate_match_psychology({
-            "tick": 16, "target_length": 20,
-            "attacker_health": 50, "defender_health": 30,
-            "crowd_heat": 80,
-        })
+        result = narrate_match_psychology(
+            {
+                "tick": 16,
+                "target_length": 20,
+                "attacker_health": 50,
+                "defender_health": 30,
+                "crowd_heat": 80,
+            }
+        )
         assert result == "go_home"
 
     def test_late_match_both_healthy(self):
-        result = narrate_match_psychology({
-            "tick": 14, "target_length": 20,
-            "attacker_health": 60, "defender_health": 60,
-            "crowd_heat": 70,
-        })
+        result = narrate_match_psychology(
+            {
+                "tick": 14,
+                "target_length": 20,
+                "attacker_health": 60,
+                "defender_health": 60,
+                "crowd_heat": 70,
+            }
+        )
         assert result == "false_finish"

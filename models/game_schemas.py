@@ -11,6 +11,7 @@ from datetime import datetime
 # Auth
 # ---------------------------------------------------------------------------
 
+
 class UserRegister(BaseModel):
     email: str = Field(min_length=5, max_length=255)
     username: str = Field(min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")
@@ -44,6 +45,7 @@ class TokenResponse(BaseModel):
 # World
 # ---------------------------------------------------------------------------
 
+
 class WorldCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: Optional[str] = None
@@ -71,6 +73,7 @@ class WorldResponse(BaseModel):
 # Player
 # ---------------------------------------------------------------------------
 
+
 class PlayerCreate(BaseModel):
     world_id: str
     player_type: str = Field(pattern=r"^(promoter|wrestler)$")
@@ -80,8 +83,12 @@ class PlayerCreate(BaseModel):
     # If wrestler: create a character
     wrestler_name: Optional[str] = Field(default=None, max_length=100)
     wrestler_gimmick: Optional[str] = None
-    wrestler_alignment: Optional[str] = Field(default="face", pattern=r"^(face|heel|tweener)$")
-    wrestler_style: Optional[str] = None  # technical, brawler, highflyer, powerhouse, allrounder
+    wrestler_alignment: Optional[str] = Field(
+        default="face", pattern=r"^(face|heel|tweener)$"
+    )
+    wrestler_style: Optional[str] = (
+        None  # technical, brawler, highflyer, powerhouse, allrounder
+    )
 
 
 class PlayerResponse(BaseModel):
@@ -100,6 +107,7 @@ class PlayerResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Federation
 # ---------------------------------------------------------------------------
+
 
 class FederationResponse(BaseModel):
     id: str
@@ -131,6 +139,7 @@ class FederationUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 # Wrestler
 # ---------------------------------------------------------------------------
+
 
 class WrestlerResponse(BaseModel):
     id: str
@@ -178,16 +187,21 @@ class WrestlerDetailResponse(BaseModel):
     current_federation: Optional[str] = None
     current_championships: List[str] = []
     active_storylines: List[str] = []
-    win_loss: Dict[str, int] = Field(default_factory=lambda: {"wins": 0, "losses": 0, "draws": 0})
+    win_loss: Dict[str, int] = Field(
+        default_factory=lambda: {"wins": 0, "losses": 0, "draws": 0}
+    )
 
 
 # ---------------------------------------------------------------------------
 # Shows
 # ---------------------------------------------------------------------------
 
+
 class ShowCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    show_type: str = Field(default="weekly", pattern=r"^(weekly|ppv|special|house_show)$")
+    show_type: str = Field(
+        default="weekly", pattern=r"^(weekly|ppv|special|house_show)$"
+    )
     venue: Optional[str] = Field(default=None, max_length=100)
     capacity: int = Field(default=5000, ge=100, le=100000)
     game_date: str  # YYYY-MM-DD
@@ -216,6 +230,7 @@ class ShowResponse(BaseModel):
 # Match Booking
 # ---------------------------------------------------------------------------
 
+
 class MatchBooking(BaseModel):
     match_type: str = Field(default="singles")
     stipulation: Optional[str] = None
@@ -229,7 +244,9 @@ class MatchBooking(BaseModel):
 
 
 class SegmentBooking(BaseModel):
-    segment_type: str = Field(pattern=r"^(match|promo|backstage|interview|entrance|angle)$")
+    segment_type: str = Field(
+        pattern=r"^(match|promo|backstage|interview|entrance|angle)$"
+    )
     match_booking: Optional[MatchBooking] = None
     wrestler_id: Optional[str] = None  # For promos
     description: Optional[str] = None
@@ -239,6 +256,7 @@ class SegmentBooking(BaseModel):
 # ---------------------------------------------------------------------------
 # Player Actions
 # ---------------------------------------------------------------------------
+
 
 class PlayerActionSubmit(BaseModel):
     action_type: str
@@ -260,6 +278,7 @@ class PlayerActionResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Storylines
 # ---------------------------------------------------------------------------
+
 
 class StorylineCreate(BaseModel):
     wrestler_ids: List[str] = Field(min_length=2)
@@ -293,6 +312,7 @@ class StorylineResponse(BaseModel):
 # Championships
 # ---------------------------------------------------------------------------
 
+
 class ChampionshipCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     weight_class: Optional[str] = None
@@ -317,6 +337,7 @@ class ChampionshipResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Narrative / News
 # ---------------------------------------------------------------------------
+
 
 class NarrativeLogResponse(BaseModel):
     id: int
@@ -345,6 +366,7 @@ class WorldNewsResponse(BaseModel):
 # World Tick Status
 # ---------------------------------------------------------------------------
 
+
 class WorldTickStatus(BaseModel):
     world_id: str
     current_game_date: str
@@ -356,6 +378,7 @@ class WorldTickStatus(BaseModel):
 # ---------------------------------------------------------------------------
 # Show Card / Match Results
 # ---------------------------------------------------------------------------
+
 
 class ShowSegmentResponse(BaseModel):
     id: str
@@ -398,12 +421,15 @@ class ShowCardResponse(BaseModel):
 # Promo
 # ---------------------------------------------------------------------------
 
+
 class PromoRequest(BaseModel):
     wrestler_id: str
     target_wrestler_id: Optional[str] = None
-    promo_type: str = Field(default="in_ring", pattern=r"^(in_ring|backstage|interview)$")
+    promo_type: str = Field(
+        default="in_ring", pattern=r"^(in_ring|backstage|interview)$"
+    )
     player_direction: Optional[str] = None  # What vibe/angle to go for
-    player_content: Optional[str] = None   # Full player-written promo
+    player_content: Optional[str] = None  # Full player-written promo
 
 
 class PromoResponse(BaseModel):
@@ -425,6 +451,7 @@ class PromoResponse(BaseModel):
 # Managers & Valets
 # ---------------------------------------------------------------------------
 
+
 class ManagerCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     real_name: Optional[str] = Field(default=None, max_length=100)
@@ -432,7 +459,7 @@ class ManagerCreate(BaseModel):
     alignment: str = Field(default="heel", pattern=r"^(face|heel|tweener)$")
     archetype: str = Field(
         default="scheming_manager",
-        pattern=r"^(scheming_manager|corporate_suit|flamboyant_mouthpiece|enforcer_type|old_school)$"
+        pattern=r"^(scheming_manager|corporate_suit|flamboyant_mouthpiece|enforcer_type|old_school)$",
     )
     personality_traits: List[str] = Field(default_factory=list)
     catchphrase: Optional[str] = Field(default=None, max_length=200)
@@ -468,7 +495,7 @@ class ManagerClientCreate(BaseModel):
     role: str = Field(default="manager", pattern=r"^(manager|valet|advocate|handler)$")
     specialization: str = Field(
         default="all_around",
-        pattern=r"^(promo_boost|interference|negotiation|distraction|all_around)$"
+        pattern=r"^(promo_boost|interference|negotiation|distraction|all_around)$",
     )
 
 
@@ -493,6 +520,7 @@ class ManagerClientResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Stables / Factions
 # ---------------------------------------------------------------------------
+
 
 class StableCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
@@ -543,7 +571,7 @@ class StableAddMember(BaseModel):
     wrestler_id: str
     role: str = Field(
         default="member",
-        pattern=r"^(leader|enforcer|mouthpiece|lieutenant|member|recruit)$"
+        pattern=r"^(leader|enforcer|mouthpiece|lieutenant|member|recruit)$",
     )
 
 

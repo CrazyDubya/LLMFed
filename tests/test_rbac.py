@@ -13,11 +13,11 @@ try:
         decode_token,
         generate_api_key,
         validate_production_config,
-        TokenData,
         ROLE_HIERARCHY,
         get_password_hash,
         verify_password,
     )
+
     SECURITY_AVAILABLE = True
 except BaseException:
     SECURITY_AVAILABLE = False
@@ -27,7 +27,9 @@ except BaseException:
 @pytest.mark.skipif(not SECURITY_AVAILABLE, reason="security deps unavailable")
 class TestTokenCreation:
     def test_create_access_token(self):
-        token = create_access_token({"sub": "user1", "username": "alice", "role": "player"})
+        token = create_access_token(
+            {"sub": "user1", "username": "alice", "role": "player"}
+        )
         assert isinstance(token, str)
         assert len(token) > 0
 
@@ -43,7 +45,9 @@ class TestTokenCreation:
         assert pair.token_type == "bearer"
 
     def test_decode_access_token(self):
-        token = create_access_token({"sub": "user1", "username": "alice", "role": "admin"})
+        token = create_access_token(
+            {"sub": "user1", "username": "alice", "role": "admin"}
+        )
         data = decode_token(token)
         assert data.user_id == "user1"
         assert data.username == "alice"
@@ -52,6 +56,7 @@ class TestTokenCreation:
     def test_decode_wrong_type_raises(self):
         token = create_access_token({"sub": "user1"})
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc:
             decode_token(token, expected_type="refresh")
         assert exc.value.status_code == 401
@@ -73,15 +78,21 @@ class TestRoleHierarchy:
 @pytest.mark.skipif(not SECURITY_AVAILABLE, reason="security deps unavailable")
 class TestProductionValidation:
     def test_default_key_in_prod_raises(self):
-        with patch.dict(os.environ, {"ENV": "production"}), \
-             patch("api_gateway.security._IS_PRODUCTION", True), \
-             patch("api_gateway.security.SECRET_KEY", "dev-secret-key-change-in-production"):
+        with (
+            patch.dict(os.environ, {"ENV": "production"}),
+            patch("api_gateway.security._IS_PRODUCTION", True),
+            patch(
+                "api_gateway.security.SECRET_KEY", "dev-secret-key-change-in-production"
+            ),
+        ):
             with pytest.raises(RuntimeError, match="FATAL"):
                 validate_production_config()
 
     def test_custom_key_in_prod_ok(self):
-        with patch("api_gateway.security._IS_PRODUCTION", True), \
-             patch("api_gateway.security.SECRET_KEY", "a-real-strong-key-here"):
+        with (
+            patch("api_gateway.security._IS_PRODUCTION", True),
+            patch("api_gateway.security.SECRET_KEY", "a-real-strong-key-here"),
+        ):
             # Should not raise
             validate_production_config()
 
@@ -102,7 +113,9 @@ class TestAPIKeyGeneration:
     def test_key_is_url_safe(self):
         key = generate_api_key()
         # url-safe base64 characters
-        allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-=")
+        allowed = set(
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-="
+        )
         assert all(c in allowed for c in key)
 
 

@@ -12,8 +12,13 @@ import logging
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    StableDB, StableMemberDB, GameWrestlerDB, GameNarrativeLogDB,
-    StorylineDB, StorylineParticipantDB, ManagerDB,
+    StableDB,
+    StableMemberDB,
+    GameWrestlerDB,
+    GameNarrativeLogDB,
+    StorylineDB,
+    StorylineParticipantDB,
+    ManagerDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -22,6 +27,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # CRUD — Create / Read / Update / Dissolve
 # ---------------------------------------------------------------------------
+
 
 def create_stable(
     db: Session,
@@ -74,17 +80,24 @@ def create_stable(
     # Narrative log
     wrestler_names = _get_wrestler_names(db, list(all_member_ids))
     leader_name = wrestler_names.get(leader_id, "Unknown")
-    db.add(GameNarrativeLogDB(
-        world_id=world_id,
-        game_date=game_date or "",
-        tick=0,
-        event_type="stable_formed",
-        description=f"{name} has formed! Led by {leader_name}, the group includes {', '.join(wrestler_names.values())}.",
-        importance=8,
-    ))
+    db.add(
+        GameNarrativeLogDB(
+            world_id=world_id,
+            game_date=game_date or "",
+            tick=0,
+            event_type="stable_formed",
+            description=f"{name} has formed! Led by {leader_name}, the group includes {', '.join(wrestler_names.values())}.",
+            importance=8,
+        )
+    )
 
     db.commit()
-    logger.info("Stable '%s' formed with %d members in world %s", name, len(all_member_ids), world_id)
+    logger.info(
+        "Stable '%s' formed with %d members in world %s",
+        name,
+        len(all_member_ids),
+        world_id,
+    )
     return stable
 
 
@@ -111,14 +124,16 @@ def add_member(
     if stable:
         wrestler = db.query(GameWrestlerDB).filter_by(id=wrestler_id).first()
         w_name = wrestler.name if wrestler else "Unknown"
-        db.add(GameNarrativeLogDB(
-            world_id=stable.world_id,
-            game_date=game_date or "",
-            tick=0,
-            event_type="stable_member_added",
-            description=f"{w_name} has joined {stable.name} as a {role}!",
-            importance=6,
-        ))
+        db.add(
+            GameNarrativeLogDB(
+                world_id=stable.world_id,
+                game_date=game_date or "",
+                tick=0,
+                event_type="stable_member_added",
+                description=f"{w_name} has joined {stable.name} as a {role}!",
+                importance=6,
+            )
+        )
 
     db.commit()
     return member
@@ -133,9 +148,11 @@ def remove_member(
 ) -> bool:
     """Remove a wrestler from a stable.  If the leader is removed, the
     highest-influence remaining member becomes the new leader."""
-    member = db.query(StableMemberDB).filter_by(
-        stable_id=stable_id, wrestler_id=wrestler_id, is_active=True
-    ).first()
+    member = (
+        db.query(StableMemberDB)
+        .filter_by(stable_id=stable_id, wrestler_id=wrestler_id, is_active=True)
+        .first()
+    )
     if not member:
         return False
 
@@ -148,23 +165,27 @@ def remove_member(
         wrestler = db.query(GameWrestlerDB).filter_by(id=wrestler_id).first()
         w_name = wrestler.name if wrestler else "Unknown"
         verb = "was expelled from" if was_expelled else "has left"
-        db.add(GameNarrativeLogDB(
-            world_id=stable.world_id,
-            game_date=game_date or "",
-            tick=0,
-            event_type="stable_member_removed",
-            description=f"{w_name} {verb} {stable.name}!",
-            importance=7,
-        ))
+        db.add(
+            GameNarrativeLogDB(
+                world_id=stable.world_id,
+                game_date=game_date or "",
+                tick=0,
+                event_type="stable_member_removed",
+                description=f"{w_name} {verb} {stable.name}!",
+                importance=7,
+            )
+        )
 
         # If leader left, promote the highest-influence remaining member
         if was_leader:
             _auto_promote_leader(db, stable, game_date)
 
         # Check if the stable still has enough active members
-        active_count = db.query(StableMemberDB).filter_by(
-            stable_id=stable_id, is_active=True
-        ).count()
+        active_count = (
+            db.query(StableMemberDB)
+            .filter_by(stable_id=stable_id, is_active=True)
+            .count()
+        )
         if active_count < 2:
             dissolve_stable(db, stable_id, game_date, reason="too few members")
 
@@ -179,9 +200,11 @@ def promote_member(
     new_role: str,
 ) -> bool:
     """Change a member's role within the stable."""
-    member = db.query(StableMemberDB).filter_by(
-        stable_id=stable_id, wrestler_id=wrestler_id, is_active=True
-    ).first()
+    member = (
+        db.query(StableMemberDB)
+        .filter_by(stable_id=stable_id, wrestler_id=wrestler_id, is_active=True)
+        .first()
+    )
     if not member:
         return False
 
@@ -190,12 +213,16 @@ def promote_member(
 
     # If promoting to leader, demote current leader to lieutenant
     if new_role == "leader" and old_role != "leader":
-        current_leader = db.query(StableMemberDB).filter(
-            StableMemberDB.stable_id == stable_id,
-            StableMemberDB.role == "leader",
-            StableMemberDB.is_active == True,  # noqa: E712
-            StableMemberDB.wrestler_id != wrestler_id,
-        ).first()
+        current_leader = (
+            db.query(StableMemberDB)
+            .filter(
+                StableMemberDB.stable_id == stable_id,
+                StableMemberDB.role == "leader",
+                StableMemberDB.is_active == True,  # noqa: E712
+                StableMemberDB.wrestler_id != wrestler_id,
+            )
+            .first()
+        )
         if current_leader:
             current_leader.role = "lieutenant"
             # Demoted leader loses loyalty
@@ -219,21 +246,23 @@ def dissolve_stable(
     stable.is_active = False
     stable.dissolved_date = game_date
 
-    members = db.query(StableMemberDB).filter_by(
-        stable_id=stable_id, is_active=True
-    ).all()
+    members = (
+        db.query(StableMemberDB).filter_by(stable_id=stable_id, is_active=True).all()
+    )
     for m in members:
         m.is_active = False
         m.left_date = game_date
 
-    db.add(GameNarrativeLogDB(
-        world_id=stable.world_id,
-        game_date=game_date or "",
-        tick=0,
-        event_type="stable_dissolved",
-        description=f"{stable.name} has disbanded! ({reason})",
-        importance=8,
-    ))
+    db.add(
+        GameNarrativeLogDB(
+            world_id=stable.world_id,
+            game_date=game_date or "",
+            tick=0,
+            event_type="stable_dissolved",
+            description=f"{stable.name} has disbanded! ({reason})",
+            importance=8,
+        )
+    )
 
     db.commit()
     logger.info("Stable '%s' dissolved: %s", stable.name, reason)
@@ -246,9 +275,9 @@ def get_stable_with_members(db: Session, stable_id: str) -> dict:
     if not stable:
         return {}
 
-    members = db.query(StableMemberDB).filter_by(
-        stable_id=stable_id, is_active=True
-    ).all()
+    members = (
+        db.query(StableMemberDB).filter_by(stable_id=stable_id, is_active=True).all()
+    )
 
     wrestler_ids = [m.wrestler_id for m in members]
     wrestler_names = _get_wrestler_names(db, wrestler_ids)
@@ -276,7 +305,9 @@ def get_stable_with_members(db: Session, stable_id: str) -> dict:
     }
 
 
-def list_stables(db: Session, world_id: str, federation_id: str = None, active_only: bool = True) -> list:
+def list_stables(
+    db: Session, world_id: str, federation_id: str = None, active_only: bool = True
+) -> list:
     """List all stables in a world, optionally filtered by federation."""
     q = db.query(StableDB).filter_by(world_id=world_id)
     if federation_id:
@@ -288,9 +319,11 @@ def list_stables(db: Session, world_id: str, federation_id: str = None, active_o
 
 def get_wrestler_stable(db: Session, wrestler_id: str) -> dict:
     """Get the active stable membership for a wrestler, if any."""
-    member = db.query(StableMemberDB).filter_by(
-        wrestler_id=wrestler_id, is_active=True
-    ).first()
+    member = (
+        db.query(StableMemberDB)
+        .filter_by(wrestler_id=wrestler_id, is_active=True)
+        .first()
+    )
     if not member:
         return {}
     stable = db.query(StableDB).filter_by(id=member.stable_id, is_active=True).first()
@@ -303,15 +336,16 @@ def get_wrestler_stable(db: Session, wrestler_id: str) -> dict:
 # Internal Drama Engine — called daily from world_ticker
 # ---------------------------------------------------------------------------
 
+
 def tick_stable_dynamics(db: Session, stable: StableDB, game_date: str = None):
     """Process one day of internal faction politics.
 
     This is the heart of the faction system — loyalty drifts, influence
     jockeys, and when things get bad enough, storylines auto-generate.
     """
-    members = db.query(StableMemberDB).filter_by(
-        stable_id=stable.id, is_active=True
-    ).all()
+    members = (
+        db.query(StableMemberDB).filter_by(stable_id=stable.id, is_active=True).all()
+    )
     if len(members) < 2:
         return
 
@@ -370,33 +404,47 @@ def process_match_result_for_stables(
     When they lose — especially the leader — cracks form.
     """
     # Check if winner is in a stable
-    winner_member = db.query(StableMemberDB).filter_by(
-        wrestler_id=winner_id, is_active=True
-    ).first()
+    winner_member = (
+        db.query(StableMemberDB)
+        .filter_by(wrestler_id=winner_id, is_active=True)
+        .first()
+    )
     if winner_member:
-        stable = db.query(StableDB).filter_by(id=winner_member.stable_id, is_active=True).first()
+        stable = (
+            db.query(StableDB)
+            .filter_by(id=winner_member.stable_id, is_active=True)
+            .first()
+        )
         if stable:
             stable.heat = min(100, stable.heat + 2)
             stable.prestige = min(100, stable.prestige + 1)
             # All members get a small loyalty boost
-            stablemates = db.query(StableMemberDB).filter_by(
-                stable_id=stable.id, is_active=True
-            ).all()
+            stablemates = (
+                db.query(StableMemberDB)
+                .filter_by(stable_id=stable.id, is_active=True)
+                .all()
+            )
             for m in stablemates:
                 m.loyalty = min(100, m.loyalty + 1)
 
     # Check if loser is in a stable
-    loser_member = db.query(StableMemberDB).filter_by(
-        wrestler_id=loser_id, is_active=True
-    ).first()
+    loser_member = (
+        db.query(StableMemberDB).filter_by(wrestler_id=loser_id, is_active=True).first()
+    )
     if loser_member:
-        stable = db.query(StableDB).filter_by(id=loser_member.stable_id, is_active=True).first()
+        stable = (
+            db.query(StableDB)
+            .filter_by(id=loser_member.stable_id, is_active=True)
+            .first()
+        )
         if stable:
             # Leader losing clean is devastating
             if loser_member.role == "leader":
-                stablemates = db.query(StableMemberDB).filter_by(
-                    stable_id=stable.id, is_active=True
-                ).all()
+                stablemates = (
+                    db.query(StableMemberDB)
+                    .filter_by(stable_id=stable.id, is_active=True)
+                    .all()
+                )
                 for m in stablemates:
                     if m.wrestler_id != loser_id:
                         m.loyalty = max(0, m.loyalty - random.randint(2, 5))
@@ -410,45 +458,57 @@ def process_match_result_for_stables(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_wrestler_names(db: Session, wrestler_ids: list) -> dict:
     """Fetch a {wrestler_id: name} mapping."""
     if not wrestler_ids:
         return {}
-    wrestlers = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.id.in_(wrestler_ids)
-    ).all()
+    wrestlers = (
+        db.query(GameWrestlerDB).filter(GameWrestlerDB.id.in_(wrestler_ids)).all()
+    )
     return {w.id: w.name for w in wrestlers}
 
 
 def _auto_promote_leader(db: Session, stable: StableDB, game_date: str = None):
     """When the leader leaves, the highest-influence member takes over."""
-    remaining = db.query(StableMemberDB).filter_by(
-        stable_id=stable.id, is_active=True
-    ).order_by(StableMemberDB.influence.desc()).first()
+    remaining = (
+        db.query(StableMemberDB)
+        .filter_by(stable_id=stable.id, is_active=True)
+        .order_by(StableMemberDB.influence.desc())
+        .first()
+    )
     if remaining:
         remaining.role = "leader"
         wrestler = db.query(GameWrestlerDB).filter_by(id=remaining.wrestler_id).first()
         w_name = wrestler.name if wrestler else "Unknown"
-        db.add(GameNarrativeLogDB(
-            world_id=stable.world_id,
-            game_date=game_date or "",
-            tick=0,
-            event_type="stable_new_leader",
-            description=f"{w_name} has taken over as leader of {stable.name}!",
-            importance=7,
-        ))
+        db.add(
+            GameNarrativeLogDB(
+                world_id=stable.world_id,
+                game_date=game_date or "",
+                tick=0,
+                event_type="stable_new_leader",
+                description=f"{w_name} has taken over as leader of {stable.name}!",
+                importance=7,
+            )
+        )
 
 
-def _check_power_struggle(db: Session, stable: StableDB, members: list, game_date: str = None):
+def _check_power_struggle(
+    db: Session, stable: StableDB, members: list, game_date: str = None
+):
     """When cohesion is low, check if a power struggle storyline should fire."""
     # Don't create if one already exists for this stable
-    existing = db.query(StorylineDB).filter(
-        StorylineDB.world_id == stable.world_id,
-        StorylineDB.federation_id == stable.federation_id,
-        StorylineDB.storyline_type == "power_struggle",
-        StorylineDB.status.in_(["brewing", "active"]),
-        StorylineDB.name.contains(stable.name),
-    ).first()
+    existing = (
+        db.query(StorylineDB)
+        .filter(
+            StorylineDB.world_id == stable.world_id,
+            StorylineDB.federation_id == stable.federation_id,
+            StorylineDB.storyline_type == "power_struggle",
+            StorylineDB.status.in_(["brewing", "active"]),
+            StorylineDB.name.contains(stable.name),
+        )
+        .first()
+    )
     if existing:
         return
 
@@ -479,25 +539,34 @@ def _check_power_struggle(db: Session, stable: StableDB, members: list, game_dat
     db.add(storyline)
     db.flush()
 
-    for wid, role in [(leader.wrestler_id, "protagonist"), (challenger.wrestler_id, "antagonist")]:
-        db.add(StorylineParticipantDB(
-            storyline_id=storyline.id,
-            wrestler_id=wid,
-            role=role,
-        ))
+    for wid, role in [
+        (leader.wrestler_id, "protagonist"),
+        (challenger.wrestler_id, "antagonist"),
+    ]:
+        db.add(
+            StorylineParticipantDB(
+                storyline_id=storyline.id,
+                wrestler_id=wid,
+                role=role,
+            )
+        )
 
-    db.add(GameNarrativeLogDB(
-        world_id=stable.world_id,
-        game_date=game_date or "",
-        tick=0,
-        event_type="power_struggle",
-        description=f"Cracks are showing in {stable.name}! {challenger_name} appears to be eyeing leadership.",
-        importance=7,
-    ))
+    db.add(
+        GameNarrativeLogDB(
+            world_id=stable.world_id,
+            game_date=game_date or "",
+            tick=0,
+            event_type="power_struggle",
+            description=f"Cracks are showing in {stable.name}! {challenger_name} appears to be eyeing leadership.",
+            importance=7,
+        )
+    )
     logger.info("Power struggle storyline created in '%s'", stable.name)
 
 
-def _check_betrayal_seed(db: Session, stable: StableDB, members: list, game_date: str = None):
+def _check_betrayal_seed(
+    db: Session, stable: StableDB, members: list, game_date: str = None
+):
     """When cohesion is critically low and a popular member's loyalty
     has bottomed out, auto-generate a betrayal storyline."""
     traitor = max(
@@ -509,12 +578,16 @@ def _check_betrayal_seed(db: Session, stable: StableDB, members: list, game_date
         return
 
     # Don't create duplicate betrayal storylines
-    existing = db.query(StorylineDB).filter(
-        StorylineDB.world_id == stable.world_id,
-        StorylineDB.storyline_type == "betrayal",
-        StorylineDB.status.in_(["brewing", "active"]),
-        StorylineDB.name.contains(stable.name),
-    ).first()
+    existing = (
+        db.query(StorylineDB)
+        .filter(
+            StorylineDB.world_id == stable.world_id,
+            StorylineDB.storyline_type == "betrayal",
+            StorylineDB.status.in_(["brewing", "active"]),
+            StorylineDB.name.contains(stable.name),
+        )
+        .first()
+    )
     if existing:
         return
 
@@ -540,23 +613,29 @@ def _check_betrayal_seed(db: Session, stable: StableDB, members: list, game_date
     db.add(storyline)
     db.flush()
 
-    db.add(StorylineParticipantDB(
-        storyline_id=storyline.id,
-        wrestler_id=traitor.wrestler_id,
-        role="protagonist",
-    ))
-    db.add(StorylineParticipantDB(
-        storyline_id=storyline.id,
-        wrestler_id=leader.wrestler_id,
-        role="antagonist",
-    ))
+    db.add(
+        StorylineParticipantDB(
+            storyline_id=storyline.id,
+            wrestler_id=traitor.wrestler_id,
+            role="protagonist",
+        )
+    )
+    db.add(
+        StorylineParticipantDB(
+            storyline_id=storyline.id,
+            wrestler_id=leader.wrestler_id,
+            role="antagonist",
+        )
+    )
 
-    db.add(GameNarrativeLogDB(
-        world_id=stable.world_id,
-        game_date=game_date or "",
-        tick=0,
-        event_type="betrayal_brewing",
-        description=f"Sources say {traitor_name} is planning to leave {stable.name} — and it won't be friendly.",
-        importance=8,
-    ))
+    db.add(
+        GameNarrativeLogDB(
+            world_id=stable.world_id,
+            game_date=game_date or "",
+            tick=0,
+            event_type="betrayal_brewing",
+            description=f"Sources say {traitor_name} is planning to leave {stable.name} — and it won't be friendly.",
+            importance=8,
+        )
+    )
     logger.info("Betrayal storyline seeded: %s leaving '%s'", traitor_name, stable.name)

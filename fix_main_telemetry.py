@@ -1,4 +1,3 @@
-import re
 
 filepath = "api_gateway/main.py"
 with open(filepath, "r") as f:
@@ -21,7 +20,10 @@ tracer = trace.get_tracer(__name__)
 """
 
 if "FastAPICache" not in content:
-    content = content.replace("from fastapi import FastAPI, Request", imports + "\nfrom fastapi import FastAPI, Request")
+    content = content.replace(
+        "from fastapi import FastAPI, Request",
+        imports + "\nfrom fastapi import FastAPI, Request",
+    )
 
 startup = """
     # Setup Redis Cache
@@ -34,7 +36,10 @@ startup = """
 """
 
 if "FastAPICache.init" not in content:
-    content = content.replace("async def _on_startup():\n    start_reaper()", f"async def _on_startup():\n    start_reaper()\n{startup}")
+    content = content.replace(
+        "async def _on_startup():\n    start_reaper()",
+        f"async def _on_startup():\n    start_reaper()\n{startup}",
+    )
 
 with open(filepath, "w") as f:
     f.write(content)

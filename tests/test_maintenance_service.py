@@ -26,25 +26,29 @@ def db_session():
 
 def _add_narrative_logs(db, count):
     for i in range(count):
-        db.add(NarrativeLogDB(
-            tick_id=f"tick_{i}",
-            time_index=i,
-            agent_id=f"agent_{i % 3}",
-            role="participant",
-            description=f"Event {i}",
-        ))
+        db.add(
+            NarrativeLogDB(
+                tick_id=f"tick_{i}",
+                time_index=i,
+                agent_id=f"agent_{i % 3}",
+                role="participant",
+                description=f"Event {i}",
+            )
+        )
     db.commit()
 
 
 def _add_engine_requests(db, count, status="processed"):
     for i in range(count):
-        db.add(EngineRequestDB(
-            request_id=f"req_{i}_{status}",
-            agent_id=f"agent_{i % 3}",
-            due_tick=i,
-            context_json="{}",
-            status=status,
-        ))
+        db.add(
+            EngineRequestDB(
+                request_id=f"req_{i}_{status}",
+                agent_id=f"agent_{i % 3}",
+                due_tick=i,
+                context_json="{}",
+                status=status,
+            )
+        )
     db.commit()
 
 

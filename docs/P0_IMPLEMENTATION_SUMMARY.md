@@ -119,10 +119,7 @@ Complete abstraction layer with:
 from llm_abstraction import get_llm
 
 llm = get_llm()  # Auto-selects best available provider
-response = llm.generate(
-    prompt="Hello, world!",
-    temperature=0.7
-)
+response = llm.generate(prompt="Hello, world!", temperature=0.7)
 print(response.content)
 ```
 

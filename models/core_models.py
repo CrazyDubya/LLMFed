@@ -3,8 +3,15 @@ Core world models: users, players, worlds, and world state.
 """
 
 from sqlalchemy import (
-    Column, String, Integer, Float, DateTime, JSON, ForeignKey, Text, Boolean,
-    UniqueConstraint, Index,
+    Column,
+    String,
+    Integer,
+    DateTime,
+    JSON,
+    ForeignKey,
+    Text,
+    Boolean,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
@@ -25,8 +32,10 @@ def _uuid():
 # Users & Players
 # ---------------------------------------------------------------------------
 
+
 class UserDB(Base):
     """User account for authentication."""
+
     __tablename__ = "users"
 
     # Roles: admin, owner, player, viewer
@@ -43,11 +52,14 @@ class UserDB(Base):
     created_at = Column(DateTime, default=_utc_now)
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
-    players = relationship("PlayerDB", back_populates="user", cascade="all, delete-orphan")
+    players = relationship(
+        "PlayerDB", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class PlayerDB(Base):
     """A user's game identity within a world."""
+
     __tablename__ = "players"
 
     id = Column(String, primary_key=True, default=_uuid)
@@ -63,8 +75,12 @@ class PlayerDB(Base):
 
     user = relationship("UserDB", back_populates="players")
     world = relationship("WorldDB", back_populates="players")
-    federation = relationship("GameFederationDB", back_populates="owner_player", foreign_keys=[federation_id])
-    wrestler = relationship("GameWrestlerDB", back_populates="player", foreign_keys=[wrestler_id])
+    federation = relationship(
+        "GameFederationDB", back_populates="owner_player", foreign_keys=[federation_id]
+    )
+    wrestler = relationship(
+        "GameWrestlerDB", back_populates="player", foreign_keys=[wrestler_id]
+    )
 
     __table_args__ = (
         UniqueConstraint("user_id", "world_id", name="uq_player_user_world"),
@@ -75,8 +91,10 @@ class PlayerDB(Base):
 # World
 # ---------------------------------------------------------------------------
 
+
 class WorldDB(Base):
     """A game world instance (single-player or multiplayer)."""
+
     __tablename__ = "worlds"
 
     id = Column(String, primary_key=True, default=_uuid)
@@ -97,13 +115,16 @@ class WorldDB(Base):
     shows = relationship("ShowDB", back_populates="world")
     storylines = relationship("StorylineDB", back_populates="world")
     championships = relationship("ChampionshipDB", back_populates="world")
-    world_state = relationship("WorldStateDB", back_populates="world", cascade="all, delete-orphan")
+    world_state = relationship(
+        "WorldStateDB", back_populates="world", cascade="all, delete-orphan"
+    )
     narrative_logs = relationship("GameNarrativeLogDB", back_populates="world")
     world_news = relationship("WorldNewsDB", back_populates="world")
 
 
 class WorldStateDB(Base):
     """Key-value store for world-level state."""
+
     __tablename__ = "world_state"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -114,6 +135,4 @@ class WorldStateDB(Base):
 
     world = relationship("WorldDB", back_populates="world_state")
 
-    __table_args__ = (
-        UniqueConstraint("world_id", "key", name="uq_world_state_key"),
-    )
+    __table_args__ = (UniqueConstraint("world_id", "key", name="uq_world_state_key"),)

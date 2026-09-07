@@ -8,15 +8,22 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    ManagerDB, ManagerClientDB, GameNarrativeLogDB,
+    WorldDB,
+    GameFederationDB,
+    GameWrestlerDB,
 )
 from game_service.manager_service import (
-    create_manager, assign_manager, remove_manager,
-    get_manager_clients, get_wrestler_manager,
-    list_managers, list_manager_bonds,
-    generate_manager_promo, calculate_interference_chance,
-    attempt_interference, calculate_manager_bonus,
+    create_manager,
+    assign_manager,
+    remove_manager,
+    get_manager_clients,
+    get_wrestler_manager,
+    list_managers,
+    list_manager_bonds,
+    generate_manager_promo,
+    calculate_interference_chance,
+    attempt_interference,
+    calculate_manager_bonus,
 )
 
 
@@ -32,7 +39,9 @@ def db():
 
 @pytest.fixture
 def world(db):
-    w = WorldDB(id="world-1", name="Test World", current_game_date="2026-01-01", current_tick=0)
+    w = WorldDB(
+        id="world-1", name="Test World", current_game_date="2026-01-01", current_tick=0
+    )
     db.add(w)
     db.commit()
     return w
@@ -51,9 +60,15 @@ def wrestlers(db, world):
     ws = []
     for i, name in enumerate(["Alpha", "Beta"]):
         w = GameWrestlerDB(
-            id=f"w-{i}", world_id=world.id, name=name,
-            alignment="heel", popularity=60 + i * 10, condition=90,
-            morale=70, age=28, weight_class="heavyweight",
+            id=f"w-{i}",
+            world_id=world.id,
+            name=name,
+            alignment="heel",
+            popularity=60 + i * 10,
+            condition=90,
+            morale=70,
+            age=28,
+            weight_class="heavyweight",
         )
         db.add(w)
         ws.append(w)
@@ -65,11 +80,15 @@ def wrestlers(db, world):
 # Manager CRUD
 # ---------------------------------------------------------------------------
 
+
 class TestManagerCRUD:
     def test_create_manager(self, db, world, federation):
         mgr = create_manager(
-            db, world.id, name="Paul Bearer",
-            alignment="heel", archetype="scheming_manager",
+            db,
+            world.id,
+            name="Paul Bearer",
+            alignment="heel",
+            archetype="scheming_manager",
             federation_id=federation.id,
             catchphrase="Oh yesss!",
         )
@@ -89,8 +108,12 @@ class TestManagerCRUD:
     def test_assign_manager(self, db, world, federation, wrestlers):
         mgr = create_manager(db, world.id, "The Advocate", federation_id=federation.id)
         bond = assign_manager(
-            db, world.id, mgr.id, wrestlers[0].id,
-            role="advocate", specialization="promo_boost",
+            db,
+            world.id,
+            mgr.id,
+            wrestlers[0].id,
+            role="advocate",
+            specialization="promo_boost",
             game_date="2026-01-01",
         )
         assert bond.role == "advocate"
@@ -100,7 +123,9 @@ class TestManagerCRUD:
 
     def test_remove_manager(self, db, world, federation, wrestlers):
         mgr = create_manager(db, world.id, "The Advocate", federation_id=federation.id)
-        bond = assign_manager(db, world.id, mgr.id, wrestlers[0].id, game_date="2026-01-01")
+        bond = assign_manager(
+            db, world.id, mgr.id, wrestlers[0].id, game_date="2026-01-01"
+        )
         result = remove_manager(db, bond.id, game_date="2026-02-01")
         assert result is True
 
@@ -147,11 +172,15 @@ class TestManagerCRUD:
 # Manager Promos
 # ---------------------------------------------------------------------------
 
+
 class TestManagerPromos:
     def test_generate_promo_scheming(self, db, world, federation, wrestlers):
         mgr = create_manager(
-            db, world.id, "Sneaky Steve",
-            archetype="scheming_manager", federation_id=federation.id,
+            db,
+            world.id,
+            "Sneaky Steve",
+            archetype="scheming_manager",
+            federation_id=federation.id,
         )
         assign_manager(db, world.id, mgr.id, wrestlers[0].id)
 
@@ -165,8 +194,11 @@ class TestManagerPromos:
 
     def test_generate_promo_with_target(self, db, world, federation, wrestlers):
         mgr = create_manager(
-            db, world.id, "Agent Smith",
-            archetype="corporate_suit", federation_id=federation.id,
+            db,
+            world.id,
+            "Agent Smith",
+            archetype="corporate_suit",
+            federation_id=federation.id,
         )
         assign_manager(db, world.id, mgr.id, wrestlers[0].id)
 
@@ -175,10 +207,19 @@ class TestManagerPromos:
         assert "Beta" in result["content"]
 
     def test_all_archetypes_produce_content(self, db, world, federation, wrestlers):
-        for archetype in ["scheming_manager", "corporate_suit", "flamboyant_mouthpiece", "enforcer_type", "old_school"]:
+        for archetype in [
+            "scheming_manager",
+            "corporate_suit",
+            "flamboyant_mouthpiece",
+            "enforcer_type",
+            "old_school",
+        ]:
             mgr = create_manager(
-                db, world.id, f"Manager_{archetype}",
-                archetype=archetype, federation_id=federation.id,
+                db,
+                world.id,
+                f"Manager_{archetype}",
+                archetype=archetype,
+                federation_id=federation.id,
             )
             assign_manager(db, world.id, mgr.id, wrestlers[0].id)
             result = generate_manager_promo(db, mgr.id, wrestlers[0].id)
@@ -195,9 +236,12 @@ class TestManagerPromos:
 # Interference
 # ---------------------------------------------------------------------------
 
+
 class TestInterference:
     def test_interference_chance_in_range(self, db, world, federation):
-        mgr = create_manager(db, world.id, "Interference Expert", federation_id=federation.id)
+        mgr = create_manager(
+            db, world.id, "Interference Expert", federation_id=federation.id
+        )
         chance = calculate_interference_chance(db, mgr.id)
         assert 0.05 <= chance <= 0.8
 
@@ -219,6 +263,7 @@ class TestInterference:
 # ---------------------------------------------------------------------------
 # Bonus Calculation
 # ---------------------------------------------------------------------------
+
 
 class TestManagerBonus:
     def test_bonus_with_manager(self, db, world, federation, wrestlers):

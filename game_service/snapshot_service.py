@@ -55,13 +55,22 @@ def create_snapshot(
     Returns a dict with snapshot metadata and the compressed data blob.
     """
     from models.game_models import (
-        WorldDB, GameFederationDB, GameWrestlerDB, ContractDB,
+        WorldDB,
+        GameFederationDB,
+        GameWrestlerDB,
+        ContractDB,
     )
     from models.show_models import (
-        ShowDB, MatchDB, MatchParticipantDB, GameNarrativeLogDB, WorldNewsDB,
+        ShowDB,
+        MatchDB,
+        MatchParticipantDB,
+        GameNarrativeLogDB,
+        WorldNewsDB,
     )
     from models.social_models import (
-        StorylineDB, ChampionshipDB, WrestlerRelationshipDB,
+        StorylineDB,
+        ChampionshipDB,
+        WrestlerRelationshipDB,
     )
 
     world = db.query(WorldDB).filter(WorldDB.id == world_id).first()
@@ -70,9 +79,17 @@ def create_snapshot(
 
     # Collect all related data
     tables_to_serialize = [
-        GameFederationDB, GameWrestlerDB, ContractDB,
-        ShowDB, MatchDB, MatchParticipantDB, GameNarrativeLogDB,
-        StorylineDB, ChampionshipDB, WrestlerRelationshipDB, WorldNewsDB,
+        GameFederationDB,
+        GameWrestlerDB,
+        ContractDB,
+        ShowDB,
+        MatchDB,
+        MatchParticipantDB,
+        GameNarrativeLogDB,
+        StorylineDB,
+        ChampionshipDB,
+        WrestlerRelationshipDB,
+        WorldNewsDB,
     ]
 
     state = {
@@ -94,9 +111,7 @@ def create_snapshot(
         "description": description,
         "snapshot_type": snapshot_type,
         "created_at": _utc_now().isoformat(),
-        "table_counts": {
-            name: len(rows) for name, rows in state["tables"].items()
-        },
+        "table_counts": {name: len(rows) for name, rows in state["tables"].items()},
     }
 
     # Compress

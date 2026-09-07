@@ -21,7 +21,9 @@ engine_instance.llm_client.force_remote = False
 engine_instance.llm_client.api_key = None  # clear API key to force dispatcher fallback
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s:%(name)s: %(message)s')
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s %(levelname)s:%(name)s: %(message)s"
+)
 
 # Ensure at least one agent per role exists in the database
 db = SessionLocal()
@@ -40,7 +42,7 @@ for role in engine_instance.role_order:
                 role=role,
                 gimmick_description=f"Demo agent for {role}",
                 llm_config={},
-            )
+            ),
         )
 agents = get_agents(db)
 for ag in agents:

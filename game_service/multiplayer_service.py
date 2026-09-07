@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 # Federation ownership mapping
 # ---------------------------------------------------------------------------
 
+
 def assign_federation_owner(
     db: Session,
     world_id: str,
@@ -30,10 +31,14 @@ def assign_federation_owner(
     """Assign a user as the controller of a federation in a world."""
     from models.game_models import GameFederationDB
 
-    fed = db.query(GameFederationDB).filter(
-        GameFederationDB.id == federation_id,
-        GameFederationDB.world_id == world_id,
-    ).first()
+    fed = (
+        db.query(GameFederationDB)
+        .filter(
+            GameFederationDB.id == federation_id,
+            GameFederationDB.world_id == world_id,
+        )
+        .first()
+    )
     if fed is None:
         raise ValueError(f"Federation {federation_id} not found in world {world_id}")
 
@@ -48,7 +53,9 @@ def assign_federation_owner(
 
     logger.info(
         "User %s assigned as owner of federation %s in world %s",
-        user_id, federation_id, world_id,
+        user_id,
+        federation_id,
+        world_id,
     )
     return {
         "federation_id": federation_id,
@@ -65,10 +72,14 @@ def get_user_federations(
     """Return all federations a user controls in a given world."""
     from models.game_models import GameFederationDB
 
-    feds = db.query(GameFederationDB).filter(
-        GameFederationDB.world_id == world_id,
-        GameFederationDB.owner_user_id == user_id,
-    ).all()
+    feds = (
+        db.query(GameFederationDB)
+        .filter(
+            GameFederationDB.world_id == world_id,
+            GameFederationDB.owner_user_id == user_id,
+        )
+        .all()
+    )
 
     return [
         {
@@ -84,6 +95,7 @@ def get_user_federations(
 # ---------------------------------------------------------------------------
 # Action queue with conflict detection
 # ---------------------------------------------------------------------------
+
 
 class ConflictResolver:
     """Detects and resolves conflicting player actions within a single tick.
@@ -111,16 +123,18 @@ class ConflictResolver:
         priority: float = 0.0,
     ):
         """Queue an action for conflict resolution."""
-        self._pending.append({
-            "id": str(uuid.uuid4()),
-            "user_id": user_id,
-            "federation_id": federation_id,
-            "action_type": action_type,
-            "target_id": target_id,
-            "params": params or {},
-            "priority": priority,
-            "submitted_at": datetime.now(timezone.utc).isoformat(),
-        })
+        self._pending.append(
+            {
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "federation_id": federation_id,
+                "action_type": action_type,
+                "target_id": target_id,
+                "params": params or {},
+                "priority": priority,
+                "submitted_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
     def resolve(self) -> Dict[str, List[Dict[str, Any]]]:
         """Resolve all pending actions and return approved vs rejected.
@@ -141,14 +155,11 @@ class ConflictResolver:
                 approved.append(actions[0])
             else:
                 # Conflict! Sort by priority descending, then submission time
-                actions.sort(
-                    key=lambda a: (-a["priority"], a["submitted_at"])
-                )
+                actions.sort(key=lambda a: (-a["priority"], a["submitted_at"]))
                 winner = actions[0]
                 winner["conflict_resolved"] = True
                 winner["conflict_reason"] = (
-                    f"Won conflict for {key} against "
-                    f"{len(actions) - 1} other action(s)"
+                    f"Won conflict for {key} against {len(actions) - 1} other action(s)"
                 )
                 approved.append(winner)
                 for loser in actions[1:]:
@@ -163,6 +174,7 @@ class ConflictResolver:
 
         logger.info(
             "Conflict resolution: %d approved, %d rejected",
-            len(approved), len(rejected),
+            len(approved),
+            len(rejected),
         )
         return {"approved": approved, "rejected": rejected}

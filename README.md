@@ -198,6 +198,7 @@ curl http://localhost:8091/engine/narrative?limit=50
 
 ```python
 import os
+
 os.environ["OPENAI_MODEL"] = "long-gemma"
 os.environ["OPENAI_API_BASE"] = "http://127.0.0.1:11434/v1"
 
@@ -269,15 +270,15 @@ LOG_LEVEL="INFO"
 
 ```python
 {
-  "model": "long-gemma",           # LLM model identifier
-  "temperature": 0.8,              # Creativity (0.0-2.0)
-  "max_tokens": 150,               # Response length limit
-  "gimmick": "masked hero",        # Character archetype
-  "personality_traits": {          # Custom attributes
-    "aggression": 70,
-    "charisma": 85,
-    "technical_skill": 60
-  }
+    "model": "long-gemma",  # LLM model identifier
+    "temperature": 0.8,  # Creativity (0.0-2.0)
+    "max_tokens": 150,  # Response length limit
+    "gimmick": "masked hero",  # Character archetype
+    "personality_traits": {  # Custom attributes
+        "aggression": 70,
+        "charisma": 85,
+        "technical_skill": 60,
+    },
 }
 ```
 

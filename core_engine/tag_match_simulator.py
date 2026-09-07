@@ -9,16 +9,24 @@ import random
 from typing import List, Dict, Optional
 
 from core_engine.match_constants import (
-    FINISHER_MOMENTUM_THRESHOLD, NEAR_FALL_CHANCE,
-    TAG_IN_TICKS_THRESHOLD, TAG_IN_STAMINA_THRESHOLD, TAG_IN_CHANCE,
+    FINISHER_MOMENTUM_THRESHOLD,
+    NEAR_FALL_CHANCE,
+    TAG_IN_TICKS_THRESHOLD,
+    TAG_IN_STAMINA_THRESHOLD,
+    TAG_IN_CHANCE,
     TAG_IN_MOMENTUM_BOOST,
-    HOT_TAG_TICKS_THRESHOLD, HOT_TAG_HEALTH_THRESHOLD, HOT_TAG_CHANCE,
+    HOT_TAG_TICKS_THRESHOLD,
+    HOT_TAG_HEALTH_THRESHOLD,
+    HOT_TAG_CHANCE,
     HOT_TAG_MOMENTUM_BOOST,
     DOUBLE_TEAM_CHANCE,
 )
 from core_engine.match_engine import (
-    MatchParticipantState, MatchSpot, MatchResult,
-    TAG_DESCRIPTIONS, DOUBLE_TEAM_MOVES,
+    MatchParticipantState,
+    MatchSpot,
+    MatchResult,
+    TAG_DESCRIPTIONS,
+    DOUBLE_TEAM_MOVES,
 )
 from core_engine.match_rating import calculate_rating, calculate_heat
 
@@ -69,8 +77,13 @@ def simulate_tag_match(sim, participants: List[MatchParticipantState]) -> MatchR
 
         # --- Tag-in, hot tag, and double-team opportunities ---
         result = tag_team_action(
-            sim, teams, legal_indices, ticks_in, attacking_team,
-            attacker, defender,
+            sim,
+            teams,
+            legal_indices,
+            ticks_in,
+            attacking_team,
+            attacker,
+            defender,
         )
         if result is not None:
             action_type, attacker, defender, attacking_team = result
@@ -82,7 +95,10 @@ def simulate_tag_match(sim, participants: List[MatchParticipantState]) -> MatchR
         sim.spots.append(spot)
         sim._apply_spot(spot, attacker, defender)
 
-        if not attacker.finisher_available and attacker.momentum > FINISHER_MOMENTUM_THRESHOLD:
+        if (
+            not attacker.finisher_available
+            and attacker.momentum > FINISHER_MOMENTUM_THRESHOLD
+        ):
             attacker.finisher_available = True
 
         if sim.tick >= target_length - 3:
@@ -103,9 +119,16 @@ def simulate_tag_match(sim, participants: List[MatchParticipantState]) -> MatchR
         winner_id=None,
         finish_type="time_limit_draw",
         finish_description="The tag team match ends in a time limit draw!",
-        match_rating=calculate_rating(sim.spots, sim.is_title_match, sim.rivalry_heat,
-                                       sim._interference_happened, sim.stipulation,
-                                       sim.show_momentum, sim.tick, participants),
+        match_rating=calculate_rating(
+            sim.spots,
+            sim.is_title_match,
+            sim.rivalry_heat,
+            sim._interference_happened,
+            sim.stipulation,
+            sim.show_momentum,
+            sim.tick,
+            participants,
+        ),
         crowd_heat=calculate_heat(sim.spots, sim.show_momentum, sim.rivalry_heat),
         duration_ticks=sim.tick,
         spots=sim.spots,
@@ -131,41 +154,56 @@ def tag_team_action(
     def_team = 1 - attacking_team
 
     # --- Tag-in opportunity (attacking team tags to bring fresh partner) ---
-    if (ticks_in[atk_team] > TAG_IN_TICKS_THRESHOLD
-            and attacker.stamina < TAG_IN_STAMINA_THRESHOLD
-            and random.random() < TAG_IN_CHANCE
-            and len(teams[atk_team]) > 1):
+    if (
+        ticks_in[atk_team] > TAG_IN_TICKS_THRESHOLD
+        and attacker.stamina < TAG_IN_STAMINA_THRESHOLD
+        and random.random() < TAG_IN_CHANCE
+        and len(teams[atk_team]) > 1
+    ):
         legal_indices[atk_team] = (legal_indices[atk_team] + 1) % len(teams[atk_team])
         ticks_in[atk_team] = 0
         new_wrestler = teams[atk_team][legal_indices[atk_team]]
         new_wrestler.momentum = min(100, new_wrestler.momentum + TAG_IN_MOMENTUM_BOOST)
-        sim.spots.append(MatchSpot(
-            tick=sim.tick, attacker_id=new_wrestler.wrestler_id,
-            defender_id=defender.wrestler_id, move_name="Tag",
-            move_type="tag", damage=0,
-            crowd_reaction="Tag made!", heat_change=1,
-            description=f"{attacker.name} {random.choice(TAG_DESCRIPTIONS)}! {new_wrestler.name} enters the ring!",
-        ))
+        sim.spots.append(
+            MatchSpot(
+                tick=sim.tick,
+                attacker_id=new_wrestler.wrestler_id,
+                defender_id=defender.wrestler_id,
+                move_name="Tag",
+                move_type="tag",
+                damage=0,
+                crowd_reaction="Tag made!",
+                heat_change=1,
+                description=f"{attacker.name} {random.choice(TAG_DESCRIPTIONS)}! {new_wrestler.name} enters the ring!",
+            )
+        )
         return ("tag_in", new_wrestler, defender, attacking_team)
 
     # --- Hot tag mechanic (defending team, beaten down, makes desperate tag) ---
-    if (ticks_in[def_team] > HOT_TAG_TICKS_THRESHOLD
-            and defender.health < HOT_TAG_HEALTH_THRESHOLD
-            and random.random() < HOT_TAG_CHANCE
-            and len(teams[def_team]) > 1):
+    if (
+        ticks_in[def_team] > HOT_TAG_TICKS_THRESHOLD
+        and defender.health < HOT_TAG_HEALTH_THRESHOLD
+        and random.random() < HOT_TAG_CHANCE
+        and len(teams[def_team]) > 1
+    ):
         legal_indices[def_team] = (legal_indices[def_team] + 1) % len(teams[def_team])
         ticks_in[def_team] = 0
         hot_tag = teams[def_team][legal_indices[def_team]]
         hot_tag.momentum = min(100, hot_tag.momentum + HOT_TAG_MOMENTUM_BOOST)
         hot_tag.finisher_available = True
-        sim.spots.append(MatchSpot(
-            tick=sim.tick, attacker_id=hot_tag.wrestler_id,
-            defender_id=attacker.wrestler_id, move_name="Hot Tag",
-            move_type="tag", damage=0,
-            crowd_reaction="The crowd erupts for the hot tag!",
-            heat_change=4,
-            description=f"{defender.name} desperately reaches out... HOT TAG! {hot_tag.name} storms into the ring on fire!",
-        ))
+        sim.spots.append(
+            MatchSpot(
+                tick=sim.tick,
+                attacker_id=hot_tag.wrestler_id,
+                defender_id=attacker.wrestler_id,
+                move_name="Hot Tag",
+                move_type="tag",
+                damage=0,
+                crowd_reaction="The crowd erupts for the hot tag!",
+                heat_change=4,
+                description=f"{defender.name} desperately reaches out... HOT TAG! {hot_tag.name} storms into the ring on fire!",
+            )
+        )
         # Offense switches to the defending team
         new_attacking_team = def_team
         return ("hot_tag", hot_tag, attacker, new_attacking_team)
@@ -175,9 +213,12 @@ def tag_team_action(
         partner = teams[atk_team][(legal_indices[atk_team] + 1) % len(teams[atk_team])]
         move_name, dmg = random.choice(DOUBLE_TEAM_MOVES)
         dt_spot = MatchSpot(
-            tick=sim.tick, attacker_id=attacker.wrestler_id,
-            defender_id=defender.wrestler_id, move_name=move_name,
-            move_type="power", damage=dmg,
+            tick=sim.tick,
+            attacker_id=attacker.wrestler_id,
+            defender_id=defender.wrestler_id,
+            move_name=move_name,
+            move_type="power",
+            damage=dmg,
             crowd_reaction="Incredible double-team!",
             heat_change=3,
             description=f"{attacker.name} and {partner.name} hit a {move_name} on {defender.name}!",

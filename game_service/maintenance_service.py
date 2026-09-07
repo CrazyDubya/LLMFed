@@ -9,10 +9,10 @@ Provides:
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Dict, Any, Optional
 
-from sqlalchemy import func, text
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models.db_models import NarrativeLogDB, EngineRequestDB

@@ -269,7 +269,9 @@ results = engine_instance.run_ticks(10)
 
 # Process results
 for result in results:
-    print(f"Tick {result.time_index}: {result.agent_id} performed {result.applied_actions}")
+    print(
+        f"Tick {result.time_index}: {result.agent_id} performed {result.applied_actions}"
+    )
 ```
 
 ### Database Queries
@@ -282,9 +284,14 @@ db = SessionLocal()
 try:
     # Get all agents in a federation
     agents = db.query(AgentDB).filter(AgentDB.federation_id == federation_id).all()
-    
+
     # Get narrative history
-    logs = db.query(NarrativeLogDB).order_by(NarrativeLogDB.created_at.desc()).limit(100).all()
+    logs = (
+        db.query(NarrativeLogDB)
+        .order_by(NarrativeLogDB.created_at.desc())
+        .limit(100)
+        .all()
+    )
 finally:
     db.close()
 ```

@@ -1,5 +1,5 @@
 from fastapi import Request
-from agent_service.database import get_db
+
 
 def get_engine_dependency(request: Request):
     """
@@ -7,6 +7,7 @@ def get_engine_dependency(request: Request):
     a global singleton.
     """
     return request.app.state.engine
+
 
 def get_llm_dependency(request: Request):
     """

@@ -13,21 +13,35 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    GameWrestlerDB, WrestlerStatsDB, GameFederationDB, ContractDB,
-    ChampionshipHistoryDB, MatchParticipantDB, MatchDB,
-    ShowDB, ShowSegmentDB, WrestlerPushDB,
+    GameWrestlerDB,
+    WrestlerStatsDB,
+    GameFederationDB,
+    ContractDB,
+    ChampionshipHistoryDB,
+    MatchParticipantDB,
+    MatchDB,
+    ShowDB,
+    ShowSegmentDB,
+    WrestlerPushDB,
     GameNarrativeLogDB,
-    MentorshipDB, CareerHighlightDB, HallOfFameDB,
-    GimmickHistoryDB, WrestlerBackstoryDB, LifeEventDB,
+    MentorshipDB,
+    CareerHighlightDB,
+    HallOfFameDB,
+    GimmickHistoryDB,
+    WrestlerBackstoryDB,
+    LifeEventDB,
 )
 import game_service.lifecycle_constants as LC
 
 # Re-exports so existing imports from this module keep working
-from game_service.goal_service import (          # noqa: F401
-    create_wrestler_goals, evaluate_goals, _check_goal_completed,
+from game_service.goal_service import (  # noqa: F401
+    create_wrestler_goals,
+    evaluate_goals,
+    _check_goal_completed,
 )
-from game_service.politics_service import (      # noqa: F401
-    update_locker_room_dynamics, apply_politics_to_booking,
+from game_service.politics_service import (  # noqa: F401
+    update_locker_room_dynamics,
+    apply_politics_to_booking,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,14 +49,18 @@ logger = logging.getLogger(__name__)
 
 # -- Shared helpers ----------------------------------------------------------
 
+
 def _get_wrestler_stats(db: Session, wrestler_id: str) -> Optional[WrestlerStatsDB]:
     """Fetch a wrestler's stats row (returns None if missing)."""
-    return db.query(WrestlerStatsDB).filter(
-        WrestlerStatsDB.wrestler_id == wrestler_id
-    ).first()
+    return (
+        db.query(WrestlerStatsDB)
+        .filter(WrestlerStatsDB.wrestler_id == wrestler_id)
+        .first()
+    )
 
 
 # -- Group 1: Aging, Physical Decline & Career Arc --------------------------
+
 
 def update_career_phase(wrestler: GameWrestlerDB):
     """Derive career phase from age and peak_age."""
@@ -64,10 +82,14 @@ def update_career_phase(wrestler: GameWrestlerDB):
 
 def age_wrestlers(db: Session, world_id: str, game_date: str):
     """Annual aging — run on Jan 1 each game year. Increments age, applies stat decay."""
-    wrestlers = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active == True,
-    ).all()
+    wrestlers = (
+        db.query(GameWrestlerDB)
+        .filter(
+            GameWrestlerDB.world_id == world_id,
+            GameWrestlerDB.is_active == True,
+        )
+        .all()
+    )
 
     for w in wrestlers:
         w.age = (w.age or 25) + 1
@@ -85,16 +107,31 @@ def age_wrestlers(db: Session, world_id: str, game_date: str):
 
             for attr in LC.EARLY_DECLINE_STATS:
                 old = getattr(stats, attr, 50)
-                setattr(stats, attr, max(LC.MIN_STAT_FLOOR, old - random.randint(1, decline)))
+                setattr(
+                    stats,
+                    attr,
+                    max(LC.MIN_STAT_FLOOR, old - random.randint(1, decline)),
+                )
 
             if years_past > LC.LATE_DECLINE_YEARS_THRESHOLD:
                 for attr in LC.LATE_DECLINE_STATS:
                     old = getattr(stats, attr, 50)
-                    setattr(stats, attr, max(LC.MIN_STAT_FLOOR, old - random.randint(0, decline - 1)))
+                    setattr(
+                        stats,
+                        attr,
+                        max(LC.MIN_STAT_FLOOR, old - random.randint(0, decline - 1)),
+                    )
 
             for attr in LC.IMPROVING_STATS:
                 old = getattr(stats, attr, 50)
-                setattr(stats, attr, min(LC.MAX_STAT_CAP, old + random.randint(0, LC.IMPROVING_STAT_MAX_GAIN)))
+                setattr(
+                    stats,
+                    attr,
+                    min(
+                        LC.MAX_STAT_CAP,
+                        old + random.randint(0, LC.IMPROVING_STAT_MAX_GAIN),
+                    ),
+                )
 
 
 def calculate_retirement_pressure(wrestler: GameWrestlerDB) -> int:
@@ -114,7 +151,9 @@ def calculate_retirement_pressure(wrestler: GameWrestlerDB) -> int:
     if wrestler.is_injured and (wrestler.age or 25) > rp["injured_age_threshold"]:
         pressure += rp["injured_bonus"]
 
-    if (wrestler.popularity or 50) < rp["low_pop_threshold"] and (wrestler.age or 25) > rp["low_pop_age_threshold"]:
+    if (wrestler.popularity or 50) < rp["low_pop_threshold"] and (
+        wrestler.age or 25
+    ) > rp["low_pop_age_threshold"]:
         pressure += rp["low_pop_bonus"]
 
     if (wrestler.age or 25) > rp["old_age_threshold"]:
@@ -133,15 +172,22 @@ def calculate_ring_rust_modifier(wrestler: GameWrestlerDB) -> float:
 
 # -- Group 4: Developmental Pipeline ----------------------------------------
 
-def assign_mentor(db: Session, federation: GameFederationDB,
-                  protege: GameWrestlerDB, mentor: GameWrestlerDB,
-                  game_date: str) -> Optional[MentorshipDB]:
+
+def assign_mentor(
+    db: Session,
+    federation: GameFederationDB,
+    protege: GameWrestlerDB,
+    mentor: GameWrestlerDB,
+    game_date: str,
+) -> Optional[MentorshipDB]:
     """Assign a veteran mentor to a young wrestler."""
     mentor_stats = _get_wrestler_stats(db, mentor.id)
     if not mentor_stats or (mentor_stats.psychology or 0) < LC.MENTOR_MIN_PSYCHOLOGY:
         return None
 
-    bonus = ((mentor_stats.psychology or 50) + (mentor_stats.work_ethic or 50)) / LC.MENTOR_BONUS_DIVISOR
+    bonus = (
+        (mentor_stats.psychology or 50) + (mentor_stats.work_ethic or 50)
+    ) / LC.MENTOR_BONUS_DIVISOR
     m = MentorshipDB(
         world_id=federation.world_id,
         mentor_id=mentor.id,
@@ -157,39 +203,57 @@ def assign_mentor(db: Session, federation: GameFederationDB,
 
 def auto_assign_mentors(db: Session, federation: GameFederationDB, game_date: str):
     """NPC federation auto-assigns mentors to unmentored rookies."""
-    contracts = db.query(ContractDB).filter(
-        ContractDB.federation_id == federation.id,
-        ContractDB.status == "active",
-    ).all()
+    contracts = (
+        db.query(ContractDB)
+        .filter(
+            ContractDB.federation_id == federation.id,
+            ContractDB.status == "active",
+        )
+        .all()
+    )
     wrestler_ids = [c.wrestler_id for c in contracts]
     if not wrestler_ids:
         return
 
-    rookies = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.id.in_(wrestler_ids),
-        GameWrestlerDB.is_active == True,
-        GameWrestlerDB.career_phase == "rookie",
-    ).all()
+    rookies = (
+        db.query(GameWrestlerDB)
+        .filter(
+            GameWrestlerDB.id.in_(wrestler_ids),
+            GameWrestlerDB.is_active == True,
+            GameWrestlerDB.career_phase == "rookie",
+        )
+        .all()
+    )
 
     mentored_ids = set(
-        m.protege_id for m in db.query(MentorshipDB).filter(
+        m.protege_id
+        for m in db.query(MentorshipDB)
+        .filter(
             MentorshipDB.federation_id == federation.id,
             MentorshipDB.is_active == True,
-        ).all()
+        )
+        .all()
     )
     mentoring_ids = set(
-        m.mentor_id for m in db.query(MentorshipDB).filter(
+        m.mentor_id
+        for m in db.query(MentorshipDB)
+        .filter(
             MentorshipDB.federation_id == federation.id,
             MentorshipDB.is_active == True,
-        ).all()
+        )
+        .all()
     )
 
-    veterans = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.id.in_(wrestler_ids),
-        GameWrestlerDB.is_active == True,
-        GameWrestlerDB.career_phase.in_(["veteran", "declining"]),
-        GameWrestlerDB.is_injured == False,
-    ).all()
+    veterans = (
+        db.query(GameWrestlerDB)
+        .filter(
+            GameWrestlerDB.id.in_(wrestler_ids),
+            GameWrestlerDB.is_active == True,
+            GameWrestlerDB.career_phase.in_(["veteran", "declining"]),
+            GameWrestlerDB.is_injured == False,
+        )
+        .all()
+    )
 
     for rookie in rookies:
         if rookie.id in mentored_ids:
@@ -206,10 +270,14 @@ def auto_assign_mentors(db: Session, federation: GameFederationDB, game_date: st
 
 def check_debut_readiness(db: Session, wrestler: GameWrestlerDB) -> bool:
     """Check if a developmental wrestler is ready for a TV tryout."""
-    push = db.query(WrestlerPushDB).filter(
-        WrestlerPushDB.wrestler_id == wrestler.id,
-        WrestlerPushDB.push_tier == "developmental",
-    ).first()
+    push = (
+        db.query(WrestlerPushDB)
+        .filter(
+            WrestlerPushDB.wrestler_id == wrestler.id,
+            WrestlerPushDB.push_tier == "developmental",
+        )
+        .first()
+    )
     if not push or (push.weeks_at_tier or 0) < LC.DEBUT_MIN_WEEKS:
         return False
 
@@ -217,17 +285,26 @@ def check_debut_readiness(db: Session, wrestler: GameWrestlerDB) -> bool:
     if not stats:
         return False
 
-    avg_ring = sum(getattr(stats, a, 50) or 50 for a in LC.DEBUT_RING_STATS) / len(LC.DEBUT_RING_STATS)
-    return avg_ring > LC.DEBUT_MIN_AVG_RING and (stats.psychology or 0) > LC.DEBUT_MIN_PSYCHOLOGY
+    avg_ring = sum(getattr(stats, a, 50) or 50 for a in LC.DEBUT_RING_STATS) / len(
+        LC.DEBUT_RING_STATS
+    )
+    return (
+        avg_ring > LC.DEBUT_MIN_AVG_RING
+        and (stats.psychology or 0) > LC.DEBUT_MIN_PSYCHOLOGY
+    )
 
 
 def training_with_mentor(db: Session, wrestler_id: str, stat_name: str) -> int:
     """Enhanced training gain when wrestler has an active mentor.
     Returns bonus gain on top of base training."""
-    mentorship = db.query(MentorshipDB).filter(
-        MentorshipDB.protege_id == wrestler_id,
-        MentorshipDB.is_active == True,
-    ).first()
+    mentorship = (
+        db.query(MentorshipDB)
+        .filter(
+            MentorshipDB.protege_id == wrestler_id,
+            MentorshipDB.is_active == True,
+        )
+        .first()
+    )
     if not mentorship:
         return 0
 
@@ -240,77 +317,119 @@ def training_with_mentor(db: Session, wrestler_id: str, stat_name: str) -> int:
     if random.random() < LC.MENTOR_SELF_IMPROVE_CHANCE:
         mentor_stats = _get_wrestler_stats(db, mentorship.mentor_id)
         if mentor_stats and (mentor_stats.psychology or 0) < LC.MAX_STAT_CAP:
-            mentor_stats.psychology = min(LC.MAX_STAT_CAP, (mentor_stats.psychology or 50) + 1)
+            mentor_stats.psychology = min(
+                LC.MAX_STAT_CAP, (mentor_stats.psychology or 50) + 1
+            )
 
     return bonus
 
 
 # -- Group 5: Legacy, Hall of Fame & Nostalgia ------------------------------
 
-def record_career_highlight(db: Session, wrestler_id: str, highlight_type: str,
-                            description: str, game_date: str,
-                            significance: int = 5, match_id: str = None):
+
+def record_career_highlight(
+    db: Session,
+    wrestler_id: str,
+    highlight_type: str,
+    description: str,
+    game_date: str,
+    significance: int = 5,
+    match_id: str = None,
+):
     """Record a notable career moment."""
-    db.add(CareerHighlightDB(
-        wrestler_id=wrestler_id,
-        highlight_type=highlight_type,
-        description=description,
-        game_date=game_date,
-        significance=significance,
-        match_id=match_id,
-    ))
+    db.add(
+        CareerHighlightDB(
+            wrestler_id=wrestler_id,
+            highlight_type=highlight_type,
+            description=description,
+            game_date=game_date,
+            significance=significance,
+            match_id=match_id,
+        )
+    )
 
 
-def check_match_highlights(db: Session, match: MatchDB, wrestler_id: str,
-                           game_date: str):
+def check_match_highlights(
+    db: Session, match: MatchDB, wrestler_id: str, game_date: str
+):
     """Check if a match produced career highlights."""
     rating = match.match_rating or 0
 
     if rating >= LC.HIGHLIGHT_STAR_THRESHOLD:
         record_career_highlight(
-            db, wrestler_id, "5_star_classic",
+            db,
+            wrestler_id,
+            "5_star_classic",
             f"A {rating}-star classic",
             game_date,
-            significance=min(LC.HIGHLIGHT_MAX_SIGNIFICANCE,
-                             int(rating * LC.HIGHLIGHT_SIGNIFICANCE_MULTIPLIER)),
+            significance=min(
+                LC.HIGHLIGHT_MAX_SIGNIFICANCE,
+                int(rating * LC.HIGHLIGHT_SIGNIFICANCE_MULTIPLIER),
+            ),
             match_id=match.id,
         )
 
     if match.is_title_match and match.winner_id == wrestler_id:
-        prev_reigns = db.query(ChampionshipHistoryDB).filter(
-            ChampionshipHistoryDB.wrestler_id == wrestler_id,
-        ).count()
+        prev_reigns = (
+            db.query(ChampionshipHistoryDB)
+            .filter(
+                ChampionshipHistoryDB.wrestler_id == wrestler_id,
+            )
+            .count()
+        )
         if prev_reigns <= 1:
             record_career_highlight(
-                db, wrestler_id, "first_title_win",
+                db,
+                wrestler_id,
+                "first_title_win",
                 "Won their first championship",
-                game_date, significance=8, match_id=match.id,
+                game_date,
+                significance=8,
+                match_id=match.id,
             )
 
 
 def compute_legacy_score(db: Session, wrestler_id: str) -> int:
     """Compute a wrestler's legacy score from their career."""
-    highlights = db.query(CareerHighlightDB).filter(
-        CareerHighlightDB.wrestler_id == wrestler_id,
-    ).count()
+    highlights = (
+        db.query(CareerHighlightDB)
+        .filter(
+            CareerHighlightDB.wrestler_id == wrestler_id,
+        )
+        .count()
+    )
 
-    reigns = db.query(ChampionshipHistoryDB).filter(
-        ChampionshipHistoryDB.wrestler_id == wrestler_id,
-    ).count()
+    reigns = (
+        db.query(ChampionshipHistoryDB)
+        .filter(
+            ChampionshipHistoryDB.wrestler_id == wrestler_id,
+        )
+        .count()
+    )
 
-    wrestler = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.id == wrestler_id,
-    ).first()
+    wrestler = (
+        db.query(GameWrestlerDB)
+        .filter(
+            GameWrestlerDB.id == wrestler_id,
+        )
+        .first()
+    )
     years = wrestler.experience_years or 0 if wrestler else 0
 
-    participations = db.query(MatchParticipantDB).join(MatchDB).filter(
-        MatchParticipantDB.wrestler_id == wrestler_id,
-        MatchDB.is_completed == True,
-        MatchDB.match_rating != None,
-    ).all()
+    participations = (
+        db.query(MatchParticipantDB)
+        .join(MatchDB)
+        .filter(
+            MatchParticipantDB.wrestler_id == wrestler_id,
+            MatchDB.is_completed == True,
+            MatchDB.match_rating != None,
+        )
+        .all()
+    )
     avg_rating = (
         sum(p.performance_rating or 3.0 for p in participations) / len(participations)
-        if participations else 0
+        if participations
+        else 0
     )
 
     return int(
@@ -324,16 +443,23 @@ def compute_legacy_score(db: Session, wrestler_id: str) -> int:
 def hall_of_fame_ceremony(db: Session, world_id: str, game_date: str):
     """Annual Hall of Fame induction — run on April 1 each game year."""
     inducted_ids = set(
-        h.wrestler_id for h in db.query(HallOfFameDB).filter(
+        h.wrestler_id
+        for h in db.query(HallOfFameDB)
+        .filter(
             HallOfFameDB.world_id == world_id,
-        ).all()
+        )
+        .all()
     )
 
-    eligible = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active == False,
-        GameWrestlerDB.retirement_date != None,
-    ).all()
+    eligible = (
+        db.query(GameWrestlerDB)
+        .filter(
+            GameWrestlerDB.world_id == world_id,
+            GameWrestlerDB.is_active == False,
+            GameWrestlerDB.retirement_date != None,
+        )
+        .all()
+    )
 
     best = None
     best_score = 0
@@ -349,27 +475,32 @@ def hall_of_fame_ceremony(db: Session, world_id: str, game_date: str):
     if best:
         best.is_hall_of_famer = True
         best.legacy_score = best_score
-        db.add(HallOfFameDB(
-            world_id=world_id,
-            wrestler_id=best.id,
-            inducted_date=game_date,
-            legacy_score=best_score,
-        ))
-        db.add(GameNarrativeLogDB(
-            world_id=world_id,
-            game_date=game_date,
-            tick=0,
-            event_type="hall_of_fame",
-            description=f"HALL OF FAME: {best.name} inducted! (Legacy score: {best_score})",
-            involved_entities=[best.id],
-            importance=10,
-        ))
+        db.add(
+            HallOfFameDB(
+                world_id=world_id,
+                wrestler_id=best.id,
+                inducted_date=game_date,
+                legacy_score=best_score,
+            )
+        )
+        db.add(
+            GameNarrativeLogDB(
+                world_id=world_id,
+                game_date=game_date,
+                tick=0,
+                event_type="hall_of_fame",
+                description=f"HALL OF FAME: {best.name} inducted! (Legacy score: {best_score})",
+                involved_entities=[best.id],
+                importance=10,
+            )
+        )
         return best
     return None
 
 
-def apply_nostalgia_pop(wrestler: GameWrestlerDB, game_date: str,
-                        last_appearance: str) -> int:
+def apply_nostalgia_pop(
+    wrestler: GameWrestlerDB, game_date: str, last_appearance: str
+) -> int:
     """Apply a nostalgia popularity boost for a returning legend. Returns bonus amount."""
     if not last_appearance:
         return 0
@@ -380,15 +511,22 @@ def apply_nostalgia_pop(wrestler: GameWrestlerDB, game_date: str,
     except (ValueError, TypeError):
         return 0
 
-    if days_absent < LC.NOSTALGIA_MIN_DAYS_ABSENT or (wrestler.legacy_score or 0) < LC.NOSTALGIA_MIN_LEGACY:
+    if (
+        days_absent < LC.NOSTALGIA_MIN_DAYS_ABSENT
+        or (wrestler.legacy_score or 0) < LC.NOSTALGIA_MIN_LEGACY
+    ):
         return 0
 
-    pop_bonus = min(LC.NOSTALGIA_MAX_BONUS, (days_absent // LC.NOSTALGIA_DAYS_PER_UNIT) * LC.NOSTALGIA_PER_UNIT)
+    pop_bonus = min(
+        LC.NOSTALGIA_MAX_BONUS,
+        (days_absent // LC.NOSTALGIA_DAYS_PER_UNIT) * LC.NOSTALGIA_PER_UNIT,
+    )
     wrestler.popularity = min(LC.MAX_STAT_CAP, (wrestler.popularity or 50) + pop_bonus)
     return pop_bonus
 
 
 # -- Group 6: Physical Identity, Specialization & Conditioning --------------
+
 
 def derive_body_type(height_cm: int, weight_kg: int) -> str:
     """Derive body_type from height and weight."""
@@ -401,7 +539,9 @@ def derive_body_type(height_cm: int, weight_kg: int) -> str:
 def generate_physical_attributes() -> dict:
     """Generate height_cm, weight_kg, body_type for a wrestler."""
     height = random.randint(*LC.HEIGHT_RANGE)
-    base_weight = int(height * LC.HEIGHT_WEIGHT_FACTOR + random.randint(*LC.WEIGHT_OFFSET_RANGE))
+    base_weight = int(
+        height * LC.HEIGHT_WEIGHT_FACTOR + random.randint(*LC.WEIGHT_OFFSET_RANGE)
+    )
     weight = max(LC.WEIGHT_MIN, min(LC.WEIGHT_MAX, base_weight))
     return {
         "height_cm": height,
@@ -438,7 +578,9 @@ def update_conditioning(db: Session, wrestler: GameWrestlerDB, game_date: str):
         return
 
     try:
-        week_ago = (datetime.strptime(game_date, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
+        week_ago = (
+            datetime.strptime(game_date, "%Y-%m-%d") - timedelta(days=7)
+        ).strftime("%Y-%m-%d")
     except (ValueError, TypeError):
         return
 
@@ -452,7 +594,8 @@ def update_conditioning(db: Session, wrestler: GameWrestlerDB, game_date: str):
             MatchDB.is_completed == True,
             ShowDB.game_date >= week_ago,
             ShowDB.game_date <= game_date,
-        ).count()
+        )
+        .count()
     )
 
     cond = stats.conditioning_level or LC.CONDITIONING_DEFAULT
@@ -477,26 +620,39 @@ def grow_specialization(stats: WrestlerStatsDB, stipulation: str):
 
 # -- Group 7: Persona — Gimmick Evolution & Life Events --------------------
 
+
 def tick_persona(db: Session, world_id: str, game_date: str):
     """Weekly persona tick: gimmick staleness, life events, gimmick evolution."""
     from game_service import persona_service
 
-    wrestlers = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active == True,
-    ).all()
+    wrestlers = (
+        db.query(GameWrestlerDB)
+        .filter(
+            GameWrestlerDB.world_id == world_id,
+            GameWrestlerDB.is_active == True,
+        )
+        .all()
+    )
 
     for wrestler in wrestlers:
-        backstory = db.query(WrestlerBackstoryDB).filter(
-            WrestlerBackstoryDB.wrestler_id == wrestler.id,
-        ).first()
+        backstory = (
+            db.query(WrestlerBackstoryDB)
+            .filter(
+                WrestlerBackstoryDB.wrestler_id == wrestler.id,
+            )
+            .first()
+        )
         if not backstory:
             persona_service.generate_backstory(db, wrestler)
 
-        gimmick = db.query(GimmickHistoryDB).filter(
-            GimmickHistoryDB.wrestler_id == wrestler.id,
-            GimmickHistoryDB.is_active == True,
-        ).first()
+        gimmick = (
+            db.query(GimmickHistoryDB)
+            .filter(
+                GimmickHistoryDB.wrestler_id == wrestler.id,
+                GimmickHistoryDB.is_active == True,
+            )
+            .first()
+        )
         if not gimmick:
             persona_service.generate_initial_gimmick(db, wrestler, game_date)
             continue
@@ -513,10 +669,14 @@ def tick_persona(db: Session, world_id: str, game_date: str):
 
         persona_service.generate_life_event(db, wrestler.id, world_id, game_date)
 
-        active_events = db.query(LifeEventDB).filter(
-            LifeEventDB.wrestler_id == wrestler.id,
-            LifeEventDB.is_active == True,
-        ).all()
+        active_events = (
+            db.query(LifeEventDB)
+            .filter(
+                LifeEventDB.wrestler_id == wrestler.id,
+                LifeEventDB.is_active == True,
+            )
+            .all()
+        )
         for event in active_events:
             persona_service.process_life_event_effects(db, event)
 

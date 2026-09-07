@@ -1,6 +1,5 @@
 """Tests for the fan service — dynamic audience simulation."""
 
-import pytest
 from game_service.fan_service import (
     FanArchetype,
     FanSegment,
@@ -19,7 +18,9 @@ class TestFanSegment:
         assert seg.effective_population == 500.0  # 1000 * 50/100
 
     def test_effective_population_scales(self):
-        seg = FanSegment(archetype=FanArchetype.HARDCORE, population=1000, satisfaction=80)
+        seg = FanSegment(
+            archetype=FanArchetype.HARDCORE, population=1000, satisfaction=80
+        )
         assert seg.effective_population == 800.0
 
     def test_to_dict(self):
@@ -87,13 +88,16 @@ class TestProcessShowImpact:
     def test_great_show_increases_satisfaction(self):
         fb = create_initial_fan_base("f1")
         initial_sat = fb.overall_satisfaction
-        process_show_impact(fb, {
-            "match_quality": 4.5,
-            "storyline_quality": 85,
-            "star_power": 90,
-            "spectacle": 80,
-            "surprise": 70,
-        })
+        process_show_impact(
+            fb,
+            {
+                "match_quality": 4.5,
+                "storyline_quality": 85,
+                "star_power": 90,
+                "spectacle": 80,
+                "surprise": 70,
+            },
+        )
         assert fb.overall_satisfaction > initial_sat
 
     def test_bad_show_decreases_satisfaction(self):
@@ -102,24 +106,30 @@ class TestProcessShowImpact:
         for seg in fb.segments.values():
             seg.satisfaction = 80.0
         initial_sat = fb.overall_satisfaction
-        process_show_impact(fb, {
-            "match_quality": 1.0,
-            "storyline_quality": 15,
-            "star_power": 20,
-            "spectacle": 10,
-            "surprise": 5,
-        })
+        process_show_impact(
+            fb,
+            {
+                "match_quality": 1.0,
+                "storyline_quality": 15,
+                "star_power": 20,
+                "spectacle": 10,
+                "surprise": 5,
+            },
+        )
         assert fb.overall_satisfaction < initial_sat
 
     def test_returns_merch_revenue(self):
         fb = create_initial_fan_base("f1")
-        result = process_show_impact(fb, {
-            "match_quality": 3.0,
-            "storyline_quality": 50,
-            "star_power": 50,
-            "spectacle": 50,
-            "surprise": 50,
-        })
+        result = process_show_impact(
+            fb,
+            {
+                "match_quality": 3.0,
+                "storyline_quality": 50,
+                "star_power": 50,
+                "spectacle": 50,
+                "surprise": 50,
+            },
+        )
         assert result["merch_revenue_this_show"] >= 0
         assert fb.total_merch_revenue > 0
 
@@ -136,13 +146,16 @@ class TestProcessShowImpact:
             seg.satisfaction = 10.0
             seg.loyalty = 10.0
         initial_pop = fb.total_population
-        process_show_impact(fb, {
-            "match_quality": 0.5,
-            "storyline_quality": 5,
-            "star_power": 10,
-            "spectacle": 5,
-            "surprise": 5,
-        })
+        process_show_impact(
+            fb,
+            {
+                "match_quality": 0.5,
+                "storyline_quality": 5,
+                "star_power": 10,
+                "spectacle": 5,
+                "surprise": 5,
+            },
+        )
         assert fb.total_population < initial_pop
 
 

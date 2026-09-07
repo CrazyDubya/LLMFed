@@ -27,9 +27,9 @@ from datetime import timedelta
 
 # Create token
 token = create_access_token(
-    data={"sub": "user123", "username": "john"},
-    expires_delta=timedelta(minutes=30)
+    data={"sub": "user123", "username": "john"}, expires_delta=timedelta(minutes=30)
 )
+
 
 # Protect endpoint
 @app.get("/protected")
@@ -131,7 +131,7 @@ llm = get_llm()
 response = llm.generate(
     prompt="What is the capital of France?",
     system_message="You are a helpful assistant.",
-    temperature=0.7
+    temperature=0.7,
 )
 
 print(response.content)

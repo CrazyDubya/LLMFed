@@ -16,6 +16,7 @@ router = APIRouter(prefix="/game/analytics", tags=["analytics"])
 async def api_world_summary(world_id: str, db: AsyncSession = Depends(get_db)):
     """Get high-level world summary statistics."""
     from game_service.analytics_service import world_summary
+
     return world_summary(db, world_id)
 
 
@@ -28,6 +29,7 @@ async def api_wrestler_performance(
 ):
     """Get wrestler performance analytics."""
     from game_service.analytics_service import wrestler_performance
+
     return wrestler_performance(db, world_id, wrestler_id, limit)
 
 
@@ -39,6 +41,7 @@ async def api_federation_health(
 ):
     """Get federation health metrics."""
     from game_service.analytics_service import federation_health
+
     return federation_health(db, world_id, federation_id)
 
 
@@ -50,6 +53,7 @@ async def api_match_quality(
 ):
     """Get match rating distribution."""
     from game_service.analytics_service import match_quality_distribution
+
     return match_quality_distribution(db, world_id, federation_id)
 
 
@@ -62,6 +66,7 @@ async def api_head_to_head(
 ):
     """Get head-to-head comparison between two wrestlers."""
     from game_service.analytics_service import head_to_head
+
     return head_to_head(db, world_id, wrestler_a, wrestler_b)
 
 
@@ -69,16 +74,21 @@ async def api_head_to_head(
 async def api_llm_usage():
     """Get LLM cost/usage summary (API calls, total cost, budget remaining)."""
     from game_service.analytics_service import llm_usage_summary
+
     return llm_usage_summary()
 
 
 @router.get("/world/{world_id}/leaderboard")
 async def api_leaderboard(
     world_id: str,
-    metric: str = Query("win_rate", description="Sort by: win_rate, avg_match_rating, total_matches, wins"),
+    metric: str = Query(
+        "win_rate",
+        description="Sort by: win_rate, avg_match_rating, total_matches, wins",
+    ),
     limit: int = Query(10, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
 ):
     """Get top performers leaderboard."""
     from game_service.analytics_service import top_performers
+
     return top_performers(db, world_id, metric, limit)

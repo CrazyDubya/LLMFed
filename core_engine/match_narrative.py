@@ -29,6 +29,7 @@ def _get_llm():
         return _llm_instance
     try:
         from llm_abstraction.provider import get_llm
+
         _llm_instance = get_llm()
         return _llm_instance
     except Exception as e:
@@ -36,8 +37,13 @@ def _get_llm():
         return None
 
 
-def _llm_call(system_msg: str, user_msg: str, fallback: str,
-              temperature: float = 0.9, max_tokens: int = 150) -> str:
+def _llm_call(
+    system_msg: str,
+    user_msg: str,
+    fallback: str,
+    temperature: float = 0.9,
+    max_tokens: int = 150,
+) -> str:
     """Call the LLM and return the response text, or the fallback on any failure."""
     if not USE_LLM:
         return fallback
@@ -62,9 +68,11 @@ def _llm_call(system_msg: str, user_msg: str, fallback: str,
 # Chemistry system
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ChemistryRecord:
     """Tracks evolving chemistry between two wrestlers."""
+
     wrestler_a_id: str
     wrestler_b_id: str
     match_count: int = 0
@@ -126,7 +134,9 @@ class ChemistryTracker:
             )
         return self._records[key]
 
-    def record_match(self, a_id: str, b_id: str, rating: float, game_date: str = None) -> ChemistryRecord:
+    def record_match(
+        self, a_id: str, b_id: str, rating: float, game_date: str = None
+    ) -> ChemistryRecord:
         rec = self.get(a_id, b_id)
         rec.record_match(rating, game_date)
         return rec
@@ -210,9 +220,7 @@ def narrate_reversal(
 ) -> str:
     """Generate commentary for a dramatic reversal or comeback."""
     is_comeback = reverser_health < 30
-    context = (
-        f"{reverser_name} reverses {reversed_name}'s {original_move} into a {reversal_move}!"
-    )
+    context = f"{reverser_name} reverses {reversed_name}'s {original_move} into a {reversal_move}!"
     if is_comeback:
         context += f" {reverser_name} is at {reverser_health:.0f}% health — this is a comeback!"
 

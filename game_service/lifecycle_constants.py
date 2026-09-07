@@ -10,9 +10,9 @@ Extracted from wrestler_lifecycle_service.py to keep logic and data separate.
 
 # Career phase thresholds (relative to peak_age)
 CAREER_PHASE_ROOKIE_MAX_EXP = 2
-CAREER_PHASE_RISING_OFFSET = -2   # age < peak + offset => rising
-CAREER_PHASE_PRIME_OFFSET = 4     # age < peak + offset => prime
-CAREER_PHASE_VETERAN_OFFSET = 8   # age < peak + offset => veteran
+CAREER_PHASE_RISING_OFFSET = -2  # age < peak + offset => rising
+CAREER_PHASE_PRIME_OFFSET = 4  # age < peak + offset => prime
+CAREER_PHASE_VETERAN_OFFSET = 8  # age < peak + offset => veteran
 
 # Stat decay caps
 MAX_DECLINE_PER_YEAR = 5
@@ -70,10 +70,15 @@ GLASS_CEILING_WEEKS = 26
 GLASS_CEILING_FRUSTRATION_BONUS = 3
 
 # Goal types that are title-related (for glass ceiling detection)
-TITLE_GOAL_TYPES = frozenset({
-    "win_title", "become_champion", "win_first_title",
-    "main_event_ppv", "one_more_title_run",
-})
+TITLE_GOAL_TYPES = frozenset(
+    {
+        "win_title",
+        "become_champion",
+        "win_first_title",
+        "main_event_ppv",
+        "one_more_title_run",
+    }
+)
 
 # Satisfaction thresholds
 LOW_SATISFACTION_THRESHOLD = 30
@@ -207,7 +212,7 @@ SPECIALIZATION_GROWTH = 2
 
 # Conditioning adjustment values
 CONDITIONING_DEFAULT = 70
-CONDITIONING_OVERWORK_THRESHOLD = 3   # matches per week
+CONDITIONING_OVERWORK_THRESHOLD = 3  # matches per week
 CONDITIONING_OVERWORK_PENALTY = 5
 CONDITIONING_REST_GAIN = 3
 CONDITIONING_WORK_GAIN = 1

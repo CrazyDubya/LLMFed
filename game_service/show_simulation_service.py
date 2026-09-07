@@ -8,14 +8,20 @@ promo evaluation, card psychology, viewership, and news generation.
 import logging
 import os
 import random
-from typing import Callable, List, Optional
+from typing import Callable, List
 
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    ShowDB, ShowSegmentDB, MatchDB, MatchParticipantDB,
-    PromoDB, WorldDB,
+    GameFederationDB,
+    GameWrestlerDB,
+    WrestlerStatsDB,
+    ShowDB,
+    ShowSegmentDB,
+    MatchDB,
+    MatchParticipantDB,
+    PromoDB,
+    WorldDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,13 +40,27 @@ _service_registry: dict = {}
 _service_lock = threading.Lock()
 
 _SERVICE_LOADERS = {
-    "match_engine": lambda: __import__("core_engine.match_engine", fromlist=["match_engine"]),
-    "show_service": lambda: __import__("game_service.show_service", fromlist=["show_service"]),
-    "storyline_service": lambda: __import__("game_service.storyline_service", fromlist=["storyline_service"]),
-    "match_aftermath": lambda: __import__("core_engine.match_aftermath", fromlist=["match_aftermath"]),
-    "news_service": lambda: __import__("game_service.news_service", fromlist=["news_service"]),
-    "viewership_service": lambda: __import__("game_service.viewership_service", fromlist=["viewership_service"]),
-    "stable_service": lambda: __import__("game_service.stable_service", fromlist=["stable_service"]),
+    "match_engine": lambda: __import__(
+        "core_engine.match_engine", fromlist=["match_engine"]
+    ),
+    "show_service": lambda: __import__(
+        "game_service.show_service", fromlist=["show_service"]
+    ),
+    "storyline_service": lambda: __import__(
+        "game_service.storyline_service", fromlist=["storyline_service"]
+    ),
+    "match_aftermath": lambda: __import__(
+        "core_engine.match_aftermath", fromlist=["match_aftermath"]
+    ),
+    "news_service": lambda: __import__(
+        "game_service.news_service", fromlist=["news_service"]
+    ),
+    "viewership_service": lambda: __import__(
+        "game_service.viewership_service", fromlist=["viewership_service"]
+    ),
+    "stable_service": lambda: __import__(
+        "game_service.stable_service", fromlist=["stable_service"]
+    ),
 }
 
 
@@ -88,6 +108,7 @@ def _get_stable_service():
 # Public entry point
 # ------------------------------------------------------------------
 
+
 def simulate_show(
     db: Session,
     show: ShowDB,
@@ -116,16 +137,23 @@ def simulate_show(
     sl_svc = _get_storyline_service()
     aftermath = _get_match_aftermath()
 
-    fed = db.query(GameFederationDB).filter(
-        GameFederationDB.id == show.federation_id
-    ).first()
+    fed = (
+        db.query(GameFederationDB)
+        .filter(GameFederationDB.id == show.federation_id)
+        .first()
+    )
 
     prestige_factor = (fed.prestige if fed else 50) / 100
 
     # Simulate each match segment through the engine
-    segments = db.query(ShowSegmentDB).filter(
-        ShowSegmentDB.show_id == show.id,
-    ).order_by(ShowSegmentDB.position).all()
+    segments = (
+        db.query(ShowSegmentDB)
+        .filter(
+            ShowSegmentDB.show_id == show.id,
+        )
+        .order_by(ShowSegmentDB.position)
+        .all()
+    )
 
     match_segments = [s for s in segments if s.segment_type == "match" and s.match_id]
     total_segments = len(match_segments)
@@ -138,8 +166,18 @@ def simulate_show(
     for idx, seg in enumerate(segments):
         if seg.segment_type == "match" and seg.match_id:
             show_momentum, seg_events = _simulate_match_segment(
-                db, seg, show, world, match_segments, total_segments,
-                match_ratings, show_momentum, me, sl_svc, aftermath, log_event,
+                db,
+                seg,
+                show,
+                world,
+                match_segments,
+                total_segments,
+                match_ratings,
+                show_momentum,
+                me,
+                sl_svc,
+                aftermath,
+                log_event,
             )
             events.extend(seg_events)
         elif seg.segment_type == "promo":
@@ -169,7 +207,10 @@ def simulate_show(
 
     # Attendance & gate revenue
     attendance, ticket_price, gate = vs.calculate_attendance(
-        db, show, fed, card_draw,
+        db,
+        show,
+        fed,
+        card_draw,
     )
     show.attendance = attendance
     show.gate_revenue = gate
@@ -193,14 +234,18 @@ def simulate_show(
     # Update wrestler draw ratings for everyone on the card
     for seg in segments:
         if seg.segment_type == "match" and seg.match_id:
-            participants = db.query(MatchParticipantDB).filter(
-                MatchParticipantDB.match_id == seg.match_id
-            ).all()
+            participants = (
+                db.query(MatchParticipantDB)
+                .filter(MatchParticipantDB.match_id == seg.match_id)
+                .all()
+            )
             for p in participants:
                 new_draw = vs.calculate_wrestler_draw(db, p.wrestler_id)
-                wrestler = db.query(GameWrestlerDB).filter(
-                    GameWrestlerDB.id == p.wrestler_id
-                ).first()
+                wrestler = (
+                    db.query(GameWrestlerDB)
+                    .filter(GameWrestlerDB.id == p.wrestler_id)
+                    .first()
+                )
                 if wrestler:
                     wrestler.draw_rating = round(new_draw, 1)
 
@@ -209,7 +254,9 @@ def simulate_show(
         news_svc = _get_news_service()
         news_svc.generate_show_news(db, show, match_ratings, fed)
     except Exception as e:
-        logger.error("News generation failed for show %s: %s", show.id, e, exc_info=True)
+        logger.error(
+            "News generation failed for show %s: %s", show.id, e, exc_info=True
+        )
 
     log_event(
         "show",
@@ -217,7 +264,9 @@ def simulate_show(
         [show.federation_id],
         importance=6,
     )
-    events.append(f"Show completed: {show.name} ({attendance} attendance, TV: {show.tv_rating})")
+    events.append(
+        f"Show completed: {show.name} ({attendance} attendance, TV: {show.tv_rating})"
+    )
 
     return {
         "attendance": attendance,
@@ -230,15 +279,24 @@ def simulate_show(
 # Internal helpers
 # ------------------------------------------------------------------
 
+
 def _simulate_match_segment(
-    db, seg, show, world, match_segments, total_segments,
-    match_ratings, show_momentum, me, sl_svc, aftermath, log_event,
+    db,
+    seg,
+    show,
+    world,
+    match_segments,
+    total_segments,
+    match_ratings,
+    show_momentum,
+    me,
+    sl_svc,
+    aftermath,
+    log_event,
 ):
     """Simulate a single match segment. Returns (updated_momentum, events)."""
     events: List[str] = []
-    match = db.query(MatchDB).filter(
-        MatchDB.id == seg.match_id
-    ).first()
+    match = db.query(MatchDB).filter(MatchDB.id == seg.match_id).first()
     if not match or match.is_completed:
         return show_momentum, events
 
@@ -274,28 +332,33 @@ def _simulate_match_segment(
             show_momentum = max(30, show_momentum - 5)
 
         # Process post-match consequences
-        aftermath.process_match_aftermath(
-            db, match, world.current_game_date
-        )
+        aftermath.process_match_aftermath(db, match, world.current_game_date)
 
         # Character reactions — LLM-driven wrestlers react to match results
         if USE_LLM:
             try:
                 from game_service.character_agent import character_react
-                winner = db.query(GameWrestlerDB).filter(
-                    GameWrestlerDB.id == result.winner_id
-                ).first()
+
+                winner = (
+                    db.query(GameWrestlerDB)
+                    .filter(GameWrestlerDB.id == result.winner_id)
+                    .first()
+                )
                 if winner:
                     event_type = "title_win" if match.is_title_match else "win"
                     reaction = character_react(
-                        db, winner.id, event_type,
+                        db,
+                        winner.id,
+                        event_type,
                         f"Defeated opponent via {result.finish_type}. "
                         f"Match rating: {result.match_rating:.1f} stars.",
                     )
                     if reaction:
                         log_event(
-                            "character_reaction", reaction,
-                            [winner.id], importance=4,
+                            "character_reaction",
+                            reaction,
+                            [winner.id],
+                            importance=4,
                         )
             except Exception:
                 pass  # Character reactions are optional
@@ -303,14 +366,22 @@ def _simulate_match_segment(
         # Process stable effects from match result
         try:
             stable_svc = _get_stable_service()
-            losers = [p.wrestler_id for p in db.query(MatchParticipantDB).filter(
-                MatchParticipantDB.match_id == match.id,
-                MatchParticipantDB.is_winner == False,
-            ).all()]
+            losers = [
+                p.wrestler_id
+                for p in db.query(MatchParticipantDB)
+                .filter(
+                    MatchParticipantDB.match_id == match.id,
+                    MatchParticipantDB.is_winner == False,
+                )
+                .all()
+            ]
             for loser_id in losers:
                 stable_svc.process_match_result_for_stables(
-                    db, result.winner_id, loser_id,
-                    world.id, world.current_game_date,
+                    db,
+                    result.winner_id,
+                    loser_id,
+                    world.id,
+                    world.current_game_date,
                 )
         except (ValueError, AttributeError) as e:
             logger.debug("Stable match processing skipped: %s", e)
@@ -321,19 +392,20 @@ def _simulate_match_segment(
             log_event(
                 angle["type"],
                 angle["description"],
-                angle.get("attacker_ids", []) + [angle.get("victim_id") or angle.get("saved_id", "")],
+                angle.get("attacker_ids", [])
+                + [angle.get("victim_id") or angle.get("saved_id", "")],
                 importance=7,
             )
             show_momentum = min(85, show_momentum + 8)  # Angles are hot
 
         # Check for storyline triggers from match result
-        sl_svc.check_match_storyline_triggers(
-            db, match, world.current_game_date
-        )
+        sl_svc.check_match_storyline_triggers(db, match, world.current_game_date)
     except Exception as e:
         logger.error(
             "Match simulation failed for match %s: %s",
-            match.id, e, exc_info=True,
+            match.id,
+            e,
+            exc_info=True,
         )
         seg.is_completed = True
         seg.rating = round(random.uniform(2.0, 4.0), 1)
@@ -358,9 +430,11 @@ def _evaluate_promo_segment(db: Session, seg: ShowSegmentDB, show: ShowDB) -> fl
             wrestler_id = promo.wrestler_id
 
     if wrestler_id:
-        stats = db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == wrestler_id
-        ).first()
+        stats = (
+            db.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == wrestler_id)
+            .first()
+        )
         # Use a placeholder content string for template promos
         content = seg.description or "Generic promo segment"
         return _evaluate_promo_quality(stats, content, is_player=False)

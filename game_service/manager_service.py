@@ -12,8 +12,10 @@ import logging
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    ManagerDB, ManagerClientDB, GameWrestlerDB, GameNarrativeLogDB,
-    StorylineDB, StorylineParticipantDB,
+    ManagerDB,
+    ManagerClientDB,
+    GameWrestlerDB,
+    GameNarrativeLogDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -131,6 +133,7 @@ MANAGER_PROMO_TEMPLATES = {
 # CRUD — Create / Read / Bond / Unbond
 # ---------------------------------------------------------------------------
 
+
 def create_manager(
     db: Session,
     world_id: str,
@@ -195,19 +198,23 @@ def assign_manager(
     db.add(bond)
 
     if manager and wrestler:
-        db.add(GameNarrativeLogDB(
-            world_id=world_id,
-            game_date=game_date or "",
-            tick=0,
-            event_type="manager_assigned",
-            description=f"{manager.name} has been announced as the new {role} for {wrestler.name}!",
-            importance=6,
-        ))
+        db.add(
+            GameNarrativeLogDB(
+                world_id=world_id,
+                game_date=game_date or "",
+                tick=0,
+                event_type="manager_assigned",
+                description=f"{manager.name} has been announced as the new {role} for {wrestler.name}!",
+                importance=6,
+            )
+        )
 
     db.commit()
-    logger.info("Manager '%s' assigned to wrestler '%s'",
-                manager.name if manager else manager_id,
-                wrestler.name if wrestler else client_wrestler_id)
+    logger.info(
+        "Manager '%s' assigned to wrestler '%s'",
+        manager.name if manager else manager_id,
+        wrestler.name if wrestler else client_wrestler_id,
+    )
     return bond
 
 
@@ -229,14 +236,16 @@ def remove_manager(
     wrestler = db.query(GameWrestlerDB).filter_by(id=bond.client_wrestler_id).first()
     if manager and wrestler:
         verb = "has been fired by" if was_fired else "has parted ways with"
-        db.add(GameNarrativeLogDB(
-            world_id=bond.world_id,
-            game_date=game_date or "",
-            tick=0,
-            event_type="manager_removed",
-            description=f"{manager.name} {verb} {wrestler.name}!",
-            importance=6,
-        ))
+        db.add(
+            GameNarrativeLogDB(
+                world_id=bond.world_id,
+                game_date=game_date or "",
+                tick=0,
+                event_type="manager_removed",
+                description=f"{manager.name} {verb} {wrestler.name}!",
+                importance=6,
+            )
+        )
 
     db.commit()
     return True
@@ -244,24 +253,30 @@ def remove_manager(
 
 def get_manager_clients(db: Session, manager_id: str) -> list:
     """Get all active clients for a manager."""
-    bonds = db.query(ManagerClientDB).filter_by(
-        manager_id=manager_id, is_active=True
-    ).all()
+    bonds = (
+        db.query(ManagerClientDB).filter_by(manager_id=manager_id, is_active=True).all()
+    )
     result = []
     for bond in bonds:
-        wrestler = db.query(GameWrestlerDB).filter_by(id=bond.client_wrestler_id).first()
-        result.append({
-            "bond": bond,
-            "client_name": wrestler.name if wrestler else "Unknown",
-        })
+        wrestler = (
+            db.query(GameWrestlerDB).filter_by(id=bond.client_wrestler_id).first()
+        )
+        result.append(
+            {
+                "bond": bond,
+                "client_name": wrestler.name if wrestler else "Unknown",
+            }
+        )
     return result
 
 
 def get_wrestler_manager(db: Session, wrestler_id: str) -> dict:
     """Get the active manager for a wrestler, if any."""
-    bond = db.query(ManagerClientDB).filter_by(
-        client_wrestler_id=wrestler_id, is_active=True
-    ).first()
+    bond = (
+        db.query(ManagerClientDB)
+        .filter_by(client_wrestler_id=wrestler_id, is_active=True)
+        .first()
+    )
     if not bond:
         return {}
     manager = db.query(ManagerDB).filter_by(id=bond.manager_id).first()
@@ -272,7 +287,9 @@ def get_wrestler_manager(db: Session, wrestler_id: str) -> dict:
     }
 
 
-def list_managers(db: Session, world_id: str, federation_id: str = None, active_only: bool = True) -> list:
+def list_managers(
+    db: Session, world_id: str, federation_id: str = None, active_only: bool = True
+) -> list:
     """List all managers in a world."""
     q = db.query(ManagerDB).filter_by(world_id=world_id)
     if federation_id:
@@ -291,18 +308,23 @@ def list_manager_bonds(db: Session, world_id: str, active_only: bool = True) -> 
     result = []
     for bond in bonds:
         manager = db.query(ManagerDB).filter_by(id=bond.manager_id).first()
-        wrestler = db.query(GameWrestlerDB).filter_by(id=bond.client_wrestler_id).first()
-        result.append({
-            "bond": bond,
-            "manager_name": manager.name if manager else "Unknown",
-            "client_name": wrestler.name if wrestler else "Unknown",
-        })
+        wrestler = (
+            db.query(GameWrestlerDB).filter_by(id=bond.client_wrestler_id).first()
+        )
+        result.append(
+            {
+                "bond": bond,
+                "manager_name": manager.name if manager else "Unknown",
+                "client_name": wrestler.name if wrestler else "Unknown",
+            }
+        )
     return result
 
 
 # ---------------------------------------------------------------------------
 # Manager promos — the heart of what a manager does
 # ---------------------------------------------------------------------------
+
 
 def generate_manager_promo(
     db: Session,
@@ -317,13 +339,19 @@ def generate_manager_promo(
     """
     manager = db.query(ManagerDB).filter_by(id=manager_id).first()
     client = db.query(GameWrestlerDB).filter_by(id=client_wrestler_id).first()
-    target = db.query(GameWrestlerDB).filter_by(id=target_wrestler_id).first() if target_wrestler_id else None
+    target = (
+        db.query(GameWrestlerDB).filter_by(id=target_wrestler_id).first()
+        if target_wrestler_id
+        else None
+    )
 
     if not manager or not client:
         return {"content": "", "quality": 0, "heat": 0}
 
     archetype = manager.archetype
-    templates = MANAGER_PROMO_TEMPLATES.get(archetype, MANAGER_PROMO_TEMPLATES["scheming_manager"])
+    templates = MANAGER_PROMO_TEMPLATES.get(
+        archetype, MANAGER_PROMO_TEMPLATES["scheming_manager"]
+    )
 
     # Build the promo
     opener = random.choice(templates["openers"]).replace("{client}", client.name)
@@ -344,7 +372,9 @@ def generate_manager_promo(
     content = f"{opener} {body}{target_line} {closer}"
 
     # Quality based on manager stats
-    quality = (manager.mic_skill * 0.5 + manager.charisma * 0.3 + manager.cunning * 0.2) / 100.0
+    quality = (
+        manager.mic_skill * 0.5 + manager.charisma * 0.3 + manager.cunning * 0.2
+    ) / 100.0
     quality = min(1.0, quality * random.uniform(0.8, 1.2))
     quality_rating = round(quality * 5, 1)  # 0-5 star rating
 
@@ -367,6 +397,7 @@ def generate_manager_promo(
 # ---------------------------------------------------------------------------
 # Match interference — managers affect match outcomes
 # ---------------------------------------------------------------------------
+
 
 def calculate_interference_chance(db: Session, manager_id: str) -> float:
     """Calculate the probability that a manager will successfully interfere
@@ -431,11 +462,14 @@ def attempt_interference(
 # Bonus calculation
 # ---------------------------------------------------------------------------
 
+
 def calculate_manager_bonus(db: Session, wrestler_id: str) -> dict:
     """Calculate the total manager bonuses for a wrestler."""
-    bond = db.query(ManagerClientDB).filter_by(
-        client_wrestler_id=wrestler_id, is_active=True
-    ).first()
+    bond = (
+        db.query(ManagerClientDB)
+        .filter_by(client_wrestler_id=wrestler_id, is_active=True)
+        .first()
+    )
     if not bond:
         return {"charisma_bonus": 0, "heat_bonus": 0, "has_manager": False}
 
@@ -454,7 +488,7 @@ def _calculate_bonuses(manager: ManagerDB, specialization: str) -> tuple:
         return (5, 5)
 
     base_charisma = int(manager.charisma / 10)  # 0-10 base
-    base_heat = int(manager.mic_skill / 10)     # 0-10 base
+    base_heat = int(manager.mic_skill / 10)  # 0-10 base
 
     # Specialization adjustments
     if specialization == "promo_boost":

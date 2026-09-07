@@ -7,7 +7,7 @@ focused on control flow while making prompt iteration easy.
 """
 
 import logging
-from typing import Optional, Dict, Any, List
+from typing import List
 
 from sqlalchemy.orm import Session
 
@@ -134,6 +134,7 @@ POST_TYPE_NOTES = {
 # Character system prompt builder (the big one)
 # ---------------------------------------------------------------------------
 
+
 def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
     """Build a rich system prompt that makes the LLM embody this wrestler.
 
@@ -141,34 +142,50 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
     recent events, active storylines, relationships, and career state.
     """
     from models.game_models import (
-        GameWrestlerDB, WrestlerStatsDB, GimmickHistoryDB,
-        WrestlerBackstoryDB, StorylineDB, StorylineParticipantDB,
-        WrestlerRelationshipDB, ContractDB, GameFederationDB,
+        GameWrestlerDB,
+        WrestlerStatsDB,
+        GimmickHistoryDB,
+        WrestlerBackstoryDB,
+        StorylineDB,
+        StorylineParticipantDB,
+        WrestlerRelationshipDB,
+        ContractDB,
+        GameFederationDB,
         ChampionshipDB,
     )
 
-    wrestler = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.id == wrestler_id
-    ).first()
+    wrestler = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == wrestler_id).first()
     if not wrestler:
         return "You are a professional wrestler."
 
-    stats = db.query(WrestlerStatsDB).filter(
-        WrestlerStatsDB.wrestler_id == wrestler_id
-    ).first()
+    stats = (
+        db.query(WrestlerStatsDB)
+        .filter(WrestlerStatsDB.wrestler_id == wrestler_id)
+        .first()
+    )
 
-    gimmick = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler_id,
-        GimmickHistoryDB.is_active == True,
-    ).first()
+    gimmick = (
+        db.query(GimmickHistoryDB)
+        .filter(
+            GimmickHistoryDB.wrestler_id == wrestler_id,
+            GimmickHistoryDB.is_active == True,
+        )
+        .first()
+    )
 
-    backstory = db.query(WrestlerBackstoryDB).filter(
-        WrestlerBackstoryDB.wrestler_id == wrestler_id,
-    ).first()
+    backstory = (
+        db.query(WrestlerBackstoryDB)
+        .filter(
+            WrestlerBackstoryDB.wrestler_id == wrestler_id,
+        )
+        .first()
+    )
 
     # Core identity
     archetype = gimmick.archetype if gimmick else "anti_hero"
-    personality = ARCHETYPE_PERSONALITIES.get(archetype, ARCHETYPE_PERSONALITIES["anti_hero"])
+    personality = ARCHETYPE_PERSONALITIES.get(
+        archetype, ARCHETYPE_PERSONALITIES["anti_hero"]
+    )
     alignment = ALIGNMENT_MODIFIERS.get(wrestler.alignment or "face", "")
 
     parts = [
@@ -185,7 +202,9 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
         if vs.get("cadence"):
             parts.append(f"Your speaking cadence is {vs['cadence']}.")
         if vs.get("catchphrases"):
-            parts.append(f"Your catchphrases include: {', '.join(vs['catchphrases'][:3])}")
+            parts.append(
+                f"Your catchphrases include: {', '.join(vs['catchphrases'][:3])}"
+            )
         if vs.get("speech_patterns"):
             parts.append(f"Speech patterns: {', '.join(vs['speech_patterns'])}")
 
@@ -200,26 +219,38 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
         parts.append(f'Your catchphrase: "{wrestler.catchphrase}"')
 
     # Career state
-    parts.append(f"Popularity: {wrestler.popularity}/100. Morale: {wrestler.morale}/100.")
+    parts.append(
+        f"Popularity: {wrestler.popularity}/100. Morale: {wrestler.morale}/100."
+    )
     if wrestler.career_phase:
         parts.append(f"Career phase: {wrestler.career_phase}.")
 
     # Current federation
-    contract = db.query(ContractDB).filter(
-        ContractDB.wrestler_id == wrestler_id,
-        ContractDB.status == "active",
-    ).first()
+    contract = (
+        db.query(ContractDB)
+        .filter(
+            ContractDB.wrestler_id == wrestler_id,
+            ContractDB.status == "active",
+        )
+        .first()
+    )
     if contract:
-        fed = db.query(GameFederationDB).filter(
-            GameFederationDB.id == contract.federation_id
-        ).first()
+        fed = (
+            db.query(GameFederationDB)
+            .filter(GameFederationDB.id == contract.federation_id)
+            .first()
+        )
         if fed:
             parts.append(f"You work for {fed.name}.")
 
     # Championships
-    titles = db.query(ChampionshipDB).filter(
-        ChampionshipDB.current_holder_id == wrestler_id,
-    ).all()
+    titles = (
+        db.query(ChampionshipDB)
+        .filter(
+            ChampionshipDB.current_holder_id == wrestler_id,
+        )
+        .all()
+    )
     if titles:
         title_names = [t.name for t in titles]
         parts.append(f"You currently hold: {', '.join(title_names)}.")
@@ -227,28 +258,48 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
         parts.append("You do not currently hold any championships.")
 
     # Active storylines
-    storyline_parts = db.query(StorylineParticipantDB).filter(
-        StorylineParticipantDB.wrestler_id == wrestler_id,
-    ).all()
+    storyline_parts = (
+        db.query(StorylineParticipantDB)
+        .filter(
+            StorylineParticipantDB.wrestler_id == wrestler_id,
+        )
+        .all()
+    )
     for sp in storyline_parts[:3]:
-        sl = db.query(StorylineDB).filter(
-            StorylineDB.id == sp.storyline_id,
-            StorylineDB.status.in_(["brewing", "active", "climax"]),
-        ).first()
+        sl = (
+            db.query(StorylineDB)
+            .filter(
+                StorylineDB.id == sp.storyline_id,
+                StorylineDB.status.in_(["brewing", "active", "climax"]),
+            )
+            .first()
+        )
         if sl:
-            rival_parts = db.query(StorylineParticipantDB).filter(
-                StorylineParticipantDB.storyline_id == sl.id,
-                StorylineParticipantDB.wrestler_id != wrestler_id,
-            ).all()
+            rival_parts = (
+                db.query(StorylineParticipantDB)
+                .filter(
+                    StorylineParticipantDB.storyline_id == sl.id,
+                    StorylineParticipantDB.wrestler_id != wrestler_id,
+                )
+                .all()
+            )
             rival_names = []
             for rp in rival_parts[:2]:
-                rival = db.query(GameWrestlerDB).filter(
-                    GameWrestlerDB.id == rp.wrestler_id
-                ).first()
+                rival = (
+                    db.query(GameWrestlerDB)
+                    .filter(GameWrestlerDB.id == rp.wrestler_id)
+                    .first()
+                )
                 if rival:
                     rival_names.append(rival.name)
             if rival_names:
-                heat_desc = "heated" if sl.heat > 70 else "building" if sl.heat > 40 else "simmering"
+                heat_desc = (
+                    "heated"
+                    if sl.heat > 70
+                    else "building"
+                    if sl.heat > 40
+                    else "simmering"
+                )
                 parts.append(
                     f"You are in a {heat_desc} {sl.storyline_type} "
                     f"('{sl.name}') with {', '.join(rival_names)}. "
@@ -256,41 +307,64 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
                 )
 
     # Key relationships
-    rels = db.query(WrestlerRelationshipDB).filter(
-        (WrestlerRelationshipDB.wrestler1_id == wrestler_id) |
-        (WrestlerRelationshipDB.wrestler2_id == wrestler_id),
-    ).all()
+    rels = (
+        db.query(WrestlerRelationshipDB)
+        .filter(
+            (WrestlerRelationshipDB.wrestler1_id == wrestler_id)
+            | (WrestlerRelationshipDB.wrestler2_id == wrestler_id),
+        )
+        .all()
+    )
     for rel in rels[:4]:
-        other_id = rel.wrestler2_id if rel.wrestler1_id == wrestler_id else rel.wrestler1_id
+        other_id = (
+            rel.wrestler2_id if rel.wrestler1_id == wrestler_id else rel.wrestler1_id
+        )
         other = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == other_id).first()
         if other and (rel.rivalry_heat or 0) > 30:
-            parts.append(f"You have a rivalry with {other.name} (heat: {rel.rivalry_heat}/100).")
+            parts.append(
+                f"You have a rivalry with {other.name} (heat: {rel.rivalry_heat}/100)."
+            )
         elif other and rel.real_relationship == "friends":
             parts.append(f"{other.name} is a real-life friend.")
 
     # Backstory flavor
     if backstory:
         if backstory.wrestling_motivation:
-            parts.append(f"You got into wrestling because of: {backstory.wrestling_motivation}.")
+            parts.append(
+                f"You got into wrestling because of: {backstory.wrestling_motivation}."
+            )
         if backstory.pre_wrestling_career:
-            parts.append(f"Before wrestling, you were a {backstory.pre_wrestling_career}.")
+            parts.append(
+                f"Before wrestling, you were a {backstory.pre_wrestling_career}."
+            )
 
     # Stats shape behavior
     if stats:
         if stats.charisma > 80:
-            parts.append("You are incredibly charismatic — the crowd hangs on your every word.")
+            parts.append(
+                "You are incredibly charismatic — the crowd hangs on your every word."
+            )
         elif stats.charisma < 30:
-            parts.append("You struggle on the mic — keep it short and let actions speak.")
+            parts.append(
+                "You struggle on the mic — keep it short and let actions speak."
+            )
         if stats.mic_skill > 80:
             parts.append("You are one of the best talkers in the business.")
 
     # --- MEMORY: Past events that shape who you are ---
     try:
         from models.game_models import WrestlerHistoryDB, CareerHighlightDB
+
         # Recent significant events (last 15)
-        history = db.query(WrestlerHistoryDB).filter(
-            WrestlerHistoryDB.wrestler_id == wrestler_id,
-        ).order_by(WrestlerHistoryDB.game_date.desc()).limit(15).all()
+        history = (
+            db.query(WrestlerHistoryDB)
+            .filter(
+                WrestlerHistoryDB.wrestler_id == wrestler_id,
+            )
+            .order_by(WrestlerHistoryDB.game_date.desc())
+            .limit(15)
+            .all()
+        )
 
         memory_lines = []
         for evt in reversed(history):  # Chronological order
@@ -307,17 +381,25 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
             elif evt.event_type == "botch_victim":
                 details = evt.details or {}
                 culprit = details.get("caused_by_name", "someone")
-                memory_lines.append(f"You were hurt by a botched move from {culprit}. You remember this.")
+                memory_lines.append(
+                    f"You were hurt by a botched move from {culprit}. You remember this."
+                )
             elif evt.event_type == "botch_perpetrator":
                 details = evt.details or {}
                 victim = details.get("victim_name", "someone")
-                memory_lines.append(f"You botched a move and hurt {victim}. This weighs on you.")
+                memory_lines.append(
+                    f"You botched a move and hurt {victim}. This weighs on you."
+                )
             elif evt.event_type == "went_into_business":
-                memory_lines.append(f"You went into business for yourself: {evt.description}")
+                memory_lines.append(
+                    f"You went into business for yourself: {evt.description}"
+                )
             elif evt.event_type == "business_victim":
                 details = evt.details or {}
                 shooter = details.get("shooter_name", "someone")
-                memory_lines.append(f"{shooter} went into business for themselves against you. You don't forget.")
+                memory_lines.append(
+                    f"{shooter} went into business for themselves against you. You don't forget."
+                )
             elif evt.event_type == "goal_completed":
                 memory_lines.append(f"Achievement unlocked: {evt.description}")
             elif evt.event_type in ("match_win", "match_loss"):
@@ -332,24 +414,37 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
                 parts.append(f"- {ml}")
 
         # Career highlights — the defining moments
-        highlights = db.query(CareerHighlightDB).filter(
-            CareerHighlightDB.wrestler_id == wrestler_id,
-            CareerHighlightDB.significance >= 7,
-        ).order_by(CareerHighlightDB.significance.desc()).limit(3).all()
+        highlights = (
+            db.query(CareerHighlightDB)
+            .filter(
+                CareerHighlightDB.wrestler_id == wrestler_id,
+                CareerHighlightDB.significance >= 7,
+            )
+            .order_by(CareerHighlightDB.significance.desc())
+            .limit(3)
+            .all()
+        )
         if highlights:
             parts.append("YOUR DEFINING MOMENTS:")
             for h in highlights:
-                parts.append(f"- {h.highlight_type}: {h.description or 'A moment that defined your career.'}")
+                parts.append(
+                    f"- {h.highlight_type}: {h.description or 'A moment that defined your career.'}"
+                )
     except Exception:
         pass  # Memory is optional enrichment
 
     # --- GOALS: What drives you ---
     try:
         from models.game_models import WrestlerGoalDB
-        goals = db.query(WrestlerGoalDB).filter(
-            WrestlerGoalDB.wrestler_id == wrestler_id,
-            WrestlerGoalDB.status == "active",
-        ).all()
+
+        goals = (
+            db.query(WrestlerGoalDB)
+            .filter(
+                WrestlerGoalDB.wrestler_id == wrestler_id,
+                WrestlerGoalDB.status == "active",
+            )
+            .all()
+        )
         if goals:
             parts.append("YOUR CURRENT GOALS (these drive your decisions):")
             for g in goals[:4]:
@@ -358,24 +453,36 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
                     frustration_note = " — you are FRUSTRATED this hasn't happened yet"
                 elif g.frustration > 30:
                     frustration_note = " — you're getting impatient"
-                parts.append(f"- {g.goal_type.replace('_', ' ')} (progress: {g.progress}%){frustration_note}")
+                parts.append(
+                    f"- {g.goal_type.replace('_', ' ')} (progress: {g.progress}%){frustration_note}"
+                )
     except Exception:
         pass  # Goals are optional enrichment
 
     # --- GRUDGES & TRUST: Who you trust and who you don't ---
     try:
         for rel in rels[:6]:
-            other_id = rel.wrestler2_id if rel.wrestler1_id == wrestler_id else rel.wrestler1_id
-            other = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == other_id).first()
+            other_id = (
+                rel.wrestler2_id
+                if rel.wrestler1_id == wrestler_id
+                else rel.wrestler1_id
+            )
+            other = (
+                db.query(GameWrestlerDB).filter(GameWrestlerDB.id == other_id).first()
+            )
             if not other:
                 continue
             trust = rel.trust_level or 50
             if trust < 20:
-                parts.append(f"You deeply DISTRUST {other.name}. Something happened between you two.")
+                parts.append(
+                    f"You deeply DISTRUST {other.name}. Something happened between you two."
+                )
             elif trust < 35:
                 parts.append(f"You are wary of {other.name}. Trust has been broken.")
             elif trust > 80 and rel.real_relationship == "friends":
-                parts.append(f"You trust {other.name} completely — a true friend in this business.")
+                parts.append(
+                    f"You trust {other.name} completely — a true friend in this business."
+                )
     except Exception:
         pass  # Trust context is optional
 
@@ -391,8 +498,10 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
 # User prompt builders for each agent function
 # ---------------------------------------------------------------------------
 
-def build_decide_prompt(wrestler_name: str, situation: str,
-                        options: List[str] = None) -> str:
+
+def build_decide_prompt(
+    wrestler_name: str, situation: str, options: List[str] = None
+) -> str:
     """Build the user prompt for character_decide()."""
     options_str = ""
     if options:
@@ -406,8 +515,7 @@ def build_decide_prompt(wrestler_name: str, situation: str,
     )
 
 
-def build_speak_prompt(wrestler_name: str, context: str,
-                       tone: str = "default") -> str:
+def build_speak_prompt(wrestler_name: str, context: str, tone: str = "default") -> str:
     """Build the user prompt for character_speak()."""
     tone_instruction = TONE_INSTRUCTIONS.get(tone, "")
 
@@ -419,8 +527,9 @@ def build_speak_prompt(wrestler_name: str, context: str,
     )
 
 
-def build_react_prompt(wrestler_name: str, event_type: str,
-                       event_details: str = "") -> str:
+def build_react_prompt(
+    wrestler_name: str, event_type: str, event_details: str = ""
+) -> str:
     """Build the user prompt for character_react()."""
     return (
         f"You just experienced: {event_type}. {event_details}\n\n"
@@ -429,8 +538,9 @@ def build_react_prompt(wrestler_name: str, event_type: str,
     )
 
 
-def build_social_media_prompt(wrestler_name: str, platform: str,
-                              post_type: str, recent_event: str = "") -> str:
+def build_social_media_prompt(
+    wrestler_name: str, platform: str, post_type: str, recent_event: str = ""
+) -> str:
     """Build the user prompt for character_social_media_post()."""
     platform_note = PLATFORM_NOTES.get(platform, "Keep it short.")
     type_note = POST_TYPE_NOTES.get(post_type, "Stay in character.")
@@ -443,9 +553,13 @@ def build_social_media_prompt(wrestler_name: str, platform: str,
     )
 
 
-def build_booker_storyline_prompt(fed_name: str, fed_style: str,
-                                  wrestler1_name: str, wrestler2_name: str,
-                                  context: str = "") -> str:
+def build_booker_storyline_prompt(
+    fed_name: str,
+    fed_style: str,
+    wrestler1_name: str,
+    wrestler2_name: str,
+    context: str = "",
+) -> str:
     """Build the user prompt for booker_decide_storyline()."""
     return (
         f"You are booking {fed_name} (style: {fed_style}). "
@@ -459,11 +573,16 @@ def build_booker_storyline_prompt(fed_name: str, fed_style: str,
     )
 
 
-def build_booker_finish_prompt(wrestler1_name: str, wrestler2_name: str,
-                               storyline_context: str = "",
-                               is_ppv: bool = False) -> str:
+def build_booker_finish_prompt(
+    wrestler1_name: str,
+    wrestler2_name: str,
+    storyline_context: str = "",
+    is_ppv: bool = False,
+) -> str:
     """Build the user prompt for booker_decide_finish()."""
-    ppv_note = " This is a PPV match — the finish needs to feel special." if is_ppv else ""
+    ppv_note = (
+        " This is a PPV match — the finish needs to feel special." if is_ppv else ""
+    )
 
     return (
         f"Book the finish for: {wrestler1_name} vs {wrestler2_name}. "
@@ -475,11 +594,16 @@ def build_booker_finish_prompt(wrestler1_name: str, wrestler2_name: str,
     )
 
 
-def build_match_narrative_prompt(winner_name: str, loser_name: str,
-                                 finish_type: str, finish_description: str,
-                                 rating: float, key_spots: List[str],
-                                 stipulation: str = "",
-                                 is_title_match: bool = False) -> str:
+def build_match_narrative_prompt(
+    winner_name: str,
+    loser_name: str,
+    finish_type: str,
+    finish_description: str,
+    rating: float,
+    key_spots: List[str],
+    stipulation: str = "",
+    is_title_match: bool = False,
+) -> str:
     """Build the user prompt for generate_match_narrative()."""
     stip_note = f" Stipulation: {stipulation}." if stipulation else ""
     title_note = " This was a championship match." if is_title_match else ""

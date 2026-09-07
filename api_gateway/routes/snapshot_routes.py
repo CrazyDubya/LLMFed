@@ -4,7 +4,6 @@ Allows creating, listing, comparing, and restoring world-state snapshots
 for "what-if" branching, undo, and replay features.
 """
 
-import base64
 import logging
 from typing import List, Optional
 
@@ -29,6 +28,7 @@ _snapshots: dict = {}
 # ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
+
 
 class SnapshotCreate(BaseModel):
     world_id: str
@@ -64,6 +64,7 @@ class SnapshotDiff(BaseModel):
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.post("", response_model=SnapshotMeta, status_code=201)
 async def api_create_snapshot(body: SnapshotCreate, db: AsyncSession = Depends(get_db)):
@@ -103,23 +104,27 @@ async def api_list_snapshots(world_id: Optional[str] = Query(None)):
         meta = snap["metadata"]
         if world_id and meta["world_id"] != world_id:
             continue
-        results.append(SnapshotMeta(
-            snapshot_id=sid,
-            world_id=meta["world_id"],
-            world_name=meta.get("world_name", ""),
-            game_date=str(meta.get("game_date", "")),
-            tick=meta.get("tick", 0),
-            description=meta.get("description", ""),
-            snapshot_type=meta.get("snapshot_type", "manual"),
-            created_at=meta.get("created_at", ""),
-            size_bytes=snap.get("size_bytes", 0),
-            table_counts=meta.get("table_counts", {}),
-        ))
+        results.append(
+            SnapshotMeta(
+                snapshot_id=sid,
+                world_id=meta["world_id"],
+                world_name=meta.get("world_name", ""),
+                game_date=str(meta.get("game_date", "")),
+                tick=meta.get("tick", 0),
+                description=meta.get("description", ""),
+                snapshot_type=meta.get("snapshot_type", "manual"),
+                created_at=meta.get("created_at", ""),
+                size_bytes=snap.get("size_bytes", 0),
+                table_counts=meta.get("table_counts", {}),
+            )
+        )
     return results
 
 
 @router.post("/restore")
-async def api_restore_snapshot(body: SnapshotRestore, db: AsyncSession = Depends(get_db)):
+async def api_restore_snapshot(
+    body: SnapshotRestore, db: AsyncSession = Depends(get_db)
+):
     """Restore a world from a previously saved snapshot."""
     snap = _snapshots.get(body.snapshot_id)
     if snap is None:
@@ -151,10 +156,12 @@ async def api_compare_snapshots(
     for table in all_tables:
         ca = counts_a.get(table, 0)
         cb = counts_b.get(table, 0)
-        diffs.append(SnapshotDiff(
-            table=table,
-            snapshot_a_count=ca,
-            snapshot_b_count=cb,
-            difference=cb - ca,
-        ))
+        diffs.append(
+            SnapshotDiff(
+                table=table,
+                snapshot_a_count=ca,
+                snapshot_b_count=cb,
+                difference=cb - ca,
+            )
+        )
     return diffs

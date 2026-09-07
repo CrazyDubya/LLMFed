@@ -1,7 +1,5 @@
-import pytest
 
 from core_engine.engine import engine_instance, AppliedAction
-from core_engine.dispatcher import StubAction
 
 
 def test_set_hints_stores_hints():
@@ -22,8 +20,10 @@ def test_run_ticks_returns_results_and_uses_hints(monkeypatch):
         ]
 
     fake_response = {"action_id": "x", "description": "fake", "meta": {}}
-    monkeypatch.setattr(engine_instance.llm_client, 'send_prompt', lambda prompt: fake_response)
-    monkeypatch.setattr(engine_mod, 'get_agents', fake_get_agents)
+    monkeypatch.setattr(
+        engine_instance.llm_client, "send_prompt", lambda prompt: fake_response
+    )
+    monkeypatch.setattr(engine_mod, "get_agents", fake_get_agents)
 
     hints = {"tip": "increase drama"}
     engine_instance.set_hints(hints)
@@ -33,9 +33,9 @@ def test_run_ticks_returns_results_and_uses_hints(monkeypatch):
     # Default agent is a participant, so expect at least 1 result
     assert len(results) >= 1
     for result in results:
-        assert hasattr(result, 'tick_id')
-        assert hasattr(result, 'time_index')
-        assert hasattr(result, 'applied_actions')
+        assert hasattr(result, "tick_id")
+        assert hasattr(result, "time_index")
+        assert hasattr(result, "applied_actions")
         # Check that applied action is correct type and fields
         action = result.applied_actions[0]
         assert isinstance(action, AppliedAction)

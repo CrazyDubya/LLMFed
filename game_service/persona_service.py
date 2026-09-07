@@ -10,10 +10,11 @@ import logging
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    GameWrestlerDB, WrestlerStatsDB, WrestlerBackstoryDB,
-    GimmickHistoryDB, LifeEventDB, WrestlerRelationshipDB,
-    ContractDB, GameFederationDB, StorylineParticipantDB, StorylineDB,
-    GameNarrativeLogDB,
+    GameWrestlerDB,
+    WrestlerBackstoryDB,
+    GimmickHistoryDB,
+    LifeEventDB,
+    WrestlerRelationshipDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,25 +24,56 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 ARCHETYPES = [
-    "monster_heel", "underdog_face", "cocky_technician", "silent_assassin",
-    "cult_leader", "comedy_act", "anti_hero", "legacy", "patriot", "daredevil",
+    "monster_heel",
+    "underdog_face",
+    "cocky_technician",
+    "silent_assassin",
+    "cult_leader",
+    "comedy_act",
+    "anti_hero",
+    "legacy",
+    "patriot",
+    "daredevil",
 ]
 
 FAMILY_SITUATIONS = [
-    "single", "married", "married_with_kids", "divorced", "divorced_with_kids",
-    "long_term_relationship", "estranged_family", "close_family",
+    "single",
+    "married",
+    "married_with_kids",
+    "divorced",
+    "divorced_with_kids",
+    "long_term_relationship",
+    "estranged_family",
+    "close_family",
 ]
 
 PRE_WRESTLING_CAREERS = [
-    "bouncer", "amateur_wrestler", "football_player", "military",
-    "teacher", "construction_worker", "personal_trainer", "martial_artist",
-    "actor", "nothing_went_straight_to_wrestling", "college_athlete",
-    "firefighter", "security_guard", "stunt_performer",
+    "bouncer",
+    "amateur_wrestler",
+    "football_player",
+    "military",
+    "teacher",
+    "construction_worker",
+    "personal_trainer",
+    "martial_artist",
+    "actor",
+    "nothing_went_straight_to_wrestling",
+    "college_athlete",
+    "firefighter",
+    "security_guard",
+    "stunt_performer",
 ]
 
 MOTIVATIONS = [
-    "passion", "money", "legacy", "escape", "family_tradition",
-    "prove_doubters_wrong", "artistic_expression", "fame", "competition",
+    "passion",
+    "money",
+    "legacy",
+    "escape",
+    "family_tradition",
+    "prove_doubters_wrong",
+    "artistic_expression",
+    "fame",
+    "competition",
 ]
 
 TEMPERAMENTS = ["calm", "volatile", "anxious", "steady", "brooding", "cheerful"]
@@ -90,40 +122,196 @@ ARCHETYPE_DESCRIPTIONS = {
 }
 
 ARCHETYPE_VOICE_STYLES = {
-    "monster_heel": {"vocabulary": "simple", "cadence": "slow_burn", "speech_patterns": ["growling", "short_sentences"], "promo_tempo": "menacing"},
-    "underdog_face": {"vocabulary": "simple", "cadence": "emotional", "speech_patterns": ["passionate", "rising_intensity"], "promo_tempo": "building"},
-    "cocky_technician": {"vocabulary": "elaborate", "cadence": "precise", "speech_patterns": ["condescending", "technical_references"], "promo_tempo": "controlled"},
-    "silent_assassin": {"vocabulary": "minimal", "cadence": "staccato", "speech_patterns": ["whisper", "one_liners"], "promo_tempo": "sparse"},
-    "cult_leader": {"vocabulary": "academic", "cadence": "hypnotic", "speech_patterns": ["preaching", "third_person"], "promo_tempo": "methodical"},
-    "comedy_act": {"vocabulary": "street", "cadence": "rapid_fire", "speech_patterns": ["self_deprecating", "pop_culture"], "promo_tempo": "erratic"},
-    "anti_hero": {"vocabulary": "street", "cadence": "conversational", "speech_patterns": ["profane", "honest"], "promo_tempo": "aggressive"},
-    "legacy": {"vocabulary": "elaborate", "cadence": "measured", "speech_patterns": ["respectful", "tradition_invoking"], "promo_tempo": "dignified"},
-    "patriot": {"vocabulary": "simple", "cadence": "rallying", "speech_patterns": ["inclusive", "motivational"], "promo_tempo": "aggressive"},
-    "daredevil": {"vocabulary": "street", "cadence": "rapid_fire", "speech_patterns": ["excited", "cavalier"], "promo_tempo": "erratic"},
+    "monster_heel": {
+        "vocabulary": "simple",
+        "cadence": "slow_burn",
+        "speech_patterns": ["growling", "short_sentences"],
+        "promo_tempo": "menacing",
+    },
+    "underdog_face": {
+        "vocabulary": "simple",
+        "cadence": "emotional",
+        "speech_patterns": ["passionate", "rising_intensity"],
+        "promo_tempo": "building",
+    },
+    "cocky_technician": {
+        "vocabulary": "elaborate",
+        "cadence": "precise",
+        "speech_patterns": ["condescending", "technical_references"],
+        "promo_tempo": "controlled",
+    },
+    "silent_assassin": {
+        "vocabulary": "minimal",
+        "cadence": "staccato",
+        "speech_patterns": ["whisper", "one_liners"],
+        "promo_tempo": "sparse",
+    },
+    "cult_leader": {
+        "vocabulary": "academic",
+        "cadence": "hypnotic",
+        "speech_patterns": ["preaching", "third_person"],
+        "promo_tempo": "methodical",
+    },
+    "comedy_act": {
+        "vocabulary": "street",
+        "cadence": "rapid_fire",
+        "speech_patterns": ["self_deprecating", "pop_culture"],
+        "promo_tempo": "erratic",
+    },
+    "anti_hero": {
+        "vocabulary": "street",
+        "cadence": "conversational",
+        "speech_patterns": ["profane", "honest"],
+        "promo_tempo": "aggressive",
+    },
+    "legacy": {
+        "vocabulary": "elaborate",
+        "cadence": "measured",
+        "speech_patterns": ["respectful", "tradition_invoking"],
+        "promo_tempo": "dignified",
+    },
+    "patriot": {
+        "vocabulary": "simple",
+        "cadence": "rallying",
+        "speech_patterns": ["inclusive", "motivational"],
+        "promo_tempo": "aggressive",
+    },
+    "daredevil": {
+        "vocabulary": "street",
+        "cadence": "rapid_fire",
+        "speech_patterns": ["excited", "cavalier"],
+        "promo_tempo": "erratic",
+    },
 }
 
 LIFE_EVENT_POOL = {
-    "marriage": {"description": "{name} got married in a private ceremony.", "severity": 4, "morale": 15, "performance": 0, "public_chance": 0.6, "storyline_pot": False},
-    "divorce": {"description": "{name} is going through a divorce.", "severity": 7, "morale": -20, "performance": -5, "public_chance": 0.4, "storyline_pot": True},
-    "child_born": {"description": "{name} welcomed a new baby.", "severity": 5, "morale": 20, "performance": 0, "public_chance": 0.7, "storyline_pot": False},
-    "death_in_family": {"description": "{name} lost a close family member.", "severity": 9, "morale": -25, "performance": -10, "public_chance": 0.5, "storyline_pot": True},
-    "legal_trouble": {"description": "{name} is dealing with legal issues.", "severity": 6, "morale": -15, "performance": -3, "public_chance": 0.7, "storyline_pot": True},
-    "personal_achievement": {"description": "{name} achieved a personal milestone outside of wrestling.", "severity": 3, "morale": 10, "performance": 2, "public_chance": 0.8, "storyline_pot": False},
-    "substance_issue": {"description": "{name} has been struggling with substance abuse issues.", "severity": 8, "morale": -20, "performance": -15, "public_chance": 0.3, "storyline_pot": True},
-    "public_controversy": {"description": "{name} is at the center of a public controversy.", "severity": 6, "morale": -10, "performance": -2, "public_chance": 1.0, "storyline_pot": True},
-    "charity_work": {"description": "{name} made headlines for charitable work in their community.", "severity": 2, "morale": 10, "performance": 0, "public_chance": 0.9, "storyline_pot": False},
-    "outside_media": {"description": "{name} appeared on a mainstream media program.", "severity": 3, "morale": 5, "performance": 0, "public_chance": 1.0, "storyline_pot": False},
-    "financial_trouble": {"description": "{name} is reportedly dealing with financial difficulties.", "severity": 6, "morale": -15, "performance": -3, "public_chance": 0.3, "storyline_pot": True},
-    "mental_health": {"description": "{name} has been open about mental health challenges.", "severity": 7, "morale": -10, "performance": -5, "public_chance": 0.4, "storyline_pot": True},
-    "relationship_start": {"description": "{name} has entered a new relationship.", "severity": 3, "morale": 10, "performance": 0, "public_chance": 0.5, "storyline_pot": False},
-    "relationship_end": {"description": "{name} recently went through a breakup.", "severity": 5, "morale": -10, "performance": -2, "public_chance": 0.3, "storyline_pot": False},
-    "family_reconciliation": {"description": "{name} has reconnected with estranged family members.", "severity": 4, "morale": 15, "performance": 2, "public_chance": 0.4, "storyline_pot": False},
+    "marriage": {
+        "description": "{name} got married in a private ceremony.",
+        "severity": 4,
+        "morale": 15,
+        "performance": 0,
+        "public_chance": 0.6,
+        "storyline_pot": False,
+    },
+    "divorce": {
+        "description": "{name} is going through a divorce.",
+        "severity": 7,
+        "morale": -20,
+        "performance": -5,
+        "public_chance": 0.4,
+        "storyline_pot": True,
+    },
+    "child_born": {
+        "description": "{name} welcomed a new baby.",
+        "severity": 5,
+        "morale": 20,
+        "performance": 0,
+        "public_chance": 0.7,
+        "storyline_pot": False,
+    },
+    "death_in_family": {
+        "description": "{name} lost a close family member.",
+        "severity": 9,
+        "morale": -25,
+        "performance": -10,
+        "public_chance": 0.5,
+        "storyline_pot": True,
+    },
+    "legal_trouble": {
+        "description": "{name} is dealing with legal issues.",
+        "severity": 6,
+        "morale": -15,
+        "performance": -3,
+        "public_chance": 0.7,
+        "storyline_pot": True,
+    },
+    "personal_achievement": {
+        "description": "{name} achieved a personal milestone outside of wrestling.",
+        "severity": 3,
+        "morale": 10,
+        "performance": 2,
+        "public_chance": 0.8,
+        "storyline_pot": False,
+    },
+    "substance_issue": {
+        "description": "{name} has been struggling with substance abuse issues.",
+        "severity": 8,
+        "morale": -20,
+        "performance": -15,
+        "public_chance": 0.3,
+        "storyline_pot": True,
+    },
+    "public_controversy": {
+        "description": "{name} is at the center of a public controversy.",
+        "severity": 6,
+        "morale": -10,
+        "performance": -2,
+        "public_chance": 1.0,
+        "storyline_pot": True,
+    },
+    "charity_work": {
+        "description": "{name} made headlines for charitable work in their community.",
+        "severity": 2,
+        "morale": 10,
+        "performance": 0,
+        "public_chance": 0.9,
+        "storyline_pot": False,
+    },
+    "outside_media": {
+        "description": "{name} appeared on a mainstream media program.",
+        "severity": 3,
+        "morale": 5,
+        "performance": 0,
+        "public_chance": 1.0,
+        "storyline_pot": False,
+    },
+    "financial_trouble": {
+        "description": "{name} is reportedly dealing with financial difficulties.",
+        "severity": 6,
+        "morale": -15,
+        "performance": -3,
+        "public_chance": 0.3,
+        "storyline_pot": True,
+    },
+    "mental_health": {
+        "description": "{name} has been open about mental health challenges.",
+        "severity": 7,
+        "morale": -10,
+        "performance": -5,
+        "public_chance": 0.4,
+        "storyline_pot": True,
+    },
+    "relationship_start": {
+        "description": "{name} has entered a new relationship.",
+        "severity": 3,
+        "morale": 10,
+        "performance": 0,
+        "public_chance": 0.5,
+        "storyline_pot": False,
+    },
+    "relationship_end": {
+        "description": "{name} recently went through a breakup.",
+        "severity": 5,
+        "morale": -10,
+        "performance": -2,
+        "public_chance": 0.3,
+        "storyline_pot": False,
+    },
+    "family_reconciliation": {
+        "description": "{name} has reconnected with estranged family members.",
+        "severity": 4,
+        "morale": 15,
+        "performance": 2,
+        "public_chance": 0.4,
+        "storyline_pot": False,
+    },
 }
 
 
 # ---------------------------------------------------------------------------
 # Backstory generation
 # ---------------------------------------------------------------------------
+
 
 def generate_backstory(db: Session, wrestler: GameWrestlerDB) -> WrestlerBackstoryDB:
     """Create a WrestlerBackstoryDB with randomized but coherent origin."""
@@ -176,6 +364,7 @@ def generate_backstory(db: Session, wrestler: GameWrestlerDB) -> WrestlerBacksto
 # Gimmick generation
 # ---------------------------------------------------------------------------
 
+
 def _pick_archetype(wrestler):
     """Pick an archetype based on existing wrestler attributes."""
     alignment = wrestler.alignment or "face"
@@ -184,15 +373,28 @@ def _pick_archetype(wrestler):
     # Weighted selection based on alignment
     if alignment == "heel":
         weights = {
-            "monster_heel": 25, "cocky_technician": 25, "silent_assassin": 15,
-            "cult_leader": 15, "anti_hero": 10, "comedy_act": 5,
-            "legacy": 3, "patriot": 1, "daredevil": 5, "underdog_face": 1,
+            "monster_heel": 25,
+            "cocky_technician": 25,
+            "silent_assassin": 15,
+            "cult_leader": 15,
+            "anti_hero": 10,
+            "comedy_act": 5,
+            "legacy": 3,
+            "patriot": 1,
+            "daredevil": 5,
+            "underdog_face": 1,
         }
     elif alignment == "face":
         weights = {
-            "underdog_face": 25, "patriot": 15, "legacy": 15,
-            "daredevil": 15, "anti_hero": 10, "comedy_act": 10,
-            "cocky_technician": 5, "monster_heel": 2, "silent_assassin": 2,
+            "underdog_face": 25,
+            "patriot": 15,
+            "legacy": 15,
+            "daredevil": 15,
+            "anti_hero": 10,
+            "comedy_act": 10,
+            "cocky_technician": 5,
+            "monster_heel": 2,
+            "silent_assassin": 2,
             "cult_leader": 1,
         }
     else:
@@ -204,8 +406,9 @@ def _pick_archetype(wrestler):
     return random.choices(archetypes, weights=w, k=1)[0]
 
 
-def generate_initial_gimmick(db: Session, wrestler: GameWrestlerDB,
-                              game_date: str) -> GimmickHistoryDB:
+def generate_initial_gimmick(
+    db: Session, wrestler: GameWrestlerDB, game_date: str
+) -> GimmickHistoryDB:
     """Create the initial GimmickHistoryDB from existing wrestler data."""
     archetype = _pick_archetype(wrestler)
 
@@ -244,8 +447,10 @@ def generate_initial_gimmick(db: Session, wrestler: GameWrestlerDB,
 # Life events
 # ---------------------------------------------------------------------------
 
-def generate_life_event(db: Session, wrestler_id: str, world_id: str,
-                        game_date: str) -> LifeEventDB:
+
+def generate_life_event(
+    db: Session, wrestler_id: str, world_id: str, game_date: str
+) -> LifeEventDB:
     """Randomly generate a life event (~3% chance per call).
 
     Event probability is weighted by persona traits.
@@ -253,15 +458,23 @@ def generate_life_event(db: Session, wrestler_id: str, world_id: str,
     if random.random() > 0.03:
         return None
 
-    wrestler = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.id == wrestler_id,
-    ).first()
+    wrestler = (
+        db.query(GameWrestlerDB)
+        .filter(
+            GameWrestlerDB.id == wrestler_id,
+        )
+        .first()
+    )
     if not wrestler:
         return None
 
-    backstory = db.query(WrestlerBackstoryDB).filter(
-        WrestlerBackstoryDB.wrestler_id == wrestler_id,
-    ).first()
+    backstory = (
+        db.query(WrestlerBackstoryDB)
+        .filter(
+            WrestlerBackstoryDB.wrestler_id == wrestler_id,
+        )
+        .first()
+    )
 
     # Weight event types by persona
     real_personality = (backstory.real_personality if backstory else {}) or {}
@@ -308,15 +521,21 @@ def generate_life_event(db: Session, wrestler_id: str, world_id: str,
     db.add(event)
     db.flush()
 
-    logger.info("Life event '%s' for %s (public=%s)", event_type, wrestler.name, is_public)
+    logger.info(
+        "Life event '%s' for %s (public=%s)", event_type, wrestler.name, is_public
+    )
     return event
 
 
 def process_life_event_effects(db: Session, event: LifeEventDB):
     """Apply morale/performance deltas from a life event to the wrestler."""
-    wrestler = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.id == event.wrestler_id,
-    ).first()
+    wrestler = (
+        db.query(GameWrestlerDB)
+        .filter(
+            GameWrestlerDB.id == event.wrestler_id,
+        )
+        .first()
+    )
     if not wrestler:
         return
 
@@ -327,9 +546,13 @@ def process_life_event_effects(db: Session, event: LifeEventDB):
         wrestler.morale = max(0, min(100, wrestler.morale + delta))
 
     # Update backstory stability
-    backstory = db.query(WrestlerBackstoryDB).filter(
-        WrestlerBackstoryDB.wrestler_id == wrestler.id,
-    ).first()
+    backstory = (
+        db.query(WrestlerBackstoryDB)
+        .filter(
+            WrestlerBackstoryDB.wrestler_id == wrestler.id,
+        )
+        .first()
+    )
     if backstory:
         if event.severity >= 7:
             backstory.personal_life_stability = max(
@@ -349,12 +572,17 @@ def process_life_event_effects(db: Session, event: LifeEventDB):
 # Gimmick staleness & evolution
 # ---------------------------------------------------------------------------
 
+
 def tick_gimmick_staleness(db: Session, wrestler: GameWrestlerDB, game_date: str):
     """Increase gimmick staleness over time."""
-    gimmick = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler.id,
-        GimmickHistoryDB.is_active == True,
-    ).first()
+    gimmick = (
+        db.query(GimmickHistoryDB)
+        .filter(
+            GimmickHistoryDB.wrestler_id == wrestler.id,
+            GimmickHistoryDB.is_active == True,
+        )
+        .first()
+    )
     if not gimmick:
         return
 
@@ -382,10 +610,14 @@ def tick_gimmick_staleness(db: Session, wrestler: GameWrestlerDB, game_date: str
 
 def check_repackaging_pressure(db: Session, wrestler: GameWrestlerDB) -> dict:
     """Check if a wrestler needs a gimmick change. Returns pressure score and reason."""
-    gimmick = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler.id,
-        GimmickHistoryDB.is_active == True,
-    ).first()
+    gimmick = (
+        db.query(GimmickHistoryDB)
+        .filter(
+            GimmickHistoryDB.wrestler_id == wrestler.id,
+            GimmickHistoryDB.is_active == True,
+        )
+        .first()
+    )
     if not gimmick:
         return {"pressure": 0, "reason": "no_gimmick"}
 
@@ -416,14 +648,19 @@ def check_repackaging_pressure(db: Session, wrestler: GameWrestlerDB) -> dict:
     return {"pressure": min(100, pressure), "reason": reason}
 
 
-def execute_gimmick_change(db: Session, wrestler: GameWrestlerDB,
-                           game_date: str, reason: str = None) -> GimmickHistoryDB:
+def execute_gimmick_change(
+    db: Session, wrestler: GameWrestlerDB, game_date: str, reason: str = None
+) -> GimmickHistoryDB:
     """Retire current gimmick and create a new one."""
     # Retire current gimmick
-    current = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler.id,
-        GimmickHistoryDB.is_active == True,
-    ).first()
+    current = (
+        db.query(GimmickHistoryDB)
+        .filter(
+            GimmickHistoryDB.wrestler_id == wrestler.id,
+            GimmickHistoryDB.is_active == True,
+        )
+        .first()
+    )
 
     old_name = None
     old_archetype = None
@@ -467,24 +704,38 @@ def execute_gimmick_change(db: Session, wrestler: GameWrestlerDB,
     # Generate news about the change
     try:
         from game_service.news_service import generate_gimmick_change_news
+
         generate_gimmick_change_news(
-            db, wrestler.world_id, wrestler,
-            old_name or "unknown", new_gimmick.gimmick_name, game_date,
+            db,
+            wrestler.world_id,
+            wrestler,
+            old_name or "unknown",
+            new_gimmick.gimmick_name,
+            game_date,
         )
     except Exception as e:
         logger.warning("Failed to generate gimmick change news: %s", e)
 
-    logger.info("Gimmick change for %s: %s -> %s (%s)",
-                wrestler.name, old_archetype, new_archetype, reason)
+    logger.info(
+        "Gimmick change for %s: %s -> %s (%s)",
+        wrestler.name,
+        old_archetype,
+        new_archetype,
+        reason,
+    )
     return new_gimmick
 
 
 def evolve_gimmick(db: Session, wrestler: GameWrestlerDB, game_date: str):
     """Subtle gimmick evolution: adjust depth and fan investment based on activity."""
-    gimmick = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler.id,
-        GimmickHistoryDB.is_active == True,
-    ).first()
+    gimmick = (
+        db.query(GimmickHistoryDB)
+        .filter(
+            GimmickHistoryDB.wrestler_id == wrestler.id,
+            GimmickHistoryDB.is_active == True,
+        )
+        .first()
+    )
     if not gimmick:
         return
 
@@ -506,70 +757,106 @@ def evolve_gimmick(db: Session, wrestler: GameWrestlerDB, game_date: str):
 # Collision detection
 # ---------------------------------------------------------------------------
 
-def detect_collision_events(db: Session, wrestler: GameWrestlerDB,
-                           game_date: str) -> list:
+
+def detect_collision_events(
+    db: Session, wrestler: GameWrestlerDB, game_date: str
+) -> list:
     """Detect when real life and kayfabe conflict for a wrestler.
 
     Returns list of collision dicts: {type, description, severity}.
     """
     collisions = []
 
-    backstory = db.query(WrestlerBackstoryDB).filter(
-        WrestlerBackstoryDB.wrestler_id == wrestler.id,
-    ).first()
+    backstory = (
+        db.query(WrestlerBackstoryDB)
+        .filter(
+            WrestlerBackstoryDB.wrestler_id == wrestler.id,
+        )
+        .first()
+    )
 
     # 1. Personal crisis during active push
-    active_events = db.query(LifeEventDB).filter(
-        LifeEventDB.wrestler_id == wrestler.id,
-        LifeEventDB.is_active == True,
-        LifeEventDB.severity >= 7,
-    ).all()
+    active_events = (
+        db.query(LifeEventDB)
+        .filter(
+            LifeEventDB.wrestler_id == wrestler.id,
+            LifeEventDB.is_active == True,
+            LifeEventDB.severity >= 7,
+        )
+        .all()
+    )
 
     if active_events and wrestler.popularity > 60:
-        collisions.append({
-            "type": "crisis_during_push",
-            "description": f"{wrestler.name} is dealing with personal issues while in a top spot",
-            "severity": max(e.severity for e in active_events),
-        })
+        collisions.append(
+            {
+                "type": "crisis_during_push",
+                "description": f"{wrestler.name} is dealing with personal issues while in a top spot",
+                "severity": max(e.severity for e in active_events),
+            }
+        )
 
     # 2. Real friends as kayfabe rivals
-    rels = db.query(WrestlerRelationshipDB).filter(
-        ((WrestlerRelationshipDB.wrestler1_id == wrestler.id) |
-         (WrestlerRelationshipDB.wrestler2_id == wrestler.id)),
-    ).all()
+    rels = (
+        db.query(WrestlerRelationshipDB)
+        .filter(
+            (
+                (WrestlerRelationshipDB.wrestler1_id == wrestler.id)
+                | (WrestlerRelationshipDB.wrestler2_id == wrestler.id)
+            ),
+        )
+        .all()
+    )
 
     for rel in rels:
         real = rel.real_relationship
         kayfabe = rel.kayfabe_alignment
         if real == "friends" and kayfabe == "rivals":
-            other_id = rel.wrestler2_id if rel.wrestler1_id == wrestler.id else rel.wrestler1_id
-            other = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == other_id).first()
+            other_id = (
+                rel.wrestler2_id
+                if rel.wrestler1_id == wrestler.id
+                else rel.wrestler1_id
+            )
+            other = (
+                db.query(GameWrestlerDB).filter(GameWrestlerDB.id == other_id).first()
+            )
             if other:
-                collisions.append({
-                    "type": "friends_as_rivals",
-                    "description": f"{wrestler.name} and {other.name} are real friends booked as enemies",
-                    "severity": 5,
-                })
+                collisions.append(
+                    {
+                        "type": "friends_as_rivals",
+                        "description": f"{wrestler.name} and {other.name} are real friends booked as enemies",
+                        "severity": 5,
+                    }
+                )
         elif real == "enemies" and kayfabe in ("allies", "tag_partners"):
-            other_id = rel.wrestler2_id if rel.wrestler1_id == wrestler.id else rel.wrestler1_id
-            other = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == other_id).first()
+            other_id = (
+                rel.wrestler2_id
+                if rel.wrestler1_id == wrestler.id
+                else rel.wrestler1_id
+            )
+            other = (
+                db.query(GameWrestlerDB).filter(GameWrestlerDB.id == other_id).first()
+            )
             if other:
-                collisions.append({
-                    "type": "enemies_as_allies",
-                    "description": f"{wrestler.name} and {other.name} actually dislike each other but are booked as allies",
-                    "severity": 7,
-                })
+                collisions.append(
+                    {
+                        "type": "enemies_as_allies",
+                        "description": f"{wrestler.name} and {other.name} actually dislike each other but are booked as allies",
+                        "severity": 7,
+                    }
+                )
 
     # 3. Low personal stability + high kayfabe commitment = strain
     if backstory:
         stability = backstory.personal_life_stability or 70
         commitment = wrestler.kayfabe_commitment or 50
         if stability < 30 and commitment > 70:
-            collisions.append({
-                "type": "facade_cracking",
-                "description": f"{wrestler.name}'s real life is falling apart but they're maintaining character",
-                "severity": 8,
-            })
+            collisions.append(
+                {
+                    "type": "facade_cracking",
+                    "description": f"{wrestler.name}'s real life is falling apart but they're maintaining character",
+                    "severity": 8,
+                }
+            )
 
     return collisions
 
@@ -578,26 +865,39 @@ def detect_collision_events(db: Session, wrestler: GameWrestlerDB,
 # Migration
 # ---------------------------------------------------------------------------
 
+
 def migrate_existing_wrestlers(db: Session, world_id: str):
     """Populate backstory and gimmick for wrestlers that don't have them."""
-    wrestlers = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active == True,
-    ).all()
+    wrestlers = (
+        db.query(GameWrestlerDB)
+        .filter(
+            GameWrestlerDB.world_id == world_id,
+            GameWrestlerDB.is_active == True,
+        )
+        .all()
+    )
 
     count = 0
     for wrestler in wrestlers:
-        backstory = db.query(WrestlerBackstoryDB).filter(
-            WrestlerBackstoryDB.wrestler_id == wrestler.id,
-        ).first()
+        backstory = (
+            db.query(WrestlerBackstoryDB)
+            .filter(
+                WrestlerBackstoryDB.wrestler_id == wrestler.id,
+            )
+            .first()
+        )
         if not backstory:
             generate_backstory(db, wrestler)
             count += 1
 
-        gimmick = db.query(GimmickHistoryDB).filter(
-            GimmickHistoryDB.wrestler_id == wrestler.id,
-            GimmickHistoryDB.is_active == True,
-        ).first()
+        gimmick = (
+            db.query(GimmickHistoryDB)
+            .filter(
+                GimmickHistoryDB.wrestler_id == wrestler.id,
+                GimmickHistoryDB.is_active == True,
+            )
+            .first()
+        )
         if not gimmick:
             generate_initial_gimmick(db, wrestler, "migration")
 

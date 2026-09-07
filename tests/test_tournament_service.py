@@ -3,9 +3,6 @@
 import pytest
 from game_service.tournament_service import (
     TournamentFormat,
-    TournamentBracket,
-    TournamentMatch,
-    TournamentParticipant,
     MatchStatus,
     create_tournament,
     record_match_result,
@@ -24,7 +21,9 @@ def _wrestler_names(ids):
 class TestSingleElimination:
     def test_create_4_man_bracket(self):
         ids = _wrestler_ids(4)
-        bracket = create_tournament("Test Cup", TournamentFormat.SINGLE_ELIMINATION, ids)
+        bracket = create_tournament(
+            "Test Cup", TournamentFormat.SINGLE_ELIMINATION, ids
+        )
         assert bracket.total_rounds == 2
         assert len(bracket.participants) == 4
         # 4 participants → 2 first-round matches + 1 final = 3
@@ -49,8 +48,11 @@ class TestSingleElimination:
         ids = _wrestler_ids(4)
         names = _wrestler_names(ids)
         bracket = create_tournament(
-            "King of the Ring", TournamentFormat.SINGLE_ELIMINATION, ids,
-            wrestler_names=names, stakes="Title Shot",
+            "King of the Ring",
+            TournamentFormat.SINGLE_ELIMINATION,
+            ids,
+            wrestler_names=names,
+            stakes="Title Shot",
         )
         assert bracket.stakes == "Title Shot"
 
@@ -58,9 +60,13 @@ class TestSingleElimination:
         pending = bracket.get_pending_matches()
         assert len(pending) == 2
 
-        r1 = record_match_result(bracket, pending[0].match_id, pending[0].participant_a_id)
+        r1 = record_match_result(
+            bracket, pending[0].match_id, pending[0].participant_a_id
+        )
         assert r1["is_final"] is False
-        r2 = record_match_result(bracket, pending[1].match_id, pending[1].participant_a_id)
+        r2 = record_match_result(
+            bracket, pending[1].match_id, pending[1].participant_a_id
+        )
         assert r2["is_final"] is False
 
         # Play final

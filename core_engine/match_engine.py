@@ -16,44 +16,78 @@ from typing import List, Optional, Dict, Any
 
 from core_engine.match_constants import (
     # Momentum thresholds
-    TAUNT_MOMENTUM_THRESHOLD, SIGNATURE_MOMENTUM_THRESHOLD,
-    FINISHER_MOMENTUM_THRESHOLD, FINISH_MOMENTUM_BONUS_THRESHOLD,
-    CAGE_ESCAPE_MOMENTUM_THRESHOLD, LADDER_CLIMB_MOMENTUM_THRESHOLD,
+    TAUNT_MOMENTUM_THRESHOLD,
+    SIGNATURE_MOMENTUM_THRESHOLD,
+    FINISHER_MOMENTUM_THRESHOLD,
+    FINISH_MOMENTUM_BONUS_THRESHOLD,
+    CAGE_ESCAPE_MOMENTUM_THRESHOLD,
+    LADDER_CLIMB_MOMENTUM_THRESHOLD,
     # Probability constants
-    TAUNT_CHANCE, COCKY_BACKFIRE_CHANCE, SIGNATURE_CHANCE,
+    TAUNT_CHANCE,
+    COCKY_BACKFIRE_CHANCE,
+    SIGNATURE_CHANCE,
     STIPULATION_SPOT_CHANCE,
-    BOTCH_DIFFICULTY_FACTOR, BOTCH_AERIAL_BONUS, BOTCH_MAX_CHANCE,
-    BOTCH_MINOR_THRESHOLD, BOTCH_BAD_THRESHOLD,
-    REVERSAL_BASE_CHANCE_DIVISOR, REVERSAL_DAMAGE_MULTIPLIER,
-    INTERFERENCE_CATCH_CHANCE, INTERFERENCE_DQ_CHANCE,
-    INTERFERENCE_MAX_CHANCE, INTERFERENCE_DAMAGE,
-    INTERFERENCE_MOMENTUM_LOSS, INTERFERENCE_MOMENTUM_GAIN,
-    NEAR_FALL_CHANCE, NEAR_FALL_HEALTH_THRESHOLD, MULTI_NEAR_FALL_CHANCE,
-    UPSET_CHANCE, SHOOT_MAX_CHANCE, SHOOT_EGO_THRESHOLD,
-    SHOOT_FRUSTRATION_THRESHOLD, SHOOT_MORALE_THRESHOLD,
+    BOTCH_DIFFICULTY_FACTOR,
+    BOTCH_AERIAL_BONUS,
+    BOTCH_MAX_CHANCE,
+    BOTCH_MINOR_THRESHOLD,
+    BOTCH_BAD_THRESHOLD,
+    REVERSAL_BASE_CHANCE_DIVISOR,
+    REVERSAL_DAMAGE_MULTIPLIER,
+    INTERFERENCE_CATCH_CHANCE,
+    INTERFERENCE_DQ_CHANCE,
+    INTERFERENCE_MAX_CHANCE,
+    INTERFERENCE_DAMAGE,
+    INTERFERENCE_MOMENTUM_LOSS,
+    INTERFERENCE_MOMENTUM_GAIN,
+    NEAR_FALL_CHANCE,
+    NEAR_FALL_HEALTH_THRESHOLD,
+    MULTI_NEAR_FALL_CHANCE,
+    UPSET_CHANCE,
+    SHOOT_MAX_CHANCE,
+    SHOOT_EGO_THRESHOLD,
+    SHOOT_FRUSTRATION_THRESHOLD,
+    SHOOT_MORALE_THRESHOLD,
     SHOOT_TITLE_MULTIPLIER,
-    ELIMINATION_ENDURANCE_THRESHOLD, ELIMINATION_CHANCE,
+    ELIMINATION_ENDURANCE_THRESHOLD,
+    ELIMINATION_CHANCE,
     # Damage modifiers
-    BASE_DAMAGE_MIN, SIGNATURE_DAMAGE_MIN, STAT_BASELINE,
-    DEFENSE_DIVISOR, STAMINA_FLOOR, HOMETOWN_DAMAGE_MULTIPLIER,
+    BASE_DAMAGE_MIN,
+    SIGNATURE_DAMAGE_MIN,
+    STAT_BASELINE,
+    DEFENSE_DIVISOR,
+    STAMINA_FLOOR,
+    HOMETOWN_DAMAGE_MULTIPLIER,
     DANGEROUS_BOTCH_DAMAGE_MULTIPLIER,
-    FINISHER_DAMAGE, SHOOT_FINISHER_DAMAGE,
+    FINISHER_DAMAGE,
+    SHOOT_FINISHER_DAMAGE,
     # Momentum shift values
-    REVERSAL_MOMENTUM_GAIN, REVERSAL_MOMENTUM_LOSS,
-    NORMAL_HIT_MOMENTUM_GAIN, NORMAL_HIT_MOMENTUM_LOSS,
-    TAUNT_MOMENTUM_DEFAULT, TAUNT_MOMENTUM_INTENSE, TAUNT_MOMENTUM_COCKY,
+    REVERSAL_MOMENTUM_GAIN,
+    REVERSAL_MOMENTUM_LOSS,
+    NORMAL_HIT_MOMENTUM_GAIN,
+    NORMAL_HIT_MOMENTUM_LOSS,
+    TAUNT_MOMENTUM_DEFAULT,
+    TAUNT_MOMENTUM_INTENSE,
+    TAUNT_MOMENTUM_COCKY,
     # Stamina / endurance drain
-    ATTACKER_STAMINA_DRAIN_MIN, ATTACKER_STAMINA_DRAIN_MAX,
-    DEFENDER_STAMINA_DRAIN_MIN, DEFENDER_STAMINA_DRAIN_MAX,
+    ATTACKER_STAMINA_DRAIN_MIN,
+    ATTACKER_STAMINA_DRAIN_MAX,
+    DEFENDER_STAMINA_DRAIN_MIN,
+    DEFENDER_STAMINA_DRAIN_MAX,
     ENDURANCE_DRAIN_FACTOR,
     # Match finish chances
-    FINISH_BASE_CHANCE, FINISH_FINISHER_READY_CHANCE,
-    FINISH_LOW_HEALTH_BONUS, FINISH_HIGH_MOMENTUM_BONUS,
+    FINISH_BASE_CHANCE,
+    FINISH_FINISHER_READY_CHANCE,
+    FINISH_LOW_HEALTH_BONUS,
+    FINISH_HIGH_MOMENTUM_BONUS,
     DEFENDER_LOW_HEALTH_THRESHOLD,
     # Control switch / comeback
-    COMEBACK_LOW_HEALTH_THRESHOLD, COMEBACK_LOW_HEALTH_BONUS,
+    COMEBACK_LOW_HEALTH_THRESHOLD,
+    COMEBACK_LOW_HEALTH_BONUS,
     # Rating (still needed in _build_result for botch penalty)
-    BOTCH_RATING_PENALTY_PER, DANGEROUS_BOTCH_EXTRA_PENALTY, RATING_MIN,
+    BOTCH_RATING_PENALTY_PER,
+    DANGEROUS_BOTCH_EXTRA_PENALTY,
+    RATING_MIN,
     # Highlight tier
     HIGHLIGHT_DAMAGE_THRESHOLD,
 )
@@ -65,14 +99,18 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 from core_engine.match_data import (  # noqa: E402
-    MOVES, SIGNATURE_MOVE_POOLS, ARCHETYPE_FINISHERS,
-    CAGE_SPOTS, LADDER_SPOTS, TABLE_SPOTS, HELL_IN_A_CELL_SPOTS,
-    IRON_MAN_FALL_DESCRIPTIONS,
-    TAUNT_SPOTS, VENUE_ATMOSPHERE, get_venue_tier,
-    CROWD_REACTIONS, REVERSAL_DESCRIPTIONS, NEAR_FALL_DESCRIPTIONS,
-    INTERFERENCE_SUCCESS, INTERFERENCE_CAUGHT, INTERFERENCE_FAIL,
-    POST_MATCH_ATTACK, POST_MATCH_SAVE,
-    TAG_DESCRIPTIONS, DOUBLE_TEAM_MOVES,
+    MOVES,
+    CAGE_SPOTS,
+    LADDER_SPOTS,
+    TABLE_SPOTS,
+    HELL_IN_A_CELL_SPOTS,
+    TAUNT_SPOTS,
+    CROWD_REACTIONS,
+    REVERSAL_DESCRIPTIONS,
+    NEAR_FALL_DESCRIPTIONS,
+    INTERFERENCE_SUCCESS,
+    INTERFERENCE_CAUGHT,
+    INTERFERENCE_FAIL,
 )
 
 
@@ -80,9 +118,11 @@ from core_engine.match_data import (  # noqa: E402
 # Data classes
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class MatchParticipantState:
     """Runtime state for a wrestler during a match."""
+
     wrestler_id: str
     name: str
     health: float = 100.0  # 0-100, match ends when pinned at low health
@@ -103,6 +143,7 @@ class MatchParticipantState:
 @dataclass
 class MatchSpot:
     """A single moment/event in the match."""
+
     tick: int
     attacker_id: str
     defender_id: str
@@ -119,13 +160,16 @@ class MatchSpot:
     heat_change: int = 0
     description: str = ""
     is_botch: bool = False  # Move went wrong
-    botch_severity: int = 0  # 0=none, 1=minor (stumble), 2=bad (sloppy), 3=dangerous (injury risk)
+    botch_severity: int = (
+        0  # 0=none, 1=minor (stumble), 2=bad (sloppy), 3=dangerous (injury risk)
+    )
     is_shoot: bool = False  # Wrestler went into business for themselves
 
 
 @dataclass
 class ManagerContext:
     """Manager at ringside for a wrestler."""
+
     manager_id: str
     manager_name: str
     client_wrestler_id: str
@@ -137,6 +181,7 @@ class ManagerContext:
 @dataclass
 class MatchResult:
     """Final result of a simulated match."""
+
     winner_id: Optional[str] = None
     finish_type: str = "pinfall"
     finish_description: str = ""
@@ -148,7 +193,9 @@ class MatchResult:
     interference_occurred: bool = False
     post_match_angle: Optional[Dict[str, Any]] = None
     botch_count: int = 0  # How many botches occurred
-    botch_events: List[Dict[str, Any]] = field(default_factory=list)  # [{attacker, victim, severity, move}]
+    botch_events: List[Dict[str, Any]] = field(
+        default_factory=list
+    )  # [{attacker, victim, severity, move}]
     went_into_business: bool = False  # Someone deviated from the planned finish
     shoot_wrestler_id: Optional[str] = None  # Who went into business
 
@@ -156,6 +203,7 @@ class MatchResult:
 # ---------------------------------------------------------------------------
 # Match Simulator
 # ---------------------------------------------------------------------------
+
 
 class MatchSimulator:
     """Simulates a wrestling match between participants."""
@@ -168,10 +216,17 @@ class MatchSimulator:
         "main_event": (20, 35),
     }
 
-    def __init__(self, planned_winner_id: str = None, planned_finish: str = None,
-                 card_position: str = "midcard", is_title_match: bool = False,
-                 stipulation: str = None, managers: List[ManagerContext] = None,
-                 rivalry_heat: int = 0, show_momentum: int = 50):
+    def __init__(
+        self,
+        planned_winner_id: str = None,
+        planned_finish: str = None,
+        card_position: str = "midcard",
+        is_title_match: bool = False,
+        stipulation: str = None,
+        managers: List[ManagerContext] = None,
+        rivalry_heat: int = 0,
+        show_momentum: int = 50,
+    ):
         self.planned_winner_id = planned_winner_id
         self.planned_finish = planned_finish or "pinfall"
         self.card_position = card_position
@@ -191,7 +246,9 @@ class MatchSimulator:
     def simulate(self, participants: List[MatchParticipantState]) -> MatchResult:
         """Run the full match simulation."""
         if len(participants) < 2:
-            return MatchResult(narrative_summary="Match cancelled - not enough participants")
+            return MatchResult(
+                narrative_summary="Match cancelled - not enough participants"
+            )
 
         # Detect tag match: 4+ participants with team assignments
         teams = set(p.team for p in participants if p.team is not None)
@@ -204,7 +261,9 @@ class MatchSimulator:
 
         return self._simulate_singles(participants)
 
-    def _simulate_singles(self, participants: List[MatchParticipantState]) -> MatchResult:
+    def _simulate_singles(
+        self, participants: List[MatchParticipantState]
+    ) -> MatchResult:
         """Run a singles (or non-tag multi-person) match simulation."""
         # Determine target length
         min_len, max_len = self.MATCH_LENGTH.get(self.card_position, (10, 20))
@@ -222,7 +281,10 @@ class MatchSimulator:
             self.spots.append(spot)
             self._apply_spot(spot, attacker, defender)
 
-            if not attacker.finisher_available and attacker.momentum > FINISHER_MOMENTUM_THRESHOLD:
+            if (
+                not attacker.finisher_available
+                and attacker.momentum > FINISHER_MOMENTUM_THRESHOLD
+            ):
                 attacker.finisher_available = True
 
             # Manager interference opportunity (second half of match)
@@ -232,13 +294,17 @@ class MatchSimulator:
                     self.spots.append(interference)
                     if interference.is_finish:
                         # DQ finish
-                        return self._build_result(interference, attacker, defender, participants)
+                        return self._build_result(
+                            interference, attacker, defender, participants
+                        )
 
             if self.tick >= target_length - 3:
                 finish_spot = self._attempt_finish(attacker, defender)
                 if finish_spot:
                     self.spots.append(finish_spot)
-                    return self._build_result(finish_spot, attacker, defender, participants)
+                    return self._build_result(
+                        finish_spot, attacker, defender, participants
+                    )
 
             if self.tick > target_length * 0.6 and random.random() < NEAR_FALL_CHANCE:
                 near_fall = self._near_fall(attacker, defender)
@@ -258,7 +324,9 @@ class MatchSimulator:
             spots=self.spots,
         )
 
-    def _simulate_multi_person(self, participants: List[MatchParticipantState]) -> MatchResult:
+    def _simulate_multi_person(
+        self, participants: List[MatchParticipantState]
+    ) -> MatchResult:
         """Simulate a multi-person match (triple threat, fatal four way, battle royal).
 
         Uses elimination logic: when a participant's endurance drops low, they can
@@ -282,7 +350,10 @@ class MatchSimulator:
             self.spots.append(spot)
             self._apply_spot(spot, attacker, defender)
 
-            if not attacker.finisher_available and attacker.momentum > FINISHER_MOMENTUM_THRESHOLD:
+            if (
+                not attacker.finisher_available
+                and attacker.momentum > FINISHER_MOMENTUM_THRESHOLD
+            ):
                 attacker.finisher_available = True
 
             # Elimination check: participants with very low endurance can be pinned
@@ -290,7 +361,10 @@ class MatchSimulator:
                 for p in list(active):
                     if p is attacker:
                         continue
-                    if p.endurance < ELIMINATION_ENDURANCE_THRESHOLD and random.random() < ELIMINATION_CHANCE:
+                    if (
+                        p.endurance < ELIMINATION_ENDURANCE_THRESHOLD
+                        and random.random() < ELIMINATION_CHANCE
+                    ):
                         eliminated.append(p)
                         active.remove(p)
                         elim_spot = MatchSpot(
@@ -306,7 +380,10 @@ class MatchSimulator:
                         self.spots.append(elim_spot)
 
             # Near-falls add drama
-            if self.tick > target_length * 0.5 and random.random() < MULTI_NEAR_FALL_CHANCE:
+            if (
+                self.tick > target_length * 0.5
+                and random.random() < MULTI_NEAR_FALL_CHANCE
+            ):
                 near_fall = self._near_fall(attacker, defender)
                 if near_fall:
                     self.spots.append(near_fall)
@@ -316,7 +393,9 @@ class MatchSimulator:
                 finish_spot = self._attempt_finish(attacker, defender)
                 if finish_spot:
                     self.spots.append(finish_spot)
-                    return self._build_result(finish_spot, attacker, defender, participants)
+                    return self._build_result(
+                        finish_spot, attacker, defender, participants
+                    )
 
         # Time limit: pick the participant with the highest momentum as winner
         if len(active) >= 2:
@@ -336,27 +415,37 @@ class MatchSimulator:
         return MatchResult(
             winner_id=active[0].wrestler_id if active else None,
             finish_type="last_person_standing",
-            finish_description="Last person standing wins!" if active else "No winner — all participants eliminated!",
+            finish_description="Last person standing wins!"
+            if active
+            else "No winner — all participants eliminated!",
             match_rating=self._calculate_rating(participants),
             crowd_heat=self._calculate_heat(),
             duration_ticks=self.tick,
             spots=self.spots,
         )
 
-    def _simulate_tag_match(self, participants: List[MatchParticipantState]) -> MatchResult:
+    def _simulate_tag_match(
+        self, participants: List[MatchParticipantState]
+    ) -> MatchResult:
         """Simulate a tag team match.  Delegates to tag_match_simulator module."""
         from core_engine.tag_match_simulator import simulate_tag_match
+
         return simulate_tag_match(self, participants)
 
-    def _generate_spot(self, attacker: MatchParticipantState,
-                       defender: MatchParticipantState) -> MatchSpot:
+    def _generate_spot(
+        self, attacker: MatchParticipantState, defender: MatchParticipantState
+    ) -> MatchSpot:
         """Generate a single match spot."""
         # --- Charisma style taunt ---
-        if attacker.momentum > TAUNT_MOMENTUM_THRESHOLD and random.random() < TAUNT_CHANCE:
+        if (
+            attacker.momentum > TAUNT_MOMENTUM_THRESHOLD
+            and random.random() < TAUNT_CHANCE
+        ):
             style = attacker.charisma_style or "humble"
             if style in TAUNT_SPOTS:
                 taunt = random.choice(TAUNT_SPOTS[style]).format(
-                    name=attacker.name, opponent=defender.name)
+                    name=attacker.name, opponent=defender.name
+                )
                 momentum_gain = TAUNT_MOMENTUM_DEFAULT
                 if style == "intense":
                     momentum_gain = TAUNT_MOMENTUM_INTENSE
@@ -394,8 +483,11 @@ class MatchSimulator:
                 return stip_spot
 
         # --- Signature move ---
-        if (attacker.signature_moves and attacker.momentum > SIGNATURE_MOMENTUM_THRESHOLD
-                and random.random() < SIGNATURE_CHANCE):
+        if (
+            attacker.signature_moves
+            and attacker.momentum > SIGNATURE_MOMENTUM_THRESHOLD
+            and random.random() < SIGNATURE_CHANCE
+        ):
             sig = random.choice(attacker.signature_moves)
             if len(sig) >= 3:
                 sig_name, sig_damage, sig_type = sig[0], sig[1], sig[2]
@@ -405,7 +497,9 @@ class MatchSimulator:
                 sig_damage = sig[1] if len(sig) > 1 else SIGNATURE_DAMAGE_MIN
                 sig_type = "power"
             attack_stat = attacker.stats.get(sig_type, STAT_BASELINE)
-            damage = int(sig_damage * (attack_stat / STAT_BASELINE) * (attacker.stamina / 100))
+            damage = int(
+                sig_damage * (attack_stat / STAT_BASELINE) * (attacker.stamina / 100)
+            )
             damage = max(SIGNATURE_DAMAGE_MIN, damage)
             return MatchSpot(
                 tick=self.tick,
@@ -427,7 +521,12 @@ class MatchSimulator:
         attack_stat = attacker.stats.get(category, STAT_BASELINE)
         defense_stat = defender.stats.get("toughness", STAT_BASELINE)
         stamina_factor = attacker.stamina / 100
-        damage = int(base_damage * (attack_stat / STAT_BASELINE) * stamina_factor * (1 - defense_stat / DEFENSE_DIVISOR))
+        damage = int(
+            base_damage
+            * (attack_stat / STAT_BASELINE)
+            * stamina_factor
+            * (1 - defense_stat / DEFENSE_DIVISOR)
+        )
         damage = max(BASE_DAMAGE_MIN, damage)
 
         # Hometown advantage: small damage boost
@@ -436,8 +535,8 @@ class MatchSimulator:
 
         # --- BOTCH CHECK: moves can go wrong ---
         is_botch, botch_severity, damage = self._check_botch(
-            category, base_damage, attack_stat, attacker.stamina, damage)
-
+            category, base_damage, attack_stat, attacker.stamina, damage
+        )
 
         # Check for reversal
         was_reversed = False
@@ -447,7 +546,7 @@ class MatchSimulator:
             + defender.stats.get("psychology", STAT_BASELINE)
             + defender.stats.get("speed", STAT_BASELINE) * 0.5
         ) / REVERSAL_BASE_CHANCE_DIVISOR
-        reversal_chance *= (defender.momentum / 100)
+        reversal_chance *= defender.momentum / 100
 
         if not is_botch and random.random() < reversal_chance:
             was_reversed = True
@@ -478,7 +577,9 @@ class MatchSimulator:
         elif was_reversed:
             desc = f"{attacker.name} goes for {move_name}, but {defender.name} {random.choice(REVERSAL_DESCRIPTIONS)} {reversal_move}!"
         else:
-            desc = f"{attacker.name} hits {defender.name} with a devastating {move_name}!"
+            desc = (
+                f"{attacker.name} hits {defender.name} with a devastating {move_name}!"
+            )
 
         # Crowd reaction
         heat_change = 0
@@ -500,8 +601,12 @@ class MatchSimulator:
 
         return MatchSpot(
             tick=self.tick,
-            attacker_id=attacker.wrestler_id if not was_reversed else defender.wrestler_id,
-            defender_id=defender.wrestler_id if not was_reversed else attacker.wrestler_id,
+            attacker_id=attacker.wrestler_id
+            if not was_reversed
+            else defender.wrestler_id,
+            defender_id=defender.wrestler_id
+            if not was_reversed
+            else attacker.wrestler_id,
             move_name=move_name if not was_reversed else reversal_move,
             move_type=move_type,
             damage=damage,
@@ -514,8 +619,9 @@ class MatchSimulator:
             botch_severity=botch_severity,
         )
 
-    def _generate_stipulation_spot(self, attacker: MatchParticipantState,
-                                   defender: MatchParticipantState) -> Optional[MatchSpot]:
+    def _generate_stipulation_spot(
+        self, attacker: MatchParticipantState, defender: MatchParticipantState
+    ) -> Optional[MatchSpot]:
         """Generate a match-type-specific special spot."""
         stip = (self.stipulation or "").lower()
 
@@ -523,91 +629,189 @@ class MatchSimulator:
             desc, base_dmg, stype = random.choice(CAGE_SPOTS)
             if stype == "escape":
                 # Cage escape attempt — only works if momentum > 80
-                if attacker.momentum > CAGE_ESCAPE_MOMENTUM_THRESHOLD and attacker.health > 40:
+                if (
+                    attacker.momentum > CAGE_ESCAPE_MOMENTUM_THRESHOLD
+                    and attacker.health > 40
+                ):
                     return MatchSpot(
-                        tick=self.tick, attacker_id=attacker.wrestler_id,
+                        tick=self.tick,
+                        attacker_id=attacker.wrestler_id,
                         defender_id=defender.wrestler_id,
-                        move_name="Cage Escape Attempt", move_type="technical",
+                        move_name="Cage Escape Attempt",
+                        move_type="technical",
                         damage=0,
                         description=f"{attacker.name} is climbing the cage! Can they escape?!",
                         crowd_reaction="The crowd is on their feet!",
                         heat_change=5,
                     )
                 return None
-            return self._build_stipulation_hit(attacker, defender, desc, base_dmg, "brawling",
-                                               "Cage Spot", "brawling", 3, CROWD_REACTIONS, (2, 5))
+            return self._build_stipulation_hit(
+                attacker,
+                defender,
+                desc,
+                base_dmg,
+                "brawling",
+                "Cage Spot",
+                "brawling",
+                3,
+                CROWD_REACTIONS,
+                (2, 5),
+            )
 
         elif "ladder" in stip:
             desc, base_dmg, stype = random.choice(LADDER_SPOTS)
             if stype == "climb":
                 if attacker.momentum > LADDER_CLIMB_MOMENTUM_THRESHOLD:
-                    return self._build_special_stip_spot(attacker, defender,
-                        "Ladder Climb", "aerial",
+                    return self._build_special_stip_spot(
+                        attacker,
+                        defender,
+                        "Ladder Climb",
+                        "aerial",
                         f"{attacker.name} is climbing the ladder! Fingers inches from the prize!",
-                        "This could be it!", 6)
+                        "This could be it!",
+                        6,
+                    )
                 return None
-            return self._build_stipulation_hit(attacker, defender, desc, base_dmg, "power",
-                                               "Ladder Spot", stype, 5, ["OH MY GOD!"], (3, 7))
+            return self._build_stipulation_hit(
+                attacker,
+                defender,
+                desc,
+                base_dmg,
+                "power",
+                "Ladder Spot",
+                stype,
+                5,
+                ["OH MY GOD!"],
+                (3, 7),
+            )
 
         elif "table" in stip:
             desc, base_dmg, stype = random.choice(TABLE_SPOTS)
             if stype == "setup":
-                return self._build_special_stip_spot(attacker, defender,
-                    "Table Setup", "power",
+                return self._build_special_stip_spot(
+                    attacker,
+                    defender,
+                    "Table Setup",
+                    "power",
                     f"{attacker.name} {desc}!",
-                    "The crowd knows what's coming!", 3)
-            return self._build_stipulation_hit(attacker, defender, desc, base_dmg, "power",
-                                               "Table Spot", stype, 8, ["THROUGH THE TABLE!"], (5, 8))
+                    "The crowd knows what's coming!",
+                    3,
+                )
+            return self._build_stipulation_hit(
+                attacker,
+                defender,
+                desc,
+                base_dmg,
+                "power",
+                "Table Spot",
+                stype,
+                8,
+                ["THROUGH THE TABLE!"],
+                (5, 8),
+            )
 
         elif "hell" in stip or "cell" in stip:
             desc, base_dmg, stype = random.choice(HELL_IN_A_CELL_SPOTS)
             if stype == "climb":
-                return self._build_special_stip_spot(attacker, defender,
-                    "Cell Climb", "aerial",
+                return self._build_special_stip_spot(
+                    attacker,
+                    defender,
+                    "Cell Climb",
+                    "aerial",
                     f"{attacker.name} {desc}! This is getting dangerous!",
-                    "Don't do it! DON'T DO IT!", 7)
-            return self._build_stipulation_hit(attacker, defender, desc, base_dmg, "brawling",
-                                               "Cell Spot", stype, 5, ["GOOD GOD ALMIGHTY!"], (4, 8))
+                    "Don't do it! DON'T DO IT!",
+                    7,
+                )
+            return self._build_stipulation_hit(
+                attacker,
+                defender,
+                desc,
+                base_dmg,
+                "brawling",
+                "Cell Spot",
+                stype,
+                5,
+                ["GOOD GOD ALMIGHTY!"],
+                (4, 8),
+            )
 
         return None
 
-    def _build_special_stip_spot(self, attacker, defender, move_name, move_type,
-                                  description, crowd_reaction, heat_change):
+    def _build_special_stip_spot(
+        self,
+        attacker,
+        defender,
+        move_name,
+        move_type,
+        description,
+        crowd_reaction,
+        heat_change,
+    ):
         """Build a zero-damage stipulation spot (escapes, climbs, setups)."""
         return MatchSpot(
-            tick=self.tick, attacker_id=attacker.wrestler_id,
+            tick=self.tick,
+            attacker_id=attacker.wrestler_id,
             defender_id=defender.wrestler_id,
-            move_name=move_name, move_type=move_type,
-            damage=0, description=description,
-            crowd_reaction=crowd_reaction, heat_change=heat_change,
+            move_name=move_name,
+            move_type=move_type,
+            damage=0,
+            description=description,
+            crowd_reaction=crowd_reaction,
+            heat_change=heat_change,
         )
 
-    def _build_stipulation_hit(self, attacker, defender, desc, base_dmg, stat_key,
-                                move_name, move_type, min_damage, reactions, heat_range):
+    def _build_stipulation_hit(
+        self,
+        attacker,
+        defender,
+        desc,
+        base_dmg,
+        stat_key,
+        move_name,
+        move_type,
+        min_damage,
+        reactions,
+        heat_range,
+    ):
         """Build a damage-dealing stipulation spot with stat scaling."""
         damage = int(base_dmg * self._stat_multiplier(attacker, stat_key))
-        reaction = random.choice(reactions) if isinstance(reactions, list) else reactions
+        reaction = (
+            random.choice(reactions) if isinstance(reactions, list) else reactions
+        )
         return MatchSpot(
-            tick=self.tick, attacker_id=attacker.wrestler_id,
+            tick=self.tick,
+            attacker_id=attacker.wrestler_id,
             defender_id=defender.wrestler_id,
-            move_name=move_name, move_type=move_type,
+            move_name=move_name,
+            move_type=move_type,
             damage=max(min_damage, damage),
             description=f"{attacker.name} {desc}!",
             crowd_reaction=reaction,
             heat_change=random.randint(*heat_range),
         )
 
-    def _check_botch(self, category: str, base_damage: int, attack_stat: int,
-                      stamina: float, damage: int) -> tuple:
+    def _check_botch(
+        self,
+        category: str,
+        base_damage: int,
+        attack_stat: int,
+        stamina: float,
+        damage: int,
+    ) -> tuple:
         """Check if a move is botched. Returns (is_botch, severity, modified_damage)."""
         move_difficulty = base_damage / 15.0
         if category == "aerial":
             move_difficulty += BOTCH_AERIAL_BONUS
         fatigue_factor = max(0, (100 - stamina) / 200)
         skill_factor = max(0, (100 - attack_stat) / 300)
-        trust_factor = getattr(self, '_trust_penalty', 0.0)
+        trust_factor = getattr(self, "_trust_penalty", 0.0)
 
-        botch_chance = (move_difficulty * BOTCH_DIFFICULTY_FACTOR) + fatigue_factor + skill_factor + trust_factor
+        botch_chance = (
+            (move_difficulty * BOTCH_DIFFICULTY_FACTOR)
+            + fatigue_factor
+            + skill_factor
+            + trust_factor
+        )
         botch_chance = min(BOTCH_MAX_CHANCE, botch_chance)
 
         if random.random() >= botch_chance:
@@ -639,8 +843,12 @@ class MatchSimulator:
         weights = [w / total for w in weights]
         return random.choices(categories, weights=weights, k=1)[0]
 
-    def _apply_spot(self, spot: MatchSpot, attacker: MatchParticipantState,
-                    defender: MatchParticipantState):
+    def _apply_spot(
+        self,
+        spot: MatchSpot,
+        attacker: MatchParticipantState,
+        defender: MatchParticipantState,
+    ):
         """Apply the effects of a spot to participant states."""
         if spot.was_reversed:
             # Reversal: attacker takes damage, defender gains momentum
@@ -654,24 +862,37 @@ class MatchSimulator:
             self._update_momentum(defender, -NORMAL_HIT_MOMENTUM_LOSS)
 
         # Stamina drain
-        attacker.stamina = max(STAMINA_FLOOR, attacker.stamina - random.uniform(
-            ATTACKER_STAMINA_DRAIN_MIN, ATTACKER_STAMINA_DRAIN_MAX))
-        defender.stamina = max(STAMINA_FLOOR, defender.stamina - random.uniform(
-            DEFENDER_STAMINA_DRAIN_MIN, DEFENDER_STAMINA_DRAIN_MAX))
+        attacker.stamina = max(
+            STAMINA_FLOOR,
+            attacker.stamina
+            - random.uniform(ATTACKER_STAMINA_DRAIN_MIN, ATTACKER_STAMINA_DRAIN_MAX),
+        )
+        defender.stamina = max(
+            STAMINA_FLOOR,
+            defender.stamina
+            - random.uniform(DEFENDER_STAMINA_DRAIN_MIN, DEFENDER_STAMINA_DRAIN_MAX),
+        )
 
         # Endurance drain (tracks cumulative damage for multi-person eliminations)
         if not spot.was_reversed:
-            defender.endurance = max(0, defender.endurance - spot.damage * ENDURANCE_DRAIN_FACTOR)
+            defender.endurance = max(
+                0, defender.endurance - spot.damage * ENDURANCE_DRAIN_FACTOR
+            )
         else:
-            attacker.endurance = max(0, attacker.endurance - spot.damage * ENDURANCE_DRAIN_FACTOR)
+            attacker.endurance = max(
+                0, attacker.endurance - spot.damage * ENDURANCE_DRAIN_FACTOR
+            )
 
-    def _should_switch_control(self, attacker: MatchParticipantState,
-                               defender: MatchParticipantState) -> bool:
+    def _should_switch_control(
+        self, attacker: MatchParticipantState, defender: MatchParticipantState
+    ) -> bool:
         """Determine if offensive control should switch."""
         # Psychology stat helps maintain control
         hold_chance = attacker.stats.get("psychology", STAT_BASELINE) / 100
         comeback_chance = defender.stats.get("stamina", STAT_BASELINE) / 200
-        comeback_chance += defender.stats.get("speed", STAT_BASELINE) / 400  # Fast wrestlers escape faster
+        comeback_chance += (
+            defender.stats.get("speed", STAT_BASELINE) / 400
+        )  # Fast wrestlers escape faster
 
         # Lower health = more likely to mount comeback (fighting spirit)
         if defender.health < COMEBACK_LOW_HEALTH_THRESHOLD:
@@ -679,8 +900,9 @@ class MatchSimulator:
 
         return random.random() > hold_chance or random.random() < comeback_chance
 
-    def _attempt_finish(self, attacker: MatchParticipantState,
-                        defender: MatchParticipantState) -> Optional[MatchSpot]:
+    def _attempt_finish(
+        self, attacker: MatchParticipantState, defender: MatchParticipantState
+    ) -> Optional[MatchSpot]:
         """Attempt to finish the match.
 
         Includes "going into business" mechanic: a wrestler with high ego,
@@ -696,17 +918,21 @@ class MatchSimulator:
             # --- GOING INTO BUSINESS: wrestler refuses to do the job ---
             # Check if this wrestler has the ego/frustration to go into business
             ego = attacker.stats.get("ego", STAT_BASELINE)
-            frustration = getattr(attacker, '_frustration', 0)
-            morale_mod = getattr(attacker, '_morale', STAT_BASELINE)
+            frustration = getattr(attacker, "_frustration", 0)
+            morale_mod = getattr(attacker, "_morale", STAT_BASELINE)
 
             # Conditions: high ego + high frustration + low morale + title match stakes
             shoot_chance = 0.0
             if ego > SHOOT_EGO_THRESHOLD:
                 shoot_chance += (ego - SHOOT_EGO_THRESHOLD) / 300  # Up to ~0.10
             if frustration > SHOOT_FRUSTRATION_THRESHOLD:
-                shoot_chance += (frustration - SHOOT_FRUSTRATION_THRESHOLD) / 400  # Up to ~0.10
+                shoot_chance += (
+                    frustration - SHOOT_FRUSTRATION_THRESHOLD
+                ) / 400  # Up to ~0.10
             if morale_mod < SHOOT_MORALE_THRESHOLD:
-                shoot_chance += (SHOOT_MORALE_THRESHOLD - morale_mod) / 300  # Up to ~0.10
+                shoot_chance += (
+                    SHOOT_MORALE_THRESHOLD - morale_mod
+                ) / 300  # Up to ~0.10
             if self.is_title_match:
                 shoot_chance *= SHOOT_TITLE_MULTIPLIER
 
@@ -777,8 +1003,9 @@ class MatchSimulator:
             description=desc,
         )
 
-    def _near_fall(self, attacker: MatchParticipantState,
-                   defender: MatchParticipantState) -> Optional[MatchSpot]:
+    def _near_fall(
+        self, attacker: MatchParticipantState, defender: MatchParticipantState
+    ) -> Optional[MatchSpot]:
         """Generate a near-fall spot."""
         if defender.health > NEAR_FALL_HEALTH_THRESHOLD:
             return None
@@ -797,8 +1024,9 @@ class MatchSimulator:
             description=desc,
         )
 
-    def _attempt_interference(self, attacker: MatchParticipantState,
-                              defender: MatchParticipantState) -> Optional[MatchSpot]:
+    def _attempt_interference(
+        self, attacker: MatchParticipantState, defender: MatchParticipantState
+    ) -> Optional[MatchSpot]:
         """Check if a manager at ringside interferes."""
         if self._interference_happened or not self.managers:
             return None
@@ -826,15 +1054,19 @@ class MatchSimulator:
                 if random.random() < INTERFERENCE_DQ_CHANCE:
                     self._dq_triggered = True
                     desc = random.choice(INTERFERENCE_CAUGHT).format(
-                        mgr=mgr.manager_name, attacker=attacker.name,
-                        defender=defender.name
+                        mgr=mgr.manager_name,
+                        attacker=attacker.name,
+                        defender=defender.name,
                     )
                     return MatchSpot(
-                        tick=self.tick, attacker_id=defender.wrestler_id,
+                        tick=self.tick,
+                        attacker_id=defender.wrestler_id,
                         defender_id=attacker.wrestler_id,
                         move_name="Disqualification",
-                        move_type="interference", damage=0,
-                        is_finish=True, finish_type="disqualification",
+                        move_type="interference",
+                        damage=0,
+                        is_finish=True,
+                        finish_type="disqualification",
                         crowd_reaction="The crowd is furious!",
                         heat_change=-5,
                         description=desc,
@@ -845,10 +1077,12 @@ class MatchSimulator:
                         mgr=mgr.manager_name, defender=defender.name
                     )
                     return MatchSpot(
-                        tick=self.tick, attacker_id=attacker.wrestler_id,
+                        tick=self.tick,
+                        attacker_id=attacker.wrestler_id,
                         defender_id=defender.wrestler_id,
                         move_name="Failed Interference",
-                        move_type="interference", damage=0,
+                        move_type="interference",
+                        damage=0,
                         crowd_reaction="The referee is on to the tricks!",
                         heat_change=2,
                         description=desc,
@@ -856,17 +1090,18 @@ class MatchSimulator:
             else:
                 # Successful interference — bonus damage + momentum
                 desc = random.choice(INTERFERENCE_SUCCESS).format(
-                    mgr=mgr.manager_name, attacker=attacker.name,
-                    defender=defender.name
+                    mgr=mgr.manager_name, attacker=attacker.name, defender=defender.name
                 )
                 defender.health -= INTERFERENCE_DAMAGE
                 self._update_momentum(defender, -INTERFERENCE_MOMENTUM_LOSS)
                 self._update_momentum(attacker, INTERFERENCE_MOMENTUM_GAIN)
                 return MatchSpot(
-                    tick=self.tick, attacker_id=attacker.wrestler_id,
+                    tick=self.tick,
+                    attacker_id=attacker.wrestler_id,
                     defender_id=defender.wrestler_id,
                     move_name="Manager Interference",
-                    move_type="interference", damage=INTERFERENCE_DAMAGE,
+                    move_type="interference",
+                    damage=INTERFERENCE_DAMAGE,
                     crowd_reaction="The crowd boos the cheating!",
                     heat_change=-3 if attacker.alignment == "heel" else 2,
                     description=desc,
@@ -877,31 +1112,48 @@ class MatchSimulator:
     def _calculate_rating(self, participants: List[MatchParticipantState]) -> float:
         """Calculate match star rating (0.0 - 5.0).  Delegates to match_rating module."""
         from core_engine.match_rating import calculate_rating
+
         return calculate_rating(
-            self.spots, self.is_title_match, self.rivalry_heat,
-            self._interference_happened, self.stipulation,
-            self.show_momentum, self.tick, participants,
+            self.spots,
+            self.is_title_match,
+            self.rivalry_heat,
+            self._interference_happened,
+            self.stipulation,
+            self.show_momentum,
+            self.tick,
+            participants,
         )
 
     def _calculate_heat(self) -> int:
         """Calculate final crowd heat level.  Delegates to match_rating module."""
         from core_engine.match_rating import calculate_heat
+
         return calculate_heat(self.spots, self.show_momentum, self.rivalry_heat)
 
-    def _build_result(self, finish_spot: MatchSpot, attacker: MatchParticipantState,
-                      defender: MatchParticipantState,
-                      participants: List[MatchParticipantState]) -> MatchResult:
+    def _build_result(
+        self,
+        finish_spot: MatchSpot,
+        attacker: MatchParticipantState,
+        defender: MatchParticipantState,
+        participants: List[MatchParticipantState],
+    ) -> MatchResult:
         """Build the final MatchResult."""
         # Generate narrative summary
-        highlights = [s for s in self.spots if s.damage >= HIGHLIGHT_DAMAGE_THRESHOLD or s.is_near_fall or s.is_finisher]
+        highlights = [
+            s
+            for s in self.spots
+            if s.damage >= HIGHLIGHT_DAMAGE_THRESHOLD or s.is_near_fall or s.is_finisher
+        ]
         narrative_parts = [s.description for s in highlights[-5:]]  # Last 5 highlights
         narrative = " ".join(narrative_parts)
 
         # LLM-as-journalist: generate a vivid match narrative
         import os
+
         if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
             try:
                 from game_service.character_agent import generate_match_narrative
+
                 llm_narrative = generate_match_narrative(
                     winner_name=attacker.name,
                     loser_name=defender.name,
@@ -923,13 +1175,15 @@ class MatchSimulator:
         for s in self.spots:
             if s.is_botch:
                 botch_count += 1
-                botch_events.append({
-                    "attacker_id": s.attacker_id,
-                    "victim_id": s.defender_id,
-                    "severity": s.botch_severity,
-                    "move": s.move_name,
-                    "tick": s.tick,
-                })
+                botch_events.append(
+                    {
+                        "attacker_id": s.attacker_id,
+                        "victim_id": s.defender_id,
+                        "severity": s.botch_severity,
+                        "move": s.move_name,
+                        "tick": s.tick,
+                    }
+                )
 
         # Botches hurt match rating
         rating = self._calculate_rating(participants)
@@ -963,8 +1217,3 @@ class MatchSimulator:
 # Re-exported here for backward compatibility.
 # ---------------------------------------------------------------------------
 
-from core_engine.match_db_integration import (  # noqa: E402
-    _build_stat_modifiers,
-    simulate_match_from_db,
-    _generate_post_match_angle,
-)

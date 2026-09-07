@@ -7,14 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agent_service.database import get_db
 from api_gateway.security import (
     get_current_user,
-    require_role,
     TokenData,
     create_token_pair,
     decode_token,
     generate_api_key,
 )
 from models.game_schemas import (
-    UserRegister, UserLogin, UserResponse, TokenResponse,
+    UserRegister,
+    UserLogin,
+    UserResponse,
+    TokenResponse,
 )
 from game_service.auth_service import register_user, authenticate_user
 
@@ -31,12 +33,17 @@ def _handle_value_error(e: ValueError):
 # Auth endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.post("/auth/register", response_model=TokenResponse, status_code=201)
 async def api_register(data: UserRegister, db: AsyncSession = Depends(get_db)):
     """Register a new user account."""
     try:
-        user = register_user(db, data.email, data.username, data.password, data.display_name)
-        pair = create_token_pair(user.id, user.username, getattr(user, "role", "player"))
+        user = register_user(
+            db, data.email, data.username, data.password, data.display_name
+        )
+        pair = create_token_pair(
+            user.id, user.username, getattr(user, "role", "player")
+        )
         return TokenResponse(
             access_token=pair.access_token,
             user=UserResponse.model_validate(user),
@@ -50,7 +57,9 @@ async def api_login(data: UserLogin, db: AsyncSession = Depends(get_db)):
     """Login and receive JWT token."""
     try:
         user = authenticate_user(db, data.username, data.password)
-        pair = create_token_pair(user.id, user.username, getattr(user, "role", "player"))
+        pair = create_token_pair(
+            user.id, user.username, getattr(user, "role", "player")
+        )
         return TokenResponse(
             access_token=pair.access_token,
             user=UserResponse.model_validate(user),
@@ -63,7 +72,9 @@ async def api_login(data: UserLogin, db: AsyncSession = Depends(get_db)):
 async def api_refresh_token(refresh_token: str, db: AsyncSession = Depends(get_db)):
     """Exchange a refresh token for a new access + refresh token pair."""
     token_data = decode_token(refresh_token, expected_type="refresh")
-    pair = create_token_pair(token_data.user_id, token_data.username or "", token_data.role)
+    pair = create_token_pair(
+        token_data.user_id, token_data.username or "", token_data.role
+    )
     return {
         "access_token": pair.access_token,
         "refresh_token": pair.refresh_token,
@@ -78,6 +89,7 @@ async def api_get_me(
 ):
     """Get current user info."""
     from game_service.auth_service import get_user_by_id
+
     try:
         user = get_user_by_id(db, current_user.user_id)
         return UserResponse.model_validate(user)
@@ -92,6 +104,7 @@ async def api_generate_api_key(
 ):
     """Generate a new API key for the current user."""
     from models.game_models import UserDB
+
     user = db.query(UserDB).filter(UserDB.id == current_user.user_id).first()
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -110,6 +123,7 @@ async def api_revoke_api_key(
 ):
     """Revoke the current user's API key."""
     from models.game_models import UserDB
+
     user = db.query(UserDB).filter(UserDB.id == current_user.user_id).first()
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")

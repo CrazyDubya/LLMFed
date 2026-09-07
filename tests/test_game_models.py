@@ -6,11 +6,20 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    UserDB, PlayerDB, WorldDB, WorldStateDB,
-    GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    ContractDB, ShowDB, MatchDB, MatchParticipantDB,
-    ChampionshipDB, StorylineDB, StorylineParticipantDB,
-    PlayerActionDB, GameNarrativeLogDB, WorldNewsDB,
+    UserDB,
+    PlayerDB,
+    WorldDB,
+    WorldStateDB,
+    GameFederationDB,
+    GameWrestlerDB,
+    WrestlerStatsDB,
+    ContractDB,
+    ShowDB,
+    MatchDB,
+    MatchParticipantDB,
+    StorylineDB,
+    StorylineParticipantDB,
+    PlayerActionDB,
 )
 
 
@@ -27,7 +36,9 @@ def db_session():
 
 class TestUserModel:
     def test_create_user(self, db_session):
-        user = UserDB(email="test@example.com", username="testuser", password_hash="hashed")
+        user = UserDB(
+            email="test@example.com", username="testuser", password_hash="hashed"
+        )
         db_session.add(user)
         db_session.commit()
 
@@ -36,9 +47,13 @@ class TestUserModel:
         assert user.is_active is True
 
     def test_user_unique_email(self, db_session):
-        db_session.add(UserDB(email="dup@test.com", username="user1", password_hash="h"))
+        db_session.add(
+            UserDB(email="dup@test.com", username="user1", password_hash="h")
+        )
         db_session.commit()
-        db_session.add(UserDB(email="dup@test.com", username="user2", password_hash="h"))
+        db_session.add(
+            UserDB(email="dup@test.com", username="user2", password_hash="h")
+        )
         with pytest.raises(Exception):
             db_session.commit()
 
@@ -104,8 +119,11 @@ class TestWrestlerModel:
 
         stats = WrestlerStatsDB(
             wrestler_id=wrestler.id,
-            power=80, speed=60, technical=70,
-            charisma=85, mic_skill=90,
+            power=80,
+            speed=60,
+            technical=70,
+            charisma=85,
+            mic_skill=90,
         )
         db_session.add(stats)
         db_session.commit()
@@ -177,8 +195,12 @@ class TestMatchModel:
         db_session.add(match)
         db_session.flush()
 
-        db_session.add(MatchParticipantDB(match_id=match.id, wrestler_id=w1.id, role="competitor"))
-        db_session.add(MatchParticipantDB(match_id=match.id, wrestler_id=w2.id, role="competitor"))
+        db_session.add(
+            MatchParticipantDB(match_id=match.id, wrestler_id=w1.id, role="competitor")
+        )
+        db_session.add(
+            MatchParticipantDB(match_id=match.id, wrestler_id=w2.id, role="competitor")
+        )
         db_session.commit()
 
         assert len(match.participants) == 2
@@ -203,8 +225,16 @@ class TestStorylineModel:
         db_session.add(storyline)
         db_session.flush()
 
-        db_session.add(StorylineParticipantDB(storyline_id=storyline.id, wrestler_id=w1.id, role="protagonist"))
-        db_session.add(StorylineParticipantDB(storyline_id=storyline.id, wrestler_id=w2.id, role="antagonist"))
+        db_session.add(
+            StorylineParticipantDB(
+                storyline_id=storyline.id, wrestler_id=w1.id, role="protagonist"
+            )
+        )
+        db_session.add(
+            StorylineParticipantDB(
+                storyline_id=storyline.id, wrestler_id=w2.id, role="antagonist"
+            )
+        )
         db_session.commit()
 
         assert len(storyline.participants) == 2

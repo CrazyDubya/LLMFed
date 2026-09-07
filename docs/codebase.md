@@ -198,6 +198,7 @@ class TickResult(BaseModel):
     applied_actions: list[AppliedAction]
     state_snapshot: dict[str, Any]
 
+
 class EngineRequest(BaseModel):
     request_id: str
     agent_id: str

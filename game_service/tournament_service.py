@@ -10,7 +10,7 @@ import random
 import math
 import uuid
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,7 @@ class MatchStatus(str, Enum):
 @dataclass
 class TournamentParticipant:
     """A wrestler entered in the tournament."""
+
     wrestler_id: str
     name: str
     seed: int = 0
@@ -47,6 +48,7 @@ class TournamentParticipant:
 @dataclass
 class TournamentMatch:
     """A single match within the tournament bracket."""
+
     match_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     round_number: int = 0
     match_number: int = 0
@@ -71,6 +73,7 @@ class TournamentMatch:
 @dataclass
 class TournamentBracket:
     """Complete tournament bracket with all rounds and matches."""
+
     tournament_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     name: str = ""
     format: TournamentFormat = TournamentFormat.SINGLE_ELIMINATION
@@ -97,7 +100,9 @@ class TournamentBracket:
             "total_rounds": self.total_rounds,
             "current_round": self.current_round,
             "matches_total": len(self.matches),
-            "matches_completed": sum(1 for m in self.matches if m.status == MatchStatus.COMPLETED),
+            "matches_completed": sum(
+                1 for m in self.matches if m.status == MatchStatus.COMPLETED
+            ),
             "winner_id": self.winner_id,
             "stakes": self.stakes,
             "is_complete": self.is_complete,
@@ -107,6 +112,7 @@ class TournamentBracket:
 # ---------------------------------------------------------------------------
 # Bracket generation
 # ---------------------------------------------------------------------------
+
 
 def create_tournament(
     name: str,
@@ -126,12 +132,14 @@ def create_tournament(
     # Create participants with seeding
     participants = []
     for i, wid in enumerate(wrestler_ids):
-        participants.append(TournamentParticipant(
-            wrestler_id=wid,
-            name=wrestler_names.get(wid, f"Wrestler {i+1}"),
-            seed=i + 1,
-            ranking=rankings.get(wid, 999),
-        ))
+        participants.append(
+            TournamentParticipant(
+                wrestler_id=wid,
+                name=wrestler_names.get(wid, f"Wrestler {i + 1}"),
+                seed=i + 1,
+                ranking=rankings.get(wid, 999),
+            )
+        )
 
     # Sort by ranking for seeding
     participants.sort(key=lambda p: p.ranking)
@@ -166,7 +174,7 @@ def _generate_single_elimination(bracket: TournamentBracket) -> None:
     bracket.total_rounds = total_rounds
 
     # Pad to next power of 2 with byes
-    bracket_size = 2 ** total_rounds
+    bracket_size = 2**total_rounds
     seeded = list(bracket.participants)
 
     # Standard bracket seeding (1 vs last, 2 vs second-last, etc.)
@@ -176,7 +184,7 @@ def _generate_single_elimination(bracket: TournamentBracket) -> None:
 
     # Generate all rounds
     for round_num in range(1, total_rounds + 1):
-        num_matches = bracket_size // (2 ** round_num)
+        num_matches = bracket_size // (2**round_num)
         round_matches = []
         for match_num in range(num_matches):
             match = TournamentMatch(
@@ -229,12 +237,14 @@ def _generate_round_robin(bracket: TournamentBracket) -> None:
         for j in range(i + 1, n):
             round_num = (match_num // (n // 2)) + 1 if n > 2 else match_num + 1
             match_num += 1
-            bracket.matches.append(TournamentMatch(
-                round_number=round_num,
-                match_number=match_num,
-                participant_a_id=participants[i].wrestler_id,
-                participant_b_id=participants[j].wrestler_id,
-            ))
+            bracket.matches.append(
+                TournamentMatch(
+                    round_number=round_num,
+                    match_number=match_num,
+                    participant_a_id=participants[i].wrestler_id,
+                    participant_b_id=participants[j].wrestler_id,
+                )
+            )
 
 
 def _generate_royal_rumble(bracket: TournamentBracket) -> None:
@@ -246,14 +256,18 @@ def _generate_royal_rumble(bracket: TournamentBracket) -> None:
 
     bracket.total_rounds = 1
     # Rumble is a single "match" with multiple eliminations tracked elsewhere
-    bracket.matches.append(TournamentMatch(
-        round_number=1,
-        match_number=1,
-        participant_a_id=participants[0].wrestler_id if participants else None,
-        participant_b_id=participants[1].wrestler_id if len(participants) > 1 else None,
-        stipulation="royal_rumble",
-        is_final=True,
-    ))
+    bracket.matches.append(
+        TournamentMatch(
+            round_number=1,
+            match_number=1,
+            participant_a_id=participants[0].wrestler_id if participants else None,
+            participant_b_id=participants[1].wrestler_id
+            if len(participants) > 1
+            else None,
+            stipulation="royal_rumble",
+            is_final=True,
+        )
+    )
 
 
 def _generate_gauntlet(bracket: TournamentBracket) -> None:
@@ -263,19 +277,22 @@ def _generate_gauntlet(bracket: TournamentBracket) -> None:
     bracket.total_rounds = len(participants) - 1
 
     for i in range(len(participants) - 1):
-        bracket.matches.append(TournamentMatch(
-            round_number=i + 1,
-            match_number=1,
-            participant_a_id=participants[i].wrestler_id,
-            participant_b_id=participants[i + 1].wrestler_id,
-            stipulation="gauntlet",
-            is_final=(i == len(participants) - 2),
-        ))
+        bracket.matches.append(
+            TournamentMatch(
+                round_number=i + 1,
+                match_number=1,
+                participant_a_id=participants[i].wrestler_id,
+                participant_b_id=participants[i + 1].wrestler_id,
+                stipulation="gauntlet",
+                is_final=(i == len(participants) - 2),
+            )
+        )
 
 
 # ---------------------------------------------------------------------------
 # Match result recording and bracket advancement
 # ---------------------------------------------------------------------------
+
 
 def _advance_winner(bracket: TournamentBracket, match: TournamentMatch) -> None:
     """Place the winner of a match into the next round."""
@@ -355,7 +372,8 @@ def record_match_result(
 
     # Update current round
     completed_in_round = sum(
-        1 for m in bracket.matches
+        1
+        for m in bracket.matches
         if m.round_number == bracket.current_round and m.status == MatchStatus.COMPLETED
     )
     total_in_round = sum(
@@ -371,15 +389,17 @@ def get_standings(bracket: TournamentBracket) -> List[Dict[str, Any]]:
     """Get current tournament standings (especially useful for round-robin)."""
     standings = []
     for p in bracket.participants:
-        standings.append({
-            "wrestler_id": p.wrestler_id,
-            "name": p.name,
-            "seed": p.seed,
-            "wins": p.wins,
-            "losses": p.losses,
-            "points": p.points,
-            "eliminated": p.eliminated,
-        })
+        standings.append(
+            {
+                "wrestler_id": p.wrestler_id,
+                "name": p.name,
+                "seed": p.seed,
+                "wins": p.wins,
+                "losses": p.losses,
+                "points": p.points,
+                "eliminated": p.eliminated,
+            }
+        )
 
     if bracket.format == TournamentFormat.ROUND_ROBIN:
         standings.sort(key=lambda s: (-s["points"], -s["wins"], s["losses"]))

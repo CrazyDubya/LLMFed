@@ -6,11 +6,17 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    WorldDB, GameWrestlerDB, WrestlerStatsDB, MatchDB, MatchParticipantDB,
-    MatchEventDB, GameFederationDB, ShowDB, ShowSegmentDB, ChampionshipDB,
+    GameWrestlerDB,
+    MatchDB,
+    MatchParticipantDB,
+    MatchEventDB,
+    GameFederationDB,
 )
 from core_engine.match_engine import (
-    MatchSimulator, MatchParticipantState, MatchResult, simulate_match_from_db,
+    MatchSimulator,
+    MatchParticipantState,
+    MatchResult,
+    simulate_match_from_db,
 )
 from game_service.world_service import create_world
 
@@ -28,9 +34,17 @@ def db_session():
 def _make_participant(name, wrestler_id="w1", style="allrounder", **overrides):
     """Create a MatchParticipantState for testing."""
     base_stats = {
-        "power": 50, "technical": 50, "aerial": 50, "brawling": 50,
-        "submission": 50, "stamina": 50, "toughness": 50, "speed": 50,
-        "charisma": 50, "psychology": 50, "selling": 50,
+        "power": 50,
+        "technical": 50,
+        "aerial": 50,
+        "brawling": 50,
+        "submission": 50,
+        "stamina": 50,
+        "toughness": 50,
+        "speed": 50,
+        "charisma": 50,
+        "psychology": 50,
+        "selling": 50,
     }
     base_stats.update(overrides.pop("stats", {}))
     defaults = {
@@ -145,18 +159,26 @@ class TestMatchSimulator:
         high_ratings = []
         for _ in range(30):
             p1 = _make_participant("Low", "w1", stats={"psychology": 20, "selling": 20})
-            p2 = _make_participant("Low2", "w2", stats={"psychology": 20, "selling": 20})
+            p2 = _make_participant(
+                "Low2", "w2", stats={"psychology": 20, "selling": 20}
+            )
             sim = MatchSimulator(planned_winner_id="w1")
             result = sim.simulate([p1, p2])
             low_ratings.append(result.match_rating)
 
-            p1 = _make_participant("High", "w1", stats={"psychology": 90, "selling": 90})
-            p2 = _make_participant("High2", "w2", stats={"psychology": 90, "selling": 90})
+            p1 = _make_participant(
+                "High", "w1", stats={"psychology": 90, "selling": 90}
+            )
+            p2 = _make_participant(
+                "High2", "w2", stats={"psychology": 90, "selling": 90}
+            )
             sim = MatchSimulator(planned_winner_id="w1")
             result = sim.simulate([p1, p2])
             high_ratings.append(result.match_rating)
 
-        assert sum(high_ratings) / len(high_ratings) > sum(low_ratings) / len(low_ratings)
+        assert sum(high_ratings) / len(high_ratings) > sum(low_ratings) / len(
+            low_ratings
+        )
 
     def test_not_enough_participants(self):
         p1 = _make_participant("Solo", "w1")
@@ -192,9 +214,12 @@ class TestSimulateMatchFromDB:
         world = create_world(db_session, "Match Test World")
 
         # Get two wrestlers
-        wrestlers = db_session.query(GameWrestlerDB).filter(
-            GameWrestlerDB.world_id == world.id
-        ).limit(2).all()
+        wrestlers = (
+            db_session.query(GameWrestlerDB)
+            .filter(GameWrestlerDB.world_id == world.id)
+            .limit(2)
+            .all()
+        )
         assert len(wrestlers) == 2
 
         # Create a match
@@ -209,11 +234,13 @@ class TestSimulateMatchFromDB:
 
         # Add participants
         for w in wrestlers:
-            db_session.add(MatchParticipantDB(
-                match_id=match.id,
-                wrestler_id=w.id,
-                role="competitor",
-            ))
+            db_session.add(
+                MatchParticipantDB(
+                    match_id=match.id,
+                    wrestler_id=w.id,
+                    role="competitor",
+                )
+            )
         db_session.commit()
 
         # Simulate
@@ -226,9 +253,11 @@ class TestSimulateMatchFromDB:
         assert match.match_rating > 0
 
         # Match events were persisted
-        events = db_session.query(MatchEventDB).filter(
-            MatchEventDB.match_id == match.id
-        ).all()
+        events = (
+            db_session.query(MatchEventDB)
+            .filter(MatchEventDB.match_id == match.id)
+            .all()
+        )
         assert len(events) > 0
 
         # Simulation log stored
@@ -236,9 +265,12 @@ class TestSimulateMatchFromDB:
 
     def test_title_match_flag(self, db_session):
         world = create_world(db_session, "Title Match World")
-        wrestlers = db_session.query(GameWrestlerDB).filter(
-            GameWrestlerDB.world_id == world.id
-        ).limit(2).all()
+        wrestlers = (
+            db_session.query(GameWrestlerDB)
+            .filter(GameWrestlerDB.world_id == world.id)
+            .limit(2)
+            .all()
+        )
 
         match = MatchDB(
             world_id=world.id,
@@ -250,9 +282,13 @@ class TestSimulateMatchFromDB:
         db_session.flush()
 
         for w in wrestlers:
-            db_session.add(MatchParticipantDB(
-                match_id=match.id, wrestler_id=w.id, role="competitor",
-            ))
+            db_session.add(
+                MatchParticipantDB(
+                    match_id=match.id,
+                    wrestler_id=w.id,
+                    role="competitor",
+                )
+            )
         db_session.commit()
 
         result = simulate_match_from_db(db_session, match)
@@ -263,9 +299,12 @@ class TestSimulateMatchFromDB:
 
     def test_wrestler_condition_affected(self, db_session):
         world = create_world(db_session, "Condition World")
-        wrestlers = db_session.query(GameWrestlerDB).filter(
-            GameWrestlerDB.world_id == world.id
-        ).limit(2).all()
+        wrestlers = (
+            db_session.query(GameWrestlerDB)
+            .filter(GameWrestlerDB.world_id == world.id)
+            .limit(2)
+            .all()
+        )
 
         # Set both to full condition
         for w in wrestlers:
@@ -273,16 +312,21 @@ class TestSimulateMatchFromDB:
         db_session.commit()
 
         match = MatchDB(
-            world_id=world.id, match_type="singles",
+            world_id=world.id,
+            match_type="singles",
             winner_id=wrestlers[0].id,
         )
         db_session.add(match)
         db_session.flush()
 
         for w in wrestlers:
-            db_session.add(MatchParticipantDB(
-                match_id=match.id, wrestler_id=w.id, role="competitor",
-            ))
+            db_session.add(
+                MatchParticipantDB(
+                    match_id=match.id,
+                    wrestler_id=w.id,
+                    role="competitor",
+                )
+            )
         db_session.commit()
 
         simulate_match_from_db(db_session, match)
@@ -298,20 +342,25 @@ class TestSimulateMatchFromDB:
 # Manager interference tests
 # ---------------------------------------------------------------------------
 
+
 class TestManagerInterference:
     def test_interference_can_occur_with_high_skill_manager(self):
         """A high-skill manager should produce interference in some matches."""
         from core_engine.match_engine import ManagerContext
+
         interference_count = 0
         for _ in range(100):
             mgr = ManagerContext(
-                manager_id="mgr1", manager_name="Paul E.",
+                manager_id="mgr1",
+                manager_name="Paul E.",
                 client_wrestler_id="w1",
-                interference_skill=95, cunning=95,
+                interference_skill=95,
+                cunning=95,
                 specialization="interference",
             )
             sim = MatchSimulator(
-                planned_winner_id="w1", managers=[mgr],
+                planned_winner_id="w1",
+                managers=[mgr],
                 card_position="main_event",
             )
             p1 = _make_participant("Face", "w1")
@@ -333,15 +382,19 @@ class TestManagerInterference:
     def test_dq_finish_possible_from_interference(self):
         """Caught interference can produce DQ finish."""
         from core_engine.match_engine import ManagerContext
+
         dq_count = 0
         for _ in range(300):
             mgr = ManagerContext(
-                manager_id="mgr1", manager_name="Sneaky",
+                manager_id="mgr1",
+                manager_name="Sneaky",
                 client_wrestler_id="w1",
-                interference_skill=99, cunning=99,
+                interference_skill=99,
+                cunning=99,
             )
             sim = MatchSimulator(
-                planned_winner_id="w1", managers=[mgr],
+                planned_winner_id="w1",
+                managers=[mgr],
                 card_position="main_event",
             )
             p1 = _make_participant("A", "w1")
@@ -357,10 +410,12 @@ class TestManagerInterference:
 # Rivalry heat tests
 # ---------------------------------------------------------------------------
 
+
 class TestRivalryHeat:
     def test_rivalry_heat_boosts_match_rating(self):
         """High rivalry heat should produce higher average ratings."""
         import random as rng
+
         ratings_no_rivalry = []
         ratings_high_rivalry = []
         rng.seed(42)
@@ -381,21 +436,27 @@ class TestRivalryHeat:
 
         avg_low = sum(ratings_no_rivalry) / len(ratings_no_rivalry)
         avg_high = sum(ratings_high_rivalry) / len(ratings_high_rivalry)
-        assert avg_high > avg_low, f"Rivalry avg {avg_high:.2f} should be > no-rivalry {avg_low:.2f}"
+        assert avg_high > avg_low, (
+            f"Rivalry avg {avg_high:.2f} should be > no-rivalry {avg_low:.2f}"
+        )
 
     def test_rivalry_heat_boosts_crowd_heat(self):
         """High rivalry heat should produce higher crowd heat."""
         heats_low = []
         heats_high = []
         for _ in range(50):
-            sim = MatchSimulator(planned_winner_id="w1", rivalry_heat=0, show_momentum=50)
+            sim = MatchSimulator(
+                planned_winner_id="w1", rivalry_heat=0, show_momentum=50
+            )
             p1 = _make_participant("A", "w1")
             p2 = _make_participant("B", "w2")
             result = sim.simulate([p1, p2])
             heats_low.append(result.crowd_heat)
 
         for _ in range(50):
-            sim = MatchSimulator(planned_winner_id="w1", rivalry_heat=100, show_momentum=50)
+            sim = MatchSimulator(
+                planned_winner_id="w1", rivalry_heat=100, show_momentum=50
+            )
             p1 = _make_participant("A", "w1")
             p2 = _make_participant("B", "w2")
             result = sim.simulate([p1, p2])
@@ -409,6 +470,7 @@ class TestRivalryHeat:
 # ---------------------------------------------------------------------------
 # Show momentum tests
 # ---------------------------------------------------------------------------
+
 
 class TestShowMomentum:
     def test_high_show_momentum_boosts_crowd_heat(self):
@@ -431,12 +493,15 @@ class TestShowMomentum:
 
         avg_low = sum(heats_low) / len(heats_low)
         avg_high = sum(heats_high) / len(heats_high)
-        assert avg_high > avg_low, f"High momentum {avg_high:.1f} not > low {avg_low:.1f}"
+        assert avg_high > avg_low, (
+            f"High momentum {avg_high:.1f} not > low {avg_low:.1f}"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Post-match angle tests (DB-integrated)
 # ---------------------------------------------------------------------------
+
 
 class TestPostMatchAngle:
     def test_post_match_angle_with_heel_stable(self, db_session):
@@ -445,33 +510,46 @@ class TestPostMatchAngle:
         from core_engine.match_engine import _generate_post_match_angle
 
         world = create_world(db_session, "Angle Test World")
-        wrestlers = db_session.query(GameWrestlerDB).filter(
-            GameWrestlerDB.world_id == world.id
-        ).limit(3).all()
+        wrestlers = (
+            db_session.query(GameWrestlerDB)
+            .filter(GameWrestlerDB.world_id == world.id)
+            .limit(3)
+            .all()
+        )
         assert len(wrestlers) >= 3
 
-        fed = db_session.query(GameFederationDB).filter(
-            GameFederationDB.world_id == world.id
-        ).first()
+        fed = (
+            db_session.query(GameFederationDB)
+            .filter(GameFederationDB.world_id == world.id)
+            .first()
+        )
 
         # Create a heel stable with wrestler 0 as leader and wrestler 2 as enforcer
         stable = StableDB(
-            world_id=world.id, federation_id=fed.id,
-            name="Evil Corp", alignment="heel", is_active=True,
+            world_id=world.id,
+            federation_id=fed.id,
+            name="Evil Corp",
+            alignment="heel",
+            is_active=True,
         )
         db_session.add(stable)
         db_session.flush()
 
         for i, role in [(0, "leader"), (2, "enforcer")]:
-            db_session.add(StableMemberDB(
-                stable_id=stable.id, wrestler_id=wrestlers[i].id,
-                role=role, is_active=True,
-            ))
+            db_session.add(
+                StableMemberDB(
+                    stable_id=stable.id,
+                    wrestler_id=wrestlers[i].id,
+                    role=role,
+                    is_active=True,
+                )
+            )
         db_session.commit()
 
         # Build a match result where wrestler 0 (heel stable leader) won vs wrestler 1
         match = MatchDB(
-            world_id=world.id, match_type="singles",
+            world_id=world.id,
+            match_type="singles",
             winner_id=wrestlers[0].id,
         )
         db_session.add(match)
@@ -490,7 +568,9 @@ class TestPostMatchAngle:
 
         angles = 0
         for _ in range(100):
-            angle = _generate_post_match_angle(db_session, match, result, participant_states)
+            angle = _generate_post_match_angle(
+                db_session, match, result, participant_states
+            )
             if angle is not None:
                 assert angle["type"] == "faction_beatdown"
                 assert angle["stable_name"] == "Evil Corp"
@@ -502,19 +582,24 @@ class TestPostMatchAngle:
         from core_engine.match_engine import _generate_post_match_angle
 
         world = create_world(db_session, "No Angle World")
-        wrestlers = db_session.query(GameWrestlerDB).filter(
-            GameWrestlerDB.world_id == world.id
-        ).limit(2).all()
+        wrestlers = (
+            db_session.query(GameWrestlerDB)
+            .filter(GameWrestlerDB.world_id == world.id)
+            .limit(2)
+            .all()
+        )
 
-        match = MatchDB(world_id=world.id, match_type="singles", winner_id=wrestlers[0].id)
+        match = MatchDB(
+            world_id=world.id, match_type="singles", winner_id=wrestlers[0].id
+        )
         db_session.add(match)
         db_session.flush()
 
         result = MatchResult(winner_id=wrestlers[0].id)
-        participant_states = [
-            _make_participant(w.name, w.id) for w in wrestlers
-        ]
+        participant_states = [_make_participant(w.name, w.id) for w in wrestlers]
 
         for _ in range(50):
-            angle = _generate_post_match_angle(db_session, match, result, participant_states)
+            angle = _generate_post_match_angle(
+                db_session, match, result, participant_states
+            )
             assert angle is None, "Got angle without any stables"

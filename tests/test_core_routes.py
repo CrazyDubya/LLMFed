@@ -3,10 +3,9 @@
 Uses FastAPI TestClient to exercise the HTTP layer end-to-end against
 an in-memory SQLite database.
 """
+
 import os
 import uuid
-import pytest
-from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 # Allow the TestClient's "testserver" host through TrustedHostMiddleware
@@ -29,6 +28,7 @@ def _unique(prefix: str = "") -> str:
 # ---------------------------------------------------------------------------
 # Health & Monitoring
 # ---------------------------------------------------------------------------
+
 
 class TestHealthRoutes:
     def test_root_returns_welcome(self):
@@ -60,6 +60,7 @@ class TestHealthRoutes:
 # ---------------------------------------------------------------------------
 # Agent CRUD
 # ---------------------------------------------------------------------------
+
 
 def _agent_payload(**overrides):
     base = {
@@ -131,6 +132,7 @@ class TestAgentRoutes:
 # ---------------------------------------------------------------------------
 # Federation CRUD
 # ---------------------------------------------------------------------------
+
 
 def _fed_payload(**overrides):
     base = {
@@ -213,6 +215,7 @@ class TestFederationRoutes:
 # ---------------------------------------------------------------------------
 # Engine routes
 # ---------------------------------------------------------------------------
+
 
 class TestEngineRoutes:
     def test_engine_advance(self):

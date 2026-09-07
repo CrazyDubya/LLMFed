@@ -12,8 +12,9 @@ from api_gateway.security import get_password_hash, verify_password, create_acce
 logger = logging.getLogger(__name__)
 
 
-def register_user(db: Session, email: str, username: str, password: str,
-                  display_name: str = None) -> UserDB:
+def register_user(
+    db: Session, email: str, username: str, password: str, display_name: str = None
+) -> UserDB:
     """Register a new user account."""
     password_hash = get_password_hash(password)
     user = UserDB(
@@ -44,9 +45,7 @@ def authenticate_user(db: Session, username: str, password: str) -> UserDB:
 
 def create_user_token(user: UserDB) -> str:
     """Create a JWT access token for a user."""
-    return create_access_token(
-        data={"sub": user.id, "username": user.username}
-    )
+    return create_access_token(data={"sub": user.id, "username": user.username})
 
 
 def get_user_by_id(db: Session, user_id: str) -> UserDB:

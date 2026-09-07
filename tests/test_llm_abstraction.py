@@ -107,6 +107,7 @@ class TestOpenAIProvider:
 
     def test_circuit_breaker_blocks_when_open(self):
         from llm_abstraction.provider import LLMCircuitOpenError
+
         provider = OpenAIProvider(
             model="gpt-3.5-turbo", api_key="test-key", circuit_threshold=1
         )
@@ -159,12 +160,16 @@ class TestAnthropicProvider:
     """Tests for Anthropic Claude provider."""
 
     def test_provider_initialization(self):
-        provider = AnthropicProvider(model="claude-sonnet-4-20250514", api_key="test-key")
+        provider = AnthropicProvider(
+            model="claude-sonnet-4-20250514", api_key="test-key"
+        )
         assert provider.model == "claude-sonnet-4-20250514"
         assert provider.api_key == "test-key"
 
     def test_provider_validation(self):
-        provider = AnthropicProvider(model="claude-sonnet-4-20250514", api_key="test-key")
+        provider = AnthropicProvider(
+            model="claude-sonnet-4-20250514", api_key="test-key"
+        )
         assert provider.validate_config() is True
 
         provider_no_key = AnthropicProvider(model="claude-sonnet-4-20250514")
@@ -186,7 +191,9 @@ class TestAnthropicProvider:
         mock_client.messages.create.return_value = mock_response
 
         with patch("anthropic.Anthropic", return_value=mock_client):
-            provider = AnthropicProvider(model="claude-sonnet-4-20250514", api_key="test-key")
+            provider = AnthropicProvider(
+                model="claude-sonnet-4-20250514", api_key="test-key"
+            )
             messages = [
                 LLMMessage(role="system", content="You are helpful"),
                 LLMMessage(role="user", content="Hello"),
@@ -439,32 +446,30 @@ class TestProviderFallback:
     """Tests for provider fallback logic."""
 
     def test_fallback_to_second_provider(self):
-        with patch.object(
-            OllamaProvider, "validate_config", return_value=False
-        ), patch.object(OpenAIProvider, "validate_config", return_value=True):
+        with (
+            patch.object(OllamaProvider, "validate_config", return_value=False),
+            patch.object(OpenAIProvider, "validate_config", return_value=True),
+        ):
             llm = LLMAbstraction(
                 provider="auto", fallback_providers=["ollama", "openai"]
             )
             assert isinstance(llm.provider, OpenAIProvider)
 
     def test_no_provider_available(self):
-        with patch.object(
-            OllamaProvider, "validate_config", return_value=False
-        ), patch.object(OpenAIProvider, "validate_config", return_value=False):
+        with (
+            patch.object(OllamaProvider, "validate_config", return_value=False),
+            patch.object(OpenAIProvider, "validate_config", return_value=False),
+        ):
             with pytest.raises(
                 RuntimeError, match="No LLM provider could be initialized"
             ):
-                LLMAbstraction(
-                    provider="auto", fallback_providers=["ollama", "openai"]
-                )
+                LLMAbstraction(provider="auto", fallback_providers=["ollama", "openai"])
 
     def test_anthropic_in_fallback_chain(self):
-        with patch.object(
-            OllamaProvider, "validate_config", return_value=False
-        ), patch.object(
-            OpenAIProvider, "validate_config", return_value=False
-        ), patch.object(
-            AnthropicProvider, "validate_config", return_value=True
+        with (
+            patch.object(OllamaProvider, "validate_config", return_value=False),
+            patch.object(OpenAIProvider, "validate_config", return_value=False),
+            patch.object(AnthropicProvider, "validate_config", return_value=True),
         ):
             llm = LLMAbstraction(
                 provider="auto",

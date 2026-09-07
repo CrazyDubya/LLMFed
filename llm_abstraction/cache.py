@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CacheEntry:
     """A cached LLM response with metadata."""
+
     response: Any  # LLMResponse
     created_at: float = field(default_factory=time.monotonic)
     hit_count: int = 0

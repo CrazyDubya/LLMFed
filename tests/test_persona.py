@@ -7,8 +7,7 @@ social media posts, persona-aware promos, kayfabe collision detection.
 
 import pytest
 import random
-from unittest.mock import MagicMock, patch
-from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
 # We test with in-memory SQLite
 from sqlalchemy import create_engine
@@ -16,11 +15,14 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    GameWrestlerDB, WrestlerStatsDB, WrestlerBackstoryDB,
-    GimmickHistoryDB, LifeEventDB, SocialMediaPostDB,
-    WrestlerRelationshipDB, GameFederationDB, ContractDB,
-    WorldDB, StorylineDB, StorylineParticipantDB, PromoDB,
-    WorldNewsDB,
+    GameWrestlerDB,
+    WrestlerStatsDB,
+    WrestlerBackstoryDB,
+    GimmickHistoryDB,
+    LifeEventDB,
+    WrestlerRelationshipDB,
+    GameFederationDB,
+    WorldDB,
 )
 
 
@@ -90,9 +92,18 @@ def wrestler(db_session, world):
     db_session.add(w)
     stats = WrestlerStatsDB(
         wrestler_id=w.id,
-        power=75, speed=50, technical=40, aerial=30,
-        brawling=80, submission=30, stamina=70, toughness=75,
-        charisma=65, mic_skill=55, psychology=50, selling=45,
+        power=75,
+        speed=50,
+        technical=40,
+        aerial=30,
+        brawling=80,
+        submission=30,
+        stamina=70,
+        toughness=75,
+        charisma=65,
+        mic_skill=55,
+        psychology=50,
+        selling=45,
     )
     db_session.add(stats)
     db_session.flush()
@@ -119,9 +130,18 @@ def wrestler2(db_session, world):
     db_session.add(w)
     stats = WrestlerStatsDB(
         wrestler_id=w.id,
-        power=60, speed=65, technical=70, aerial=40,
-        brawling=50, submission=60, stamina=65, toughness=60,
-        charisma=70, mic_skill=75, psychology=65, selling=60,
+        power=60,
+        speed=65,
+        technical=70,
+        aerial=40,
+        brawling=50,
+        submission=60,
+        stamina=65,
+        toughness=60,
+        charisma=70,
+        mic_skill=75,
+        psychology=65,
+        selling=60,
     )
     db_session.add(stats)
     db_session.flush()
@@ -132,9 +152,11 @@ def wrestler2(db_session, world):
 # Backstory tests
 # ===================================================================
 
+
 class TestBackstoryGeneration:
     def test_generate_backstory(self, db_session, wrestler):
         from game_service.persona_service import generate_backstory
+
         backstory = generate_backstory(db_session, wrestler)
 
         assert backstory is not None
@@ -142,9 +164,14 @@ class TestBackstoryGeneration:
         assert backstory.origin_story is not None
         assert len(backstory.origin_story) > 10
         assert backstory.family_situation in [
-            "single", "married", "married_with_kids", "divorced",
-            "divorced_with_kids", "long_term_relationship",
-            "estranged_family", "close_family",
+            "single",
+            "married",
+            "married_with_kids",
+            "divorced",
+            "divorced_with_kids",
+            "long_term_relationship",
+            "estranged_family",
+            "close_family",
         ]
         assert backstory.wrestling_motivation is not None
         assert backstory.real_personality is not None
@@ -154,12 +181,17 @@ class TestBackstoryGeneration:
 
     def test_backstory_persists(self, db_session, wrestler):
         from game_service.persona_service import generate_backstory
+
         generate_backstory(db_session, wrestler)
         db_session.flush()
 
-        loaded = db_session.query(WrestlerBackstoryDB).filter(
-            WrestlerBackstoryDB.wrestler_id == wrestler.id,
-        ).first()
+        loaded = (
+            db_session.query(WrestlerBackstoryDB)
+            .filter(
+                WrestlerBackstoryDB.wrestler_id == wrestler.id,
+            )
+            .first()
+        )
         assert loaded is not None
         assert loaded.origin_story is not None
 
@@ -168,18 +200,27 @@ class TestBackstoryGeneration:
 # Gimmick tests
 # ===================================================================
 
+
 class TestGimmickGeneration:
     def test_generate_initial_gimmick(self, db_session, wrestler):
         from game_service.persona_service import generate_initial_gimmick
+
         gimmick = generate_initial_gimmick(db_session, wrestler, "2026-03-01")
 
         assert gimmick is not None
         assert gimmick.wrestler_id == wrestler.id
         assert gimmick.is_active is True
         assert gimmick.archetype in [
-            "monster_heel", "underdog_face", "cocky_technician",
-            "silent_assassin", "cult_leader", "comedy_act",
-            "anti_hero", "legacy", "patriot", "daredevil",
+            "monster_heel",
+            "underdog_face",
+            "cocky_technician",
+            "silent_assassin",
+            "cult_leader",
+            "comedy_act",
+            "anti_hero",
+            "legacy",
+            "patriot",
+            "daredevil",
         ]
         assert gimmick.staleness == 0
         assert gimmick.depth_score > 0
@@ -187,8 +228,10 @@ class TestGimmickGeneration:
 
     def test_gimmick_staleness_increases(self, db_session, wrestler):
         from game_service.persona_service import (
-            generate_initial_gimmick, tick_gimmick_staleness,
+            generate_initial_gimmick,
+            tick_gimmick_staleness,
         )
+
         gimmick = generate_initial_gimmick(db_session, wrestler, "2026-03-01")
         initial_staleness = gimmick.staleness
 
@@ -197,8 +240,10 @@ class TestGimmickGeneration:
 
     def test_repackaging_pressure(self, db_session, wrestler):
         from game_service.persona_service import (
-            generate_initial_gimmick, check_repackaging_pressure,
+            generate_initial_gimmick,
+            check_repackaging_pressure,
         )
+
         gimmick = generate_initial_gimmick(db_session, wrestler, "2026-03-01")
         gimmick.staleness = 80
         gimmick.effectiveness = 20
@@ -210,13 +255,18 @@ class TestGimmickGeneration:
 
     def test_execute_gimmick_change(self, db_session, wrestler):
         from game_service.persona_service import (
-            generate_initial_gimmick, execute_gimmick_change,
+            generate_initial_gimmick,
+            execute_gimmick_change,
         )
+
         old_gimmick = generate_initial_gimmick(db_session, wrestler, "2026-03-01")
         old_archetype = old_gimmick.archetype
 
         new_gimmick = execute_gimmick_change(
-            db_session, wrestler, "2026-06-01", "stale_gimmick",
+            db_session,
+            wrestler,
+            "2026-06-01",
+            "stale_gimmick",
         )
 
         assert old_gimmick.is_active is False
@@ -228,8 +278,10 @@ class TestGimmickGeneration:
 
     def test_evolve_gimmick_depth(self, db_session, wrestler):
         from game_service.persona_service import (
-            generate_initial_gimmick, evolve_gimmick,
+            generate_initial_gimmick,
+            evolve_gimmick,
         )
+
         gimmick = generate_initial_gimmick(db_session, wrestler, "2026-03-01")
         initial_depth = gimmick.depth_score
 
@@ -242,9 +294,11 @@ class TestGimmickGeneration:
 # Life event tests
 # ===================================================================
 
+
 class TestLifeEvents:
     def test_generate_life_event_low_probability(self, db_session, wrestler, world):
         from game_service.persona_service import generate_backstory, generate_life_event
+
         generate_backstory(db_session, wrestler)
 
         # With 3% chance, most calls return None
@@ -257,6 +311,7 @@ class TestLifeEvents:
 
     def test_generate_life_event_forced(self, db_session, wrestler, world):
         from game_service.persona_service import generate_backstory
+
         generate_backstory(db_session, wrestler)
 
         # Directly seed a life event
@@ -275,16 +330,22 @@ class TestLifeEvents:
         db_session.add(event)
         db_session.flush()
 
-        loaded = db_session.query(LifeEventDB).filter(
-            LifeEventDB.wrestler_id == wrestler.id,
-        ).first()
+        loaded = (
+            db_session.query(LifeEventDB)
+            .filter(
+                LifeEventDB.wrestler_id == wrestler.id,
+            )
+            .first()
+        )
         assert loaded is not None
         assert loaded.event_type == "marriage"
 
     def test_process_life_event_effects(self, db_session, wrestler, world):
         from game_service.persona_service import (
-            generate_backstory, process_life_event_effects,
+            generate_backstory,
+            process_life_event_effects,
         )
+
         generate_backstory(db_session, wrestler)
         initial_morale = wrestler.morale
 
@@ -310,9 +371,11 @@ class TestLifeEvents:
 # Social media tests
 # ===================================================================
 
+
 class TestSocialMedia:
     def test_generate_social_post(self, db_session, wrestler, world):
         from game_service.social_media_service import generate_social_post
+
         post = generate_social_post(db_session, wrestler.id, world.id, "2026-03-01")
 
         assert post is not None
@@ -325,8 +388,13 @@ class TestSocialMedia:
 
     def test_feud_exchange(self, db_session, wrestler, wrestler2, world):
         from game_service.social_media_service import generate_feud_exchange
+
         posts = generate_feud_exchange(
-            db_session, wrestler.id, wrestler2.id, world.id, "2026-03-01",
+            db_session,
+            wrestler.id,
+            wrestler2.id,
+            world.id,
+            "2026-03-01",
         )
 
         assert len(posts) == 2
@@ -337,6 +405,7 @@ class TestSocialMedia:
 
     def test_viral_moment_detection(self):
         from game_service.social_media_service import check_viral_moment
+
         # High-controversy post should have higher viral chance
         post = MagicMock()
         post.controversy_level = 80
@@ -354,6 +423,7 @@ class TestSocialMedia:
 # Persona-aware promo tests
 # ===================================================================
 
+
 class TestPersonaPromos:
     def test_promo_with_gimmick(self, db_session, wrestler, world):
         from game_service.persona_service import generate_initial_gimmick
@@ -361,7 +431,9 @@ class TestPersonaPromos:
 
         generate_initial_gimmick(db_session, wrestler, "2026-03-01")
         promo = generate_promo(
-            db_session, world.id, wrestler.id,
+            db_session,
+            world.id,
+            wrestler.id,
             game_date="2026-03-01",
         )
 
@@ -372,9 +444,12 @@ class TestPersonaPromos:
 
     def test_promo_falls_back_without_gimmick(self, db_session, wrestler, world):
         from game_service.promo_service import generate_promo
+
         # No gimmick data — should use legacy templates
         promo = generate_promo(
-            db_session, world.id, wrestler.id,
+            db_session,
+            world.id,
+            wrestler.id,
             game_date="2026-03-01",
         )
 
@@ -387,7 +462,9 @@ class TestPersonaPromos:
 
         generate_initial_gimmick(db_session, wrestler, "2026-03-01")
         promo = generate_promo(
-            db_session, world.id, wrestler.id,
+            db_session,
+            world.id,
+            wrestler.id,
             target_wrestler_id=wrestler2.id,
             game_date="2026-03-01",
         )
@@ -408,7 +485,9 @@ class TestPersonaPromos:
         qualities = []
         for _ in range(20):
             promo = generate_promo(
-                db_session, world.id, wrestler.id,
+                db_session,
+                world.id,
+                wrestler.id,
                 game_date="2026-03-01",
             )
             qualities.append(promo.quality_rating)
@@ -421,19 +500,27 @@ class TestPersonaPromos:
 # Collision detection tests
 # ===================================================================
 
+
 class TestCollisionDetection:
     def test_crisis_during_push(self, db_session, wrestler, world):
         from game_service.persona_service import (
-            generate_backstory, detect_collision_events,
+            generate_backstory,
+            detect_collision_events,
         )
+
         generate_backstory(db_session, wrestler)
         wrestler.popularity = 80
 
         event = LifeEventDB(
-            wrestler_id=wrestler.id, world_id=world.id,
-            game_date="2026-03-01", event_type="death_in_family",
-            description="Lost family member", severity=9,
-            is_active=True, morale_impact=-25, performance_impact=-10,
+            wrestler_id=wrestler.id,
+            world_id=world.id,
+            game_date="2026-03-01",
+            event_type="death_in_family",
+            description="Lost family member",
+            severity=9,
+            is_active=True,
+            morale_impact=-25,
+            performance_impact=-10,
         )
         db_session.add(event)
         db_session.flush()
@@ -461,8 +548,10 @@ class TestCollisionDetection:
 
     def test_facade_cracking(self, db_session, wrestler, world):
         from game_service.persona_service import (
-            generate_backstory, detect_collision_events,
+            generate_backstory,
+            detect_collision_events,
         )
+
         backstory = generate_backstory(db_session, wrestler)
         backstory.personal_life_stability = 20
         wrestler.kayfabe_commitment = 85
@@ -476,6 +565,7 @@ class TestCollisionDetection:
 # Migration tests
 # ===================================================================
 
+
 class TestMigration:
     def test_migrate_existing_wrestlers(self, db_session, wrestler, world):
         from game_service.persona_service import migrate_existing_wrestlers
@@ -483,15 +573,23 @@ class TestMigration:
         count = migrate_existing_wrestlers(db_session, world.id)
         assert count >= 1
 
-        backstory = db_session.query(WrestlerBackstoryDB).filter(
-            WrestlerBackstoryDB.wrestler_id == wrestler.id,
-        ).first()
+        backstory = (
+            db_session.query(WrestlerBackstoryDB)
+            .filter(
+                WrestlerBackstoryDB.wrestler_id == wrestler.id,
+            )
+            .first()
+        )
         assert backstory is not None
 
-        gimmick = db_session.query(GimmickHistoryDB).filter(
-            GimmickHistoryDB.wrestler_id == wrestler.id,
-            GimmickHistoryDB.is_active == True,
-        ).first()
+        gimmick = (
+            db_session.query(GimmickHistoryDB)
+            .filter(
+                GimmickHistoryDB.wrestler_id == wrestler.id,
+                GimmickHistoryDB.is_active == True,
+            )
+            .first()
+        )
         assert gimmick is not None
 
     def test_migrate_is_idempotent(self, db_session, wrestler, world):
@@ -506,12 +604,17 @@ class TestMigration:
 # Kayfabe storyline tests
 # ===================================================================
 
+
 class TestKayfabeSpectrum:
-    def test_create_storyline_with_kayfabe_level(self, db_session, world, federation, wrestler, wrestler2):
+    def test_create_storyline_with_kayfabe_level(
+        self, db_session, world, federation, wrestler, wrestler2
+    ):
         from game_service.storyline_service import create_storyline
 
         sl = create_storyline(
-            db_session, world.id, federation.id,
+            db_session,
+            world.id,
+            federation.id,
             [wrestler.id, wrestler2.id],
             storyline_type="feud",
             game_date="2026-03-01",
@@ -519,11 +622,15 @@ class TestKayfabeSpectrum:
         )
         assert sl.kayfabe_level == 30
 
-    def test_default_kayfabe_level(self, db_session, world, federation, wrestler, wrestler2):
+    def test_default_kayfabe_level(
+        self, db_session, world, federation, wrestler, wrestler2
+    ):
         from game_service.storyline_service import create_storyline
 
         sl = create_storyline(
-            db_session, world.id, federation.id,
+            db_session,
+            world.id,
+            federation.id,
             [wrestler.id, wrestler2.id],
             game_date="2026-03-01",
         )

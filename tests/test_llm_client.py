@@ -1,5 +1,4 @@
 import json
-import pytest
 from unittest.mock import patch, MagicMock
 
 from core_engine.llm_client import LLMClient
@@ -69,7 +68,9 @@ def test_send_prompt_llm_unavailable():
     client = LLMClient()
     # Force _llm to None (no provider available)
     client._llm = None
-    with patch("core_engine.llm_client.get_llm", side_effect=RuntimeError("No provider")):
+    with patch(
+        "core_engine.llm_client.get_llm", side_effect=RuntimeError("No provider")
+    ):
         result = client.send_prompt({"role": "test"})
     assert "action_id" in result
     assert "description" in result

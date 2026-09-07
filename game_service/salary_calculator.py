@@ -84,7 +84,10 @@ def calculate_salary(
         if salary > budget_cap:
             logger.debug(
                 "Salary %d capped to %d (%.0f%% of federation budget %.0f)",
-                salary, budget_cap, MAX_BUDGET_FRACTION * 100, federation_budget,
+                salary,
+                budget_cap,
+                MAX_BUDGET_FRACTION * 100,
+                federation_budget,
             )
             salary = max(MIN_SALARY, budget_cap)
 
@@ -103,27 +106,37 @@ def calculate_salary_from_db(
     if not wrestler:
         return MIN_SALARY
 
-    stats = db.query(WrestlerStatsDB).filter(WrestlerStatsDB.wrestler_id == wrestler_id).first()
+    stats = (
+        db.query(WrestlerStatsDB)
+        .filter(WrestlerStatsDB.wrestler_id == wrestler_id)
+        .first()
+    )
     avg_ring = 50.0
     charisma = 50
     if stats:
         avg_ring = (
-            (stats.power or 50) +
-            (stats.speed or 50) +
-            (stats.technical or 50) +
-            (stats.psychology or 50)
+            (stats.power or 50)
+            + (stats.speed or 50)
+            + (stats.technical or 50)
+            + (stats.psychology or 50)
         ) / 4
         charisma = stats.charisma or 50
 
     fed_budget = None
     if federation_id:
-        fed = db.query(GameFederationDB).filter(GameFederationDB.id == federation_id).first()
+        fed = (
+            db.query(GameFederationDB)
+            .filter(GameFederationDB.id == federation_id)
+            .first()
+        )
         if fed:
             fed_budget = fed.budget
 
     # Estimate win_rate from win_streak if detailed W/L counters aren't available
     win_streak = getattr(wrestler, "win_streak", 0) or 0
-    estimated_win_rate = 0.5 + (win_streak * 0.05)  # +5% per streak win, -5% per streak loss
+    estimated_win_rate = 0.5 + (
+        win_streak * 0.05
+    )  # +5% per streak win, -5% per streak loss
     estimated_win_rate = max(0.0, min(1.0, estimated_win_rate))
 
     return calculate_salary(

@@ -16,12 +16,19 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    ContractDB, ChampionshipDB, ChampionshipHistoryDB,
-    MatchDB, MatchParticipantDB, ShowDB, ShowSegmentDB,
-    WrestlerPushDB, BookingVisionDB,
-    WrestlerGoalDB, MentorshipDB, CareerHighlightDB, HallOfFameDB,
-    GameNarrativeLogDB, WrestlerHistoryDB,
+    WorldDB,
+    GameFederationDB,
+    GameWrestlerDB,
+    WrestlerStatsDB,
+    ContractDB,
+    ChampionshipDB,
+    ChampionshipHistoryDB,
+    MatchDB,
+    MatchParticipantDB,
+    WrestlerPushDB,
+    WrestlerGoalDB,
+    MentorshipDB,
+    CareerHighlightDB,
 )
 
 
@@ -46,8 +53,11 @@ def world(db):
 @pytest.fixture
 def federation(db, world):
     f = GameFederationDB(
-        world_id=world.id, name="Test Fed", short_name="TF",
-        prestige=60, is_npc=True,
+        world_id=world.id,
+        name="Test Fed",
+        short_name="TF",
+        prestige=60,
+        is_npc=True,
         ai_personality={"booking_style": "workrate", "risk_tolerance": 50},
     )
     db.add(f)
@@ -55,15 +65,28 @@ def federation(db, world):
     return f
 
 
-def _make_wrestler(db, world, name="Test Wrestler", age=28, popularity=50,
-                   morale=70, alignment="face", **kwargs):
+def _make_wrestler(
+    db,
+    world,
+    name="Test Wrestler",
+    age=28,
+    popularity=50,
+    morale=70,
+    alignment="face",
+    **kwargs,
+):
     w = GameWrestlerDB(
-        world_id=world.id, name=name, is_npc=True, age=age,
-        popularity=popularity, morale=morale, alignment=alignment,
+        world_id=world.id,
+        name=name,
+        is_npc=True,
+        age=age,
+        popularity=popularity,
+        morale=morale,
+        alignment=alignment,
         experience_years=max(0, age - 18),
         peak_age=kwargs.pop("peak_age", 28),
         career_phase=kwargs.pop("career_phase", "prime"),
-        birth_date=kwargs.pop("birth_date", f"{2026-age}-01-15"),
+        birth_date=kwargs.pop("birth_date", f"{2026 - age}-01-15"),
         height_cm=kwargs.pop("height_cm", 185),
         weight_kg=kwargs.pop("weight_kg", 100),
         body_type=kwargs.pop("body_type", "average"),
@@ -75,14 +98,21 @@ def _make_wrestler(db, world, name="Test Wrestler", age=28, popularity=50,
     db.flush()
     stats = WrestlerStatsDB(
         wrestler_id=w.id,
-        power=kwargs.get("power", 60), speed=kwargs.get("speed", 55),
-        technical=kwargs.get("technical", 60), aerial=kwargs.get("aerial", 50),
-        brawling=kwargs.get("brawling", 55), submission=kwargs.get("submission", 50),
-        stamina=kwargs.get("stamina", 60), toughness=kwargs.get("toughness", 55),
-        charisma=kwargs.get("charisma", 50), mic_skill=kwargs.get("mic_skill", 50),
-        psychology=kwargs.get("psychology", 55), selling=kwargs.get("selling", 50),
+        power=kwargs.get("power", 60),
+        speed=kwargs.get("speed", 55),
+        technical=kwargs.get("technical", 60),
+        aerial=kwargs.get("aerial", 50),
+        brawling=kwargs.get("brawling", 55),
+        submission=kwargs.get("submission", 50),
+        stamina=kwargs.get("stamina", 60),
+        toughness=kwargs.get("toughness", 55),
+        charisma=kwargs.get("charisma", 50),
+        mic_skill=kwargs.get("mic_skill", 50),
+        psychology=kwargs.get("psychology", 55),
+        selling=kwargs.get("selling", 50),
         backstage_politics=kwargs.get("backstage_politics", 50),
-        work_ethic=kwargs.get("work_ethic", 60), loyalty=kwargs.get("loyalty", 50),
+        work_ethic=kwargs.get("work_ethic", 60),
+        loyalty=kwargs.get("loyalty", 50),
         injury_prone=kwargs.get("injury_prone", 30),
         conditioning_level=kwargs.get("conditioning_level", 70),
     )
@@ -95,9 +125,11 @@ def _make_wrestler(db, world, name="Test Wrestler", age=28, popularity=50,
 # Group 1: Aging, Decline, Speed Stat, Ring Rust
 # ===========================================================================
 
+
 class TestAging:
     def test_age_wrestlers_increments_age(self, db, world):
         from game_service.wrestler_lifecycle_service import age_wrestlers
+
         w = _make_wrestler(db, world, age=30)
         age_wrestlers(db, world.id, "2027-01-01")
         assert w.age == 31
@@ -105,10 +137,13 @@ class TestAging:
 
     def test_stat_decline_past_peak(self, db, world):
         from game_service.wrestler_lifecycle_service import age_wrestlers
+
         w = _make_wrestler(db, world, age=35, peak_age=28)
-        stats = db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == w.id
-        ).first()
+        stats = (
+            db.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == w.id)
+            .first()
+        )
         old_speed = stats.speed
         old_aerial = stats.aerial
         random.seed(42)
@@ -119,19 +154,23 @@ class TestAging:
 
     def test_mental_stats_improve_with_age(self, db, world):
         from game_service.wrestler_lifecycle_service import age_wrestlers
+
         w = _make_wrestler(db, world, age=35, peak_age=28)
-        stats = db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == w.id
-        ).first()
+        stats = (
+            db.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == w.id)
+            .first()
+        )
         old_psych = stats.psychology
         # Run aging many times to beat randomness
         random.seed(1)
         for year in range(5):
-            age_wrestlers(db, world.id, f"{2027+year}-01-01")
+            age_wrestlers(db, world.id, f"{2027 + year}-01-01")
         assert stats.psychology >= old_psych
 
     def test_career_phase_transitions(self, db, world):
         from game_service.wrestler_lifecycle_service import update_career_phase
+
         w = _make_wrestler(db, world, age=20, peak_age=28)
         w.experience_years = 1
         update_career_phase(w)
@@ -157,13 +196,19 @@ class TestAging:
 
 class TestRetirement:
     def test_retirement_pressure_increases_for_declining(self, db, world):
-        from game_service.wrestler_lifecycle_service import calculate_retirement_pressure
+        from game_service.wrestler_lifecycle_service import (
+            calculate_retirement_pressure,
+        )
+
         w = _make_wrestler(db, world, age=40, career_phase="declining", morale=20)
         pressure = calculate_retirement_pressure(w)
         assert pressure >= 25  # declining (10) + low morale (15)
 
     def test_retirement_pressure_zero_for_prime(self, db, world):
-        from game_service.wrestler_lifecycle_service import calculate_retirement_pressure
+        from game_service.wrestler_lifecycle_service import (
+            calculate_retirement_pressure,
+        )
+
         w = _make_wrestler(db, world, age=28, career_phase="prime", morale=70)
         pressure = calculate_retirement_pressure(w)
         assert pressure == 0
@@ -172,12 +217,14 @@ class TestRetirement:
 class TestRingRust:
     def test_ring_rust_modifier_no_rust(self, db, world):
         from game_service.wrestler_lifecycle_service import calculate_ring_rust_modifier
+
         w = _make_wrestler(db, world)
         w.ring_rust_days = 7
         assert calculate_ring_rust_modifier(w) == 1.0
 
     def test_ring_rust_modifier_heavy_rust(self, db, world):
         from game_service.wrestler_lifecycle_service import calculate_ring_rust_modifier
+
         w = _make_wrestler(db, world)
         w.ring_rust_days = 200
         mod = calculate_ring_rust_modifier(w)
@@ -194,16 +241,36 @@ class TestSpeedStat:
         sim = MatchSimulator(card_position="midcard")
 
         attacker = MatchParticipantState(
-            wrestler_id="a", name="Attacker",
-            stats={"power": 70, "technical": 50, "aerial": 50,
-                   "brawling": 50, "submission": 50, "stamina": 60,
-                   "toughness": 50, "speed": 50, "psychology": 50, "selling": 50},
+            wrestler_id="a",
+            name="Attacker",
+            stats={
+                "power": 70,
+                "technical": 50,
+                "aerial": 50,
+                "brawling": 50,
+                "submission": 50,
+                "stamina": 60,
+                "toughness": 50,
+                "speed": 50,
+                "psychology": 50,
+                "selling": 50,
+            },
         )
         fast_defender = MatchParticipantState(
-            wrestler_id="b", name="FastDef",
-            stats={"power": 50, "technical": 70, "aerial": 50,
-                   "brawling": 50, "submission": 50, "stamina": 60,
-                   "toughness": 50, "speed": 95, "psychology": 70, "selling": 50},
+            wrestler_id="b",
+            name="FastDef",
+            stats={
+                "power": 50,
+                "technical": 70,
+                "aerial": 50,
+                "brawling": 50,
+                "submission": 50,
+                "stamina": 60,
+                "toughness": 50,
+                "speed": 95,
+                "psychology": 70,
+                "selling": 50,
+            },
             momentum=70,
         )
         # The speed stat is now in the reversal formula — test passes
@@ -213,19 +280,24 @@ class TestSpeedStat:
 
     def test_speed_affects_control_switch(self):
         from core_engine.match_engine import MatchSimulator, MatchParticipantState
+
         sim = MatchSimulator()
         attacker = MatchParticipantState(
-            wrestler_id="a", name="A",
+            wrestler_id="a",
+            name="A",
             stats={"psychology": 50, "stamina": 50, "speed": 30},
             health=80,
         )
         fast_defender = MatchParticipantState(
-            wrestler_id="b", name="B",
+            wrestler_id="b",
+            name="B",
             stats={"psychology": 50, "stamina": 50, "speed": 95},
             health=60,
         )
         # Run many times — fast defenders should switch control more often
-        switches = sum(sim._should_switch_control(attacker, fast_defender) for _ in range(100))
+        switches = sum(
+            sim._should_switch_control(attacker, fast_defender) for _ in range(100)
+        )
         assert switches > 20  # Should happen often with speed 95
 
 
@@ -233,28 +305,36 @@ class TestSpeedStat:
 # Group 2: Career Goals
 # ===========================================================================
 
+
 class TestCareerGoals:
     def test_goals_created_from_career_goals_field(self, db, world):
         from game_service.wrestler_lifecycle_service import create_wrestler_goals
+
         w = _make_wrestler(db, world, career_goals=["become_champion", "earn_respect"])
         create_wrestler_goals(db, w, "2026-01-01")
         db.flush()
-        goals = db.query(WrestlerGoalDB).filter(
-            WrestlerGoalDB.wrestler_id == w.id
-        ).all()
+        goals = (
+            db.query(WrestlerGoalDB).filter(WrestlerGoalDB.wrestler_id == w.id).all()
+        )
         assert len(goals) == 2
         assert {g.goal_type for g in goals} == {"become_champion", "earn_respect"}
 
     def test_goal_completed_when_holding_title(self, db, world, federation):
-        from game_service.wrestler_lifecycle_service import create_wrestler_goals, evaluate_goals
+        from game_service.wrestler_lifecycle_service import (
+            create_wrestler_goals,
+            evaluate_goals,
+        )
+
         w = _make_wrestler(db, world, career_goals=["become_champion"])
         create_wrestler_goals(db, w, "2026-01-01")
         db.flush()
 
         # Give wrestler a title
         champ = ChampionshipDB(
-            world_id=world.id, federation_id=federation.id,
-            name="World Title", current_holder_id=w.id,
+            world_id=world.id,
+            federation_id=federation.id,
+            name="World Title",
+            current_holder_id=w.id,
         )
         db.add(champ)
         db.flush()
@@ -264,7 +344,11 @@ class TestCareerGoals:
         assert w.satisfaction > 50  # Satisfaction increased
 
     def test_frustration_grows_when_blocked(self, db, world):
-        from game_service.wrestler_lifecycle_service import create_wrestler_goals, evaluate_goals
+        from game_service.wrestler_lifecycle_service import (
+            create_wrestler_goals,
+            evaluate_goals,
+        )
+
         w = _make_wrestler(db, world, career_goals=["become_champion"])
         create_wrestler_goals(db, w, "2026-01-01")
         db.flush()
@@ -273,37 +357,57 @@ class TestCareerGoals:
         for _ in range(5):
             evaluate_goals(db, w, "2026-06-15")
 
-        goal = db.query(WrestlerGoalDB).filter(
-            WrestlerGoalDB.wrestler_id == w.id,
-            WrestlerGoalDB.goal_type == "become_champion",
-        ).first()
+        goal = (
+            db.query(WrestlerGoalDB)
+            .filter(
+                WrestlerGoalDB.wrestler_id == w.id,
+                WrestlerGoalDB.goal_type == "become_champion",
+            )
+            .first()
+        )
         assert goal.frustration >= 5
 
     def test_glass_ceiling_increases_frustration(self, db, world, federation):
-        from game_service.wrestler_lifecycle_service import create_wrestler_goals, evaluate_goals
+        from game_service.wrestler_lifecycle_service import (
+            create_wrestler_goals,
+            evaluate_goals,
+        )
+
         w = _make_wrestler(db, world, career_goals=["become_champion"])
         create_wrestler_goals(db, w, "2026-01-01")
         db.flush()
 
         # Create push record stuck for 30 weeks
         push = WrestlerPushDB(
-            world_id=world.id, federation_id=federation.id,
-            wrestler_id=w.id, push_tier="midcard", weeks_at_tier=30,
+            world_id=world.id,
+            federation_id=federation.id,
+            wrestler_id=w.id,
+            push_tier="midcard",
+            weeks_at_tier=30,
         )
         db.add(push)
         db.flush()
 
         evaluate_goals(db, w, "2026-06-15")
-        goal = db.query(WrestlerGoalDB).filter(
-            WrestlerGoalDB.wrestler_id == w.id,
-            WrestlerGoalDB.goal_type == "become_champion",
-        ).first()
+        goal = (
+            db.query(WrestlerGoalDB)
+            .filter(
+                WrestlerGoalDB.wrestler_id == w.id,
+                WrestlerGoalDB.goal_type == "become_champion",
+            )
+            .first()
+        )
         assert goal.frustration >= 4  # Base 1 + glass ceiling 3
 
     def test_satisfaction_affects_morale(self, db, world):
-        from game_service.wrestler_lifecycle_service import evaluate_goals, create_wrestler_goals
-        w = _make_wrestler(db, world, satisfaction=20, morale=60,
-                           career_goals=["become_champion"])
+        from game_service.wrestler_lifecycle_service import (
+            evaluate_goals,
+            create_wrestler_goals,
+        )
+
+        w = _make_wrestler(
+            db, world, satisfaction=20, morale=60, career_goals=["become_champion"]
+        )
         create_wrestler_goals(db, w, "2026-01-01")
         db.flush()
         old_morale = w.morale
@@ -315,46 +419,66 @@ class TestCareerGoals:
 # Group 3: Backstage Politics & Locker Room Power
 # ===========================================================================
 
+
 class TestBackstagePolitics:
     def test_creative_influence_calculated(self, db, world, federation):
         from game_service.wrestler_lifecycle_service import update_locker_room_dynamics
+
         w = _make_wrestler(db, world, popularity=80)
-        stats = db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == w.id
-        ).first()
+        stats = (
+            db.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == w.id)
+            .first()
+        )
         stats.backstage_politics = 80
-        db.add(ContractDB(
-            world_id=world.id, wrestler_id=w.id,
-            federation_id=federation.id, status="active",
-            salary_weekly=5000, start_date="2026-01-01",
-        ))
+        db.add(
+            ContractDB(
+                world_id=world.id,
+                wrestler_id=w.id,
+                federation_id=federation.id,
+                status="active",
+                salary_weekly=5000,
+                start_date="2026-01-01",
+            )
+        )
         db.flush()
         update_locker_room_dynamics(db, federation, "2026-06-15")
         assert w.creative_influence > 0
 
     def test_leader_standing(self, db, world, federation):
         from game_service.wrestler_lifecycle_service import update_locker_room_dynamics
+
         w = _make_wrestler(db, world, popularity=85)
-        stats = db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == w.id
-        ).first()
+        stats = (
+            db.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == w.id)
+            .first()
+        )
         stats.backstage_politics = 90
-        db.add(ContractDB(
-            world_id=world.id, wrestler_id=w.id,
-            federation_id=federation.id, status="active",
-            salary_weekly=5000, start_date="2026-01-01",
-        ))
+        db.add(
+            ContractDB(
+                world_id=world.id,
+                wrestler_id=w.id,
+                federation_id=federation.id,
+                status="active",
+                salary_weekly=5000,
+                start_date="2026-01-01",
+            )
+        )
         db.flush()
         update_locker_room_dynamics(db, federation, "2026-06-15")
         assert w.locker_room_standing == "leader"
 
     def test_toxic_drags_morale(self, db, world, federation):
         from game_service.wrestler_lifecycle_service import update_locker_room_dynamics
+
         # Create a toxic wrestler
         toxic = _make_wrestler(db, world, name="Toxic Guy", popularity=60, morale=60)
-        toxic_stats = db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == toxic.id
-        ).first()
+        toxic_stats = (
+            db.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == toxic.id)
+            .first()
+        )
         toxic_stats.backstage_politics = 85
         toxic_stats.work_ethic = 20  # High politics + low work ethic = toxic
 
@@ -362,17 +486,23 @@ class TestBackstagePolitics:
         normal = _make_wrestler(db, world, name="Normal", popularity=50, morale=70)
 
         for w in [toxic, normal]:
-            db.add(ContractDB(
-                world_id=world.id, wrestler_id=w.id,
-                federation_id=federation.id, status="active",
-                salary_weekly=3000, start_date="2026-01-01",
-            ))
+            db.add(
+                ContractDB(
+                    world_id=world.id,
+                    wrestler_id=w.id,
+                    federation_id=federation.id,
+                    status="active",
+                    salary_weekly=3000,
+                    start_date="2026-01-01",
+                )
+            )
         db.flush()
         update_locker_room_dynamics(db, federation, "2026-06-15")
         assert normal.morale < 70  # Morale dragged down by toxic
 
     def test_politics_modifier_in_booking(self, db, world):
         from game_service.wrestler_lifecycle_service import apply_politics_to_booking
+
         w = _make_wrestler(db, world)
         w.creative_influence = 10
         # Low influence: should not modify finish
@@ -384,13 +514,17 @@ class TestBackstagePolitics:
 # Group 4: Developmental Pipeline
 # ===========================================================================
 
+
 class TestDevelopmental:
     def test_mentor_assignment(self, db, world, federation):
         from game_service.wrestler_lifecycle_service import assign_mentor
+
         veteran = _make_wrestler(db, world, name="Vet", age=38, career_phase="veteran")
-        vet_stats = db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == veteran.id
-        ).first()
+        vet_stats = (
+            db.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == veteran.id)
+            .first()
+        )
         vet_stats.psychology = 80
         vet_stats.work_ethic = 70
 
@@ -404,10 +538,13 @@ class TestDevelopmental:
 
     def test_mentor_rejected_if_low_psychology(self, db, world, federation):
         from game_service.wrestler_lifecycle_service import assign_mentor
+
         bad_mentor = _make_wrestler(db, world, name="BadMentor", age=38)
-        bad_stats = db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == bad_mentor.id
-        ).first()
+        bad_stats = (
+            db.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == bad_mentor.id)
+            .first()
+        )
         bad_stats.psychology = 30  # Too low to mentor
 
         rookie = _make_wrestler(db, world, name="Rookie", age=20)
@@ -418,15 +555,22 @@ class TestDevelopmental:
 
     def test_debut_readiness_check(self, db, world, federation):
         from game_service.wrestler_lifecycle_service import check_debut_readiness
+
         rookie = _make_wrestler(db, world, name="DevRookie", age=21)
-        db.add(WrestlerPushDB(
-            world_id=world.id, federation_id=federation.id,
-            wrestler_id=rookie.id, push_tier="developmental",
-            weeks_at_tier=10,
-        ))
-        stats = db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == rookie.id
-        ).first()
+        db.add(
+            WrestlerPushDB(
+                world_id=world.id,
+                federation_id=federation.id,
+                wrestler_id=rookie.id,
+                push_tier="developmental",
+                weeks_at_tier=10,
+            )
+        )
+        stats = (
+            db.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == rookie.id)
+            .first()
+        )
         stats.psychology = 40
         db.flush()
 
@@ -434,36 +578,46 @@ class TestDevelopmental:
 
     def test_debut_not_ready_too_soon(self, db, world, federation):
         from game_service.wrestler_lifecycle_service import check_debut_readiness
+
         rookie = _make_wrestler(db, world, name="TooNew", age=19)
-        db.add(WrestlerPushDB(
-            world_id=world.id, federation_id=federation.id,
-            wrestler_id=rookie.id, push_tier="developmental",
-            weeks_at_tier=3,  # Only 3 weeks
-        ))
+        db.add(
+            WrestlerPushDB(
+                world_id=world.id,
+                federation_id=federation.id,
+                wrestler_id=rookie.id,
+                push_tier="developmental",
+                weeks_at_tier=3,  # Only 3 weeks
+            )
+        )
         db.flush()
         assert check_debut_readiness(db, rookie) is False
 
     def test_training_with_mentor_bonus(self, db, world, federation):
         from game_service.wrestler_lifecycle_service import training_with_mentor
+
         veteran = _make_wrestler(db, world, name="MentorVet", age=38)
-        vet_stats = db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == veteran.id
-        ).first()
+        vet_stats = (
+            db.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == veteran.id)
+            .first()
+        )
         vet_stats.psychology = 80
         vet_stats.work_ethic = 70
 
         rookie = _make_wrestler(db, world, name="MentorRookie", age=20)
         veteran.finisher_type = "technical"
 
-        db.add(MentorshipDB(
-            world_id=world.id,
-            mentor_id=veteran.id,
-            protege_id=rookie.id,
-            federation_id=federation.id,
-            skill_focus="technical",
-            mentor_bonus=0.75,
-            is_active=True,
-        ))
+        db.add(
+            MentorshipDB(
+                world_id=world.id,
+                mentor_id=veteran.id,
+                protege_id=rookie.id,
+                federation_id=federation.id,
+                skill_focus="technical",
+                mentor_bonus=0.75,
+                is_active=True,
+            )
+        )
         db.flush()
 
         bonus = training_with_mentor(db, rookie.id, "technical")
@@ -477,12 +631,16 @@ class TestDevelopmental:
 # Group 5: Legacy, Hall of Fame & Nostalgia
 # ===========================================================================
 
+
 class TestLegacy:
     def test_career_highlight_recorded(self, db, world, federation):
         from game_service.wrestler_lifecycle_service import check_match_highlights
+
         w = _make_wrestler(db, world)
         match = MatchDB(
-            world_id=world.id, match_rating=4.7, is_completed=True,
+            world_id=world.id,
+            match_rating=4.7,
+            is_completed=True,
             winner_id=w.id,
         )
         db.add(match)
@@ -491,37 +649,54 @@ class TestLegacy:
         check_match_highlights(db, match, w.id, "2026-06-15")
         db.flush()
 
-        highlights = db.query(CareerHighlightDB).filter(
-            CareerHighlightDB.wrestler_id == w.id,
-        ).all()
+        highlights = (
+            db.query(CareerHighlightDB)
+            .filter(
+                CareerHighlightDB.wrestler_id == w.id,
+            )
+            .all()
+        )
         assert len(highlights) >= 1
         assert highlights[0].highlight_type == "5_star_classic"
 
     def test_legacy_score_computed(self, db, world, federation):
         from game_service.wrestler_lifecycle_service import compute_legacy_score
+
         w = _make_wrestler(db, world, age=35)
         # Add a title reign
         champ = ChampionshipDB(
-            world_id=world.id, federation_id=federation.id,
+            world_id=world.id,
+            federation_id=federation.id,
             name="World Title",
         )
         db.add(champ)
         db.flush()
-        db.add(ChampionshipHistoryDB(
-            championship_id=champ.id, wrestler_id=w.id,
-            reign_start="2026-01-01",
-        ))
-        db.add(CareerHighlightDB(
-            wrestler_id=w.id, highlight_type="title_win",
-            description="Won title", game_date="2026-01-01",
-        ))
+        db.add(
+            ChampionshipHistoryDB(
+                championship_id=champ.id,
+                wrestler_id=w.id,
+                reign_start="2026-01-01",
+            )
+        )
+        db.add(
+            CareerHighlightDB(
+                wrestler_id=w.id,
+                highlight_type="title_win",
+                description="Won title",
+                game_date="2026-01-01",
+            )
+        )
         db.flush()
 
         score = compute_legacy_score(db, w.id)
         assert score > 0  # Should have points from reign + highlight + years
 
     def test_hall_of_fame_induction(self, db, world, federation):
-        from game_service.wrestler_lifecycle_service import hall_of_fame_ceremony, compute_legacy_score
+        from game_service.wrestler_lifecycle_service import (
+            hall_of_fame_ceremony,
+            compute_legacy_score,
+        )
+
         # Create a retired legend
         legend = _make_wrestler(db, world, name="The Legend", age=42)
         legend.is_active = False
@@ -530,21 +705,29 @@ class TestLegacy:
         # Add career history to boost legacy score
         for i in range(3):
             champ = ChampionshipDB(
-                world_id=world.id, federation_id=federation.id,
+                world_id=world.id,
+                federation_id=federation.id,
                 name=f"Title {i}",
             )
             db.add(champ)
             db.flush()
-            db.add(ChampionshipHistoryDB(
-                championship_id=champ.id, wrestler_id=legend.id,
-                reign_start=f"202{i}-01-01",
-            ))
+            db.add(
+                ChampionshipHistoryDB(
+                    championship_id=champ.id,
+                    wrestler_id=legend.id,
+                    reign_start=f"202{i}-01-01",
+                )
+            )
         for i in range(5):
-            db.add(CareerHighlightDB(
-                wrestler_id=legend.id, highlight_type="5_star_classic",
-                description=f"Classic {i}", game_date=f"202{i}-06-01",
-                significance=8,
-            ))
+            db.add(
+                CareerHighlightDB(
+                    wrestler_id=legend.id,
+                    highlight_type="5_star_classic",
+                    description=f"Classic {i}",
+                    game_date=f"202{i}-06-01",
+                    significance=8,
+                )
+            )
         db.flush()
 
         score = compute_legacy_score(db, legend.id)
@@ -557,6 +740,7 @@ class TestLegacy:
 
     def test_nostalgia_pop(self, db, world):
         from game_service.wrestler_lifecycle_service import apply_nostalgia_pop
+
         w = _make_wrestler(db, world, popularity=50)
         w.legacy_score = 60
 
@@ -566,6 +750,7 @@ class TestLegacy:
 
     def test_no_nostalgia_pop_for_short_absence(self, db, world):
         from game_service.wrestler_lifecycle_service import apply_nostalgia_pop
+
         w = _make_wrestler(db, world, popularity=50)
         w.legacy_score = 60
 
@@ -577,9 +762,11 @@ class TestLegacy:
 # Group 6: Physical Identity, Specialization, Conditioning
 # ===========================================================================
 
+
 class TestPhysicalIdentity:
     def test_body_type_derived(self):
         from game_service.wrestler_lifecycle_service import derive_body_type
+
         assert derive_body_type(180, 75) == "cruiserweight"
         assert derive_body_type(185, 100) == "average"
         assert derive_body_type(195, 120) == "big_man"
@@ -587,19 +774,27 @@ class TestPhysicalIdentity:
 
     def test_physical_attributes_generated(self):
         from game_service.wrestler_lifecycle_service import generate_physical_attributes
+
         phys = generate_physical_attributes()
         assert 165 <= phys["height_cm"] <= 205
         assert 70 <= phys["weight_kg"] <= 160
-        assert phys["body_type"] in ("cruiserweight", "average", "big_man", "super_heavyweight")
+        assert phys["body_type"] in (
+            "cruiserweight",
+            "average",
+            "big_man",
+            "super_heavyweight",
+        )
 
     def test_body_modifier_heavier_attacker(self):
         from game_service.wrestler_lifecycle_service import calculate_body_modifier
+
         mods = calculate_body_modifier(140, 80)  # 60kg heavier
         assert mods["power"] > 1.0
         assert mods["aerial"] < 1.0
 
     def test_body_modifier_lighter_attacker(self):
         from game_service.wrestler_lifecycle_service import calculate_body_modifier
+
         mods = calculate_body_modifier(75, 130)  # 55kg lighter
         assert mods["speed"] > 1.0
         assert mods["power"] < 1.0
@@ -608,6 +803,7 @@ class TestPhysicalIdentity:
 class TestSpecialization:
     def test_stipulation_bonus(self):
         from game_service.wrestler_lifecycle_service import calculate_stipulation_bonus
+
         stats = WrestlerStatsDB()
         stats.cage_specialist = 80
         bonus = calculate_stipulation_bonus(stats, "cage")
@@ -615,6 +811,7 @@ class TestSpecialization:
 
     def test_no_bonus_without_specialization(self):
         from game_service.wrestler_lifecycle_service import calculate_stipulation_bonus
+
         stats = WrestlerStatsDB()
         stats.cage_specialist = 0
         bonus = calculate_stipulation_bonus(stats, "cage")
@@ -622,6 +819,7 @@ class TestSpecialization:
 
     def test_grow_specialization(self):
         from game_service.wrestler_lifecycle_service import grow_specialization
+
         stats = WrestlerStatsDB()
         stats.cage_specialist = 10
         stats.ladder_specialist = 0
@@ -631,10 +829,13 @@ class TestSpecialization:
 
     def test_conditioning_cycle(self, db, world):
         from game_service.wrestler_lifecycle_service import update_conditioning
+
         w = _make_wrestler(db, world)
-        stats = db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == w.id
-        ).first()
+        stats = (
+            db.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == w.id)
+            .first()
+        )
         stats.conditioning_level = 70
         db.flush()
         # No matches = recovery
@@ -646,15 +847,18 @@ class TestSpecialization:
 # Integration: Match engine uses new modifiers
 # ===========================================================================
 
+
 class TestMatchEngineIntegration:
     def test_ring_rust_reduces_stats(self, db, world):
         """Ring rust should reduce effective stats in match simulation."""
         w = _make_wrestler(db, world)
         w.ring_rust_days = 200
         w.condition = 90
-        stats = db.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == w.id
-        ).first()
+        stats = (
+            db.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == w.id)
+            .first()
+        )
         stats.conditioning_level = 50  # Low conditioning
 
         # Stats should be reduced by both ring rust and conditioning modifiers
@@ -668,9 +872,12 @@ class TestMatchEngineIntegration:
     def test_post_match_highlights_recorded(self, db, world):
         """Career highlights should be recorded after great matches."""
         from core_engine.match_aftermath import _post_match_lifecycle
+
         w = _make_wrestler(db, world)
         match = MatchDB(
-            world_id=world.id, match_rating=4.8, is_completed=True,
+            world_id=world.id,
+            match_rating=4.8,
+            is_completed=True,
             winner_id=w.id,
         )
         db.add(match)
@@ -682,9 +889,13 @@ class TestMatchEngineIntegration:
         _post_match_lifecycle(db, match, [p], "2026-06-15")
         db.flush()
 
-        highlights = db.query(CareerHighlightDB).filter(
-            CareerHighlightDB.wrestler_id == w.id,
-        ).all()
+        highlights = (
+            db.query(CareerHighlightDB)
+            .filter(
+                CareerHighlightDB.wrestler_id == w.id,
+            )
+            .all()
+        )
         assert len(highlights) >= 1
 
 
@@ -692,10 +903,12 @@ class TestMatchEngineIntegration:
 # Integration: World generation includes new fields
 # ===========================================================================
 
+
 class TestWorldGeneration:
     def test_wrestlers_have_physical_attributes(self):
         """World generation should populate height/weight/body_type."""
         from game_service.world_service import _generate_npc_wrestler
+
         random.seed(42)
         wrestler, stats = _generate_npc_wrestler("test-world")
         assert wrestler.height_cm is not None
@@ -707,6 +920,13 @@ class TestWorldGeneration:
 
     def test_wrestlers_have_career_phase(self):
         from game_service.world_service import _generate_npc_wrestler
+
         random.seed(42)
         wrestler, stats = _generate_npc_wrestler("test-world")
-        assert wrestler.career_phase in ("rookie", "rising", "prime", "veteran", "declining")
+        assert wrestler.career_phase in (
+            "rookie",
+            "rising",
+            "prime",
+            "veteran",
+            "declining",
+        )

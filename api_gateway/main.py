@@ -116,7 +116,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
     allow_headers=["*"],
-    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "X-Request-ID"],
+    expose_headers=[
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Reset",
+        "X-Request-ID",
+    ],
 )
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
@@ -132,7 +137,9 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Strict-Transport-Security"] = (
+        "max-age=31536000; includeSubDomains"
+    )
     response.headers["Content-Security-Policy"] = "default-src 'self'"
     return response
 
@@ -141,6 +148,7 @@ async def add_security_headers(request: Request, call_next):
 # Error handlers
 # ---------------------------------------------------------------------------
 register_error_handlers(app)
+
 
 # ---------------------------------------------------------------------------
 # Startup / shutdown
@@ -156,7 +164,6 @@ async def _on_startup():
         FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
     except Exception as e:
         logger.warning(f"Failed to connect to redis, caching disabled: {e}")
-
 
 
 # ---------------------------------------------------------------------------
@@ -189,5 +196,6 @@ def read_root(request: Request):
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
+
     logger.info("Starting LLMFed API server...")
     uvicorn.run("api_gateway.main:app", host="0.0.0.0", port=8091, reload=True)

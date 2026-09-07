@@ -66,7 +66,9 @@ def _load_profiles() -> None:
     _active_profile_name = None
 
     if not os.path.isfile(_CONFIG_PATH):
-        logger.debug("No match_profiles.json found at %s — using defaults", _CONFIG_PATH)
+        logger.debug(
+            "No match_profiles.json found at %s — using defaults", _CONFIG_PATH
+        )
         return
 
     try:
@@ -76,7 +78,9 @@ def _load_profiles() -> None:
         _active_profile_name = data.get("active_profile")
         logger.info(
             "Loaded %d match profile(s) from %s (active=%s)",
-            len(_profiles), _CONFIG_PATH, _active_profile_name,
+            len(_profiles),
+            _CONFIG_PATH,
+            _active_profile_name,
         )
     except Exception as e:
         logger.warning("Failed to load match_profiles.json: %s — using defaults", e)
@@ -102,7 +106,8 @@ class MatchConfig:
     def as_dict(self) -> Dict[str, Any]:
         """Return all constants (defaults merged with profile overrides)."""
         result = {
-            k: v for k, v in vars(_defaults).items()
+            k: v
+            for k, v in vars(_defaults).items()
             if k.isupper() and not k.startswith("_")
         }
         result.update(self._overrides)

@@ -1,4 +1,4 @@
-from sqlalchemy.ext.asyncio import AsyncSession
+
 """
 Observability routes — metrics, LLM health, and match config.
 
@@ -22,6 +22,7 @@ router = APIRouter(tags=["monitoring"])
 # GET /metrics
 # -------------------------------------------------------------------------
 
+
 @router.get("/metrics", summary="System metrics snapshot")
 async def get_metrics() -> Dict[str, Any]:
     """Return a snapshot of runtime metrics for monitoring/alerting."""
@@ -29,7 +30,6 @@ async def get_metrics() -> Dict[str, Any]:
 
     # LLM budget
     try:
-
         llm = get_llm()
         metrics["llm_budget"] = llm.get_budget_summary()
         metrics["llm_provider"] = llm.provider_name
@@ -47,16 +47,19 @@ async def get_metrics() -> Dict[str, Any]:
     # WebSocket connections
     try:
         from api_gateway.websocket_hub import manager
+
         metrics["websocket"] = manager.stats()
     except Exception:
         metrics["websocket"] = {"error": "unavailable"}
 
     # LLM cache stats (if async wrapper is in use)
     try:
-        from llm_abstraction.cache import LLMResponseCache
+
         # The cache stats are best accessed through AsyncLLM instances,
         # but we expose a basic cache summary if the singleton exists.
-        metrics["llm_cache_note"] = "Use AsyncLLM.cache_stats() for per-instance cache metrics"
+        metrics["llm_cache_note"] = (
+            "Use AsyncLLM.cache_stats() for per-instance cache metrics"
+        )
     except Exception:
         pass
 
@@ -67,6 +70,7 @@ async def get_metrics() -> Dict[str, Any]:
 # GET /health/llm
 # -------------------------------------------------------------------------
 
+
 @router.get("/health/llm", summary="LLM provider health probe")
 async def llm_health() -> Dict[str, Any]:
     """Probe the active LLM provider and return status + latency.
@@ -75,7 +79,6 @@ async def llm_health() -> Dict[str, Any]:
     """
     result: Dict[str, Any] = {"status": "unknown", "provider": None}
     try:
-
         llm = get_llm()
         result["provider"] = llm.provider_name
         result["model"] = llm.model
@@ -103,6 +106,7 @@ async def llm_health() -> Dict[str, Any]:
 # -------------------------------------------------------------------------
 # GET /match-profiles
 # -------------------------------------------------------------------------
+
 
 @router.get("/match-profiles", summary="List match simulation profiles")
 async def list_match_profiles() -> Dict[str, Any]:

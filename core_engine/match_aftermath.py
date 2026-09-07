@@ -10,9 +10,16 @@ import logging
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    MatchDB, MatchParticipantDB, GameWrestlerDB, WrestlerStatsDB,
-    ChampionshipDB, ChampionshipHistoryDB, WrestlerHistoryDB,
-    WrestlerRelationshipDB, GameNarrativeLogDB, TagTeamDB,
+    MatchDB,
+    MatchParticipantDB,
+    GameWrestlerDB,
+    WrestlerStatsDB,
+    ChampionshipDB,
+    ChampionshipHistoryDB,
+    WrestlerHistoryDB,
+    WrestlerRelationshipDB,
+    GameNarrativeLogDB,
+    TagTeamDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,11 +30,11 @@ logger = logging.getLogger(__name__)
 
 # Popularity / morale shifts
 POP_WINNER_BASE = 2
-POP_WINNER_RATING_SCALE = 3       # * rating_factor
+POP_WINNER_RATING_SCALE = 3  # * rating_factor
 POP_CLEAN_FINISH_BONUS = 2
 MORALE_WINNER_RANGE = (3, 5)
 POP_LOSER_BASE = 3
-POP_LOSER_RATING_SCALE = 2        # * rating_factor
+POP_LOSER_RATING_SCALE = 2  # * rating_factor
 MORALE_LOSER_RANGE = (2, 4)
 
 # Rivalry heat
@@ -105,11 +112,15 @@ def _get_wrestler(db: Session, wrestler_id: str):
 def _get_relationship(db: Session, world_id: str, id1: str, id2: str):
     """Get a relationship between two wrestlers (order-independent)."""
     w1, w2 = sorted([id1, id2])
-    return db.query(WrestlerRelationshipDB).filter(
-        WrestlerRelationshipDB.world_id == world_id,
-        WrestlerRelationshipDB.wrestler1_id == w1,
-        WrestlerRelationshipDB.wrestler2_id == w2,
-    ).first()
+    return (
+        db.query(WrestlerRelationshipDB)
+        .filter(
+            WrestlerRelationshipDB.world_id == world_id,
+            WrestlerRelationshipDB.wrestler1_id == w1,
+            WrestlerRelationshipDB.wrestler2_id == w2,
+        )
+        .first()
+    )
 
 
 def process_match_aftermath(db: Session, match: MatchDB, game_date: str):
@@ -117,10 +128,14 @@ def process_match_aftermath(db: Session, match: MatchDB, game_date: str):
     if not match.is_completed or not match.winner_id:
         return
 
-    participants = db.query(MatchParticipantDB).filter(
-        MatchParticipantDB.match_id == match.id,
-        MatchParticipantDB.role == "competitor",
-    ).all()
+    participants = (
+        db.query(MatchParticipantDB)
+        .filter(
+            MatchParticipantDB.match_id == match.id,
+            MatchParticipantDB.role == "competitor",
+        )
+        .all()
+    )
 
     if len(participants) < 2:
         return
@@ -166,12 +181,15 @@ def process_match_aftermath(db: Session, match: MatchDB, game_date: str):
     _process_shoot_consequences(db, match, game_date)
 
 
-def _handle_title_result(db: Session, match: MatchDB,
-                         winners: list, losers: list, game_date: str):
+def _handle_title_result(
+    db: Session, match: MatchDB, winners: list, losers: list, game_date: str
+):
     """Handle championship title change or successful defense."""
-    champ = db.query(ChampionshipDB).filter(
-        ChampionshipDB.id == match.championship_id
-    ).first()
+    champ = (
+        db.query(ChampionshipDB)
+        .filter(ChampionshipDB.id == match.championship_id)
+        .first()
+    )
     if not champ:
         return
 
@@ -185,14 +203,17 @@ def _handle_title_result(db: Session, match: MatchDB,
     if champ.current_holder_id == winner_id:
         # Successful title defense
         champ.defenses += 1
-        db.add(GameNarrativeLogDB(
-            world_id=match.world_id,
-            game_date=game_date, tick=0,
-            event_type="title_defense",
-            description=f"{winner_name} successfully defends the {champ.name} ({champ.defenses} defenses)",
-            involved_entities=[winner_id, champ.id],
-            importance=7,
-        ))
+        db.add(
+            GameNarrativeLogDB(
+                world_id=match.world_id,
+                game_date=game_date,
+                tick=0,
+                event_type="title_defense",
+                description=f"{winner_name} successfully defends the {champ.name} ({champ.defenses} defenses)",
+                involved_entities=[winner_id, champ.id],
+                importance=7,
+            )
+        )
     else:
         # Title change!
         old_holder_id = champ.current_holder_id
@@ -200,23 +221,29 @@ def _handle_title_result(db: Session, match: MatchDB,
 
         # End old reign
         if old_holder_id:
-            old_reign = db.query(ChampionshipHistoryDB).filter(
-                ChampionshipHistoryDB.championship_id == champ.id,
-                ChampionshipHistoryDB.wrestler_id == old_holder_id,
-                ChampionshipHistoryDB.reign_end == None,
-            ).first()
+            old_reign = (
+                db.query(ChampionshipHistoryDB)
+                .filter(
+                    ChampionshipHistoryDB.championship_id == champ.id,
+                    ChampionshipHistoryDB.wrestler_id == old_holder_id,
+                    ChampionshipHistoryDB.reign_end == None,
+                )
+                .first()
+            )
             if old_reign:
                 old_reign.reign_end = game_date
                 old_reign.how_lost = match.finish_type or "pinfall"
 
         # Start new reign
-        db.add(ChampionshipHistoryDB(
-            championship_id=champ.id,
-            wrestler_id=winner_id,
-            reign_start=game_date,
-            defenses=0,
-            how_won=match.finish_type or "pinfall",
-        ))
+        db.add(
+            ChampionshipHistoryDB(
+                championship_id=champ.id,
+                wrestler_id=winner_id,
+                reign_start=game_date,
+                defenses=0,
+                how_won=match.finish_type or "pinfall",
+            )
+        )
 
         champ.current_holder_id = winner_id
         champ.current_reign_start = game_date
@@ -228,37 +255,47 @@ def _handle_title_result(db: Session, match: MatchDB,
             winner.morale = min(100, winner.morale + TITLE_WIN_MORALE_BONUS)
 
         if old_holder:
-            old_holder.popularity = max(0, old_holder.popularity - TITLE_LOSS_POP_PENALTY)
+            old_holder.popularity = max(
+                0, old_holder.popularity - TITLE_LOSS_POP_PENALTY
+            )
             old_holder.morale = max(0, old_holder.morale - TITLE_LOSS_MORALE_PENALTY)
 
         # History entries
-        db.add(WrestlerHistoryDB(
-            wrestler_id=winner_id, game_date=game_date,
-            event_type="title_win",
-            description=f"Won the {champ.name}",
-            details={"championship_id": champ.id, "finish": match.finish_type},
-        ))
+        db.add(
+            WrestlerHistoryDB(
+                wrestler_id=winner_id,
+                game_date=game_date,
+                event_type="title_win",
+                description=f"Won the {champ.name}",
+                details={"championship_id": champ.id, "finish": match.finish_type},
+            )
+        )
         if old_holder_id:
-            db.add(WrestlerHistoryDB(
-                wrestler_id=old_holder_id, game_date=game_date,
-                event_type="title_loss",
-                description=f"Lost the {champ.name} to {winner_name}",
-                details={"championship_id": champ.id},
-            ))
+            db.add(
+                WrestlerHistoryDB(
+                    wrestler_id=old_holder_id,
+                    game_date=game_date,
+                    event_type="title_loss",
+                    description=f"Lost the {champ.name} to {winner_name}",
+                    details={"championship_id": champ.id},
+                )
+            )
 
         old_name = old_holder.name if old_holder else "the previous champion"
-        db.add(GameNarrativeLogDB(
-            world_id=match.world_id,
-            game_date=game_date, tick=0,
-            event_type="title_change",
-            description=f"NEW CHAMPION! {winner_name} defeats {old_name} for the {champ.name}!",
-            involved_entities=[winner_id, champ.id],
-            importance=9,
-        ))
+        db.add(
+            GameNarrativeLogDB(
+                world_id=match.world_id,
+                game_date=game_date,
+                tick=0,
+                event_type="title_change",
+                description=f"NEW CHAMPION! {winner_name} defeats {old_name} for the {champ.name}!",
+                involved_entities=[winner_id, champ.id],
+                importance=9,
+            )
+        )
 
 
-def _update_popularity_morale(db: Session, match: MatchDB,
-                              winners: list, losers: list):
+def _update_popularity_morale(db: Session, match: MatchDB, winners: list, losers: list):
     """Shift popularity and morale based on match result."""
     rating = match.match_rating or DEFAULT_MATCH_RATING
     rating_factor = rating / MATCH_RATING_SCALE
@@ -302,8 +339,9 @@ def _update_streaks(db: Session, winners: list, losers: list):
             w.win_streak = min(0, w.win_streak) - 1  # Reset if was positive
 
 
-def _record_history(db: Session, match: MatchDB, winners: list, losers: list,
-                    game_date: str):
+def _record_history(
+    db: Session, match: MatchDB, winners: list, losers: list, game_date: str
+):
     """Create wrestler history entries for match results."""
     finish = match.finish_type or "pinfall"
     rating = match.match_rating or 0
@@ -313,16 +351,20 @@ def _record_history(db: Session, match: MatchDB, winners: list, losers: list,
         desc = f"Defeated opponent via {finish}" if is_winner else f"Lost via {finish}"
         for p in participants:
             if _get_wrestler(db, p.wrestler_id):
-                db.add(WrestlerHistoryDB(
-                    wrestler_id=p.wrestler_id, game_date=game_date,
-                    event_type=event_type,
-                    description=f"{desc} ({rating:.1f} stars)",
-                    details={"match_id": match.id, "rating": match.match_rating},
-                ))
+                db.add(
+                    WrestlerHistoryDB(
+                        wrestler_id=p.wrestler_id,
+                        game_date=game_date,
+                        event_type=event_type,
+                        description=f"{desc} ({rating:.1f} stars)",
+                        details={"match_id": match.id, "rating": match.match_rating},
+                    )
+                )
 
 
-def _update_relationships(db: Session, match: MatchDB,
-                          participants: list, game_date: str):
+def _update_relationships(
+    db: Session, match: MatchDB, participants: list, game_date: str
+):
     """Update or create relationship records between all match participants."""
     wrestler_ids = [p.wrestler_id for p in participants]
     rating = match.match_rating or DEFAULT_MATCH_RATING
@@ -343,7 +385,8 @@ def _update_relationships(db: Session, match: MatchDB,
             else:
                 rel = WrestlerRelationshipDB(
                     world_id=match.world_id,
-                    wrestler1_id=w1, wrestler2_id=w2,
+                    wrestler1_id=w1,
+                    wrestler2_id=w2,
                     matches_together=1,
                     total_rating=rating,
                     chemistry_score=round(rating, 2),
@@ -367,11 +410,15 @@ def _update_relationships(db: Session, match: MatchDB,
 
             # Active storyline involving both wrestlers
             if wr1 and wr2:
-                storyline_link = db.query(GameNarrativeLogDB).filter(
-                    GameNarrativeLogDB.world_id == match.world_id,
-                    GameNarrativeLogDB.involved_entities.contains(w1),
-                    GameNarrativeLogDB.involved_entities.contains(w2),
-                ).first()
+                storyline_link = (
+                    db.query(GameNarrativeLogDB)
+                    .filter(
+                        GameNarrativeLogDB.world_id == match.world_id,
+                        GameNarrativeLogDB.involved_entities.contains(w1),
+                        GameNarrativeLogDB.involved_entities.contains(w2),
+                    )
+                    .first()
+                )
                 if storyline_link:
                     heat_increase += HEAT_STORYLINE_LINK
 
@@ -392,24 +439,33 @@ def _update_tag_team_records(db: Session, match: MatchDB, participants: list):
 
     # Find tag teams involved
     all_ids = [p.wrestler_id for p in participants]
-    teams = db.query(TagTeamDB).filter(
-        TagTeamDB.is_active == True,
-        TagTeamDB.wrestler1_id.in_(all_ids),
-        TagTeamDB.wrestler2_id.in_(all_ids),
-    ).all()
+    teams = (
+        db.query(TagTeamDB)
+        .filter(
+            TagTeamDB.is_active == True,
+            TagTeamDB.wrestler1_id.in_(all_ids),
+            TagTeamDB.wrestler2_id.in_(all_ids),
+        )
+        .all()
+    )
 
     for team in teams:
         members = {team.wrestler1_id, team.wrestler2_id}
         if members <= winners:
             team.wins += 1
-            team.team_chemistry = min(TAG_CHEM_MAX, team.team_chemistry + TAG_CHEM_WIN_BONUS)
+            team.team_chemistry = min(
+                TAG_CHEM_MAX, team.team_chemistry + TAG_CHEM_WIN_BONUS
+            )
         elif members <= losers:
             team.losses += 1
-            team.team_chemistry = min(TAG_CHEM_MAX, team.team_chemistry + TAG_CHEM_LOSS_BONUS)
+            team.team_chemistry = min(
+                TAG_CHEM_MAX, team.team_chemistry + TAG_CHEM_LOSS_BONUS
+            )
 
 
-def _update_alignment_momentum(db: Session, match: MatchDB,
-                               winners: list, losers: list, game_date: str):
+def _update_alignment_momentum(
+    db: Session, match: MatchDB, winners: list, losers: list, game_date: str
+):
     """Shift alignment momentum based on how the match played out."""
     # Clean wins push toward face, dirty finishes push toward heel
     is_clean = match.finish_type in ("pinfall", "submission")
@@ -419,9 +475,13 @@ def _update_alignment_momentum(db: Session, match: MatchDB,
         if not w:
             continue
         if is_clean:
-            w.alignment_momentum = min(MOMENTUM_MAX, (w.alignment_momentum or 0) + MOMENTUM_CLEAN_WIN)
+            w.alignment_momentum = min(
+                MOMENTUM_MAX, (w.alignment_momentum or 0) + MOMENTUM_CLEAN_WIN
+            )
         else:
-            w.alignment_momentum = max(-MOMENTUM_MAX, (w.alignment_momentum or 0) + MOMENTUM_DIRTY_WIN)
+            w.alignment_momentum = max(
+                -MOMENTUM_MAX, (w.alignment_momentum or 0) + MOMENTUM_DIRTY_WIN
+            )
 
         _check_alignment_turn(db, w, game_date, match.world_id)
 
@@ -431,15 +491,24 @@ def _update_alignment_momentum(db: Session, match: MatchDB,
             continue
         # Losing can push either way - sympathy (face) or bitterness (heel)
         if w.morale and w.morale < MORALE_THRESHOLD_BITTER:
-            w.alignment_momentum = max(-MOMENTUM_MAX, (w.alignment_momentum or 0) + MOMENTUM_BITTER)
+            w.alignment_momentum = max(
+                -MOMENTUM_MAX, (w.alignment_momentum or 0) + MOMENTUM_BITTER
+            )
         else:
-            w.alignment_momentum = min(MOMENTUM_MAX, (w.alignment_momentum or 0) + MOMENTUM_SYMPATHY)
+            w.alignment_momentum = min(
+                MOMENTUM_MAX, (w.alignment_momentum or 0) + MOMENTUM_SYMPATHY
+            )
 
         _check_alignment_turn(db, w, game_date, match.world_id)
 
 
-def _execute_alignment_turn(db: Session, wrestler: GameWrestlerDB,
-                            new_alignment: str, game_date: str, world_id: str):
+def _execute_alignment_turn(
+    db: Session,
+    wrestler: GameWrestlerDB,
+    new_alignment: str,
+    game_date: str,
+    world_id: str,
+):
     """Execute an alignment turn — shared logic for face/heel transitions."""
     old_alignment = wrestler.alignment
     wrestler.alignment = new_alignment
@@ -448,26 +517,37 @@ def _execute_alignment_turn(db: Session, wrestler: GameWrestlerDB,
 
     if new_alignment == "heel":
         event_type = "heel_turn"
-        narrative = f"SHOCKING HEEL TURN! {wrestler.name} has turned their back on the fans!"
+        narrative = (
+            f"SHOCKING HEEL TURN! {wrestler.name} has turned their back on the fans!"
+        )
     else:
         event_type = "face_turn"
         narrative = f"THE CROWD GOES WILD! {wrestler.name} has turned babyface!"
 
-    db.add(GameNarrativeLogDB(
-        world_id=world_id, game_date=game_date, tick=0,
-        event_type=event_type,
-        description=narrative,
-        involved_entities=[wrestler.id], importance=9,
-    ))
-    db.add(WrestlerHistoryDB(
-        wrestler_id=wrestler.id, game_date=game_date,
-        event_type=event_type,
-        description=f"{wrestler.name} turned {new_alignment}",
-    ))
+    db.add(
+        GameNarrativeLogDB(
+            world_id=world_id,
+            game_date=game_date,
+            tick=0,
+            event_type=event_type,
+            description=narrative,
+            involved_entities=[wrestler.id],
+            importance=9,
+        )
+    )
+    db.add(
+        WrestlerHistoryDB(
+            wrestler_id=wrestler.id,
+            game_date=game_date,
+            event_type=event_type,
+            description=f"{wrestler.name} turned {new_alignment}",
+        )
+    )
 
 
-def _check_alignment_turn(db: Session, wrestler: GameWrestlerDB,
-                          game_date: str, world_id: str):
+def _check_alignment_turn(
+    db: Session, wrestler: GameWrestlerDB, game_date: str, world_id: str
+):
     """Check if alignment momentum has crossed the threshold for a turn."""
     momentum = wrestler.alignment_momentum or 0
 
@@ -477,15 +557,20 @@ def _check_alignment_turn(db: Session, wrestler: GameWrestlerDB,
         _execute_alignment_turn(db, wrestler, "face", game_date, world_id)
 
 
-def get_chemistry_bonus(db: Session, world_id: str,
-                        wrestler1_id: str, wrestler2_id: str) -> float:
+def get_chemistry_bonus(
+    db: Session, world_id: str, wrestler1_id: str, wrestler2_id: str
+) -> float:
     """Get chemistry bonus for a pair of wrestlers. Returns 0.0-1.0."""
     w1, w2 = sorted([wrestler1_id, wrestler2_id])
-    rel = db.query(WrestlerRelationshipDB).filter(
-        WrestlerRelationshipDB.world_id == world_id,
-        WrestlerRelationshipDB.wrestler1_id == w1,
-        WrestlerRelationshipDB.wrestler2_id == w2,
-    ).first()
+    rel = (
+        db.query(WrestlerRelationshipDB)
+        .filter(
+            WrestlerRelationshipDB.world_id == world_id,
+            WrestlerRelationshipDB.wrestler1_id == w1,
+            WrestlerRelationshipDB.wrestler2_id == w2,
+        )
+        .first()
+    )
 
     if not rel or rel.matches_together < CHEMISTRY_MIN_MATCHES:
         return 0.0
@@ -493,12 +578,14 @@ def get_chemistry_bonus(db: Session, world_id: str,
     return min(CHEMISTRY_MAX, rel.chemistry_score * CHEMISTRY_SCALE)
 
 
-def _post_match_lifecycle(db: Session, match: MatchDB,
-                         participants: list, game_date: str):
+def _post_match_lifecycle(
+    db: Session, match: MatchDB, participants: list, game_date: str
+):
     """Post-match lifecycle hooks: career highlights and specialization growth."""
     try:
         from game_service.wrestler_lifecycle_service import (
-            check_match_highlights, grow_specialization,
+            check_match_highlights,
+            grow_specialization,
         )
 
         for p in participants:
@@ -506,9 +593,11 @@ def _post_match_lifecycle(db: Session, match: MatchDB,
 
             # Grow specialization from stipulation matches
             if match.stipulation:
-                stats = db.query(WrestlerStatsDB).filter(
-                    WrestlerStatsDB.wrestler_id == p.wrestler_id
-                ).first()
+                stats = (
+                    db.query(WrestlerStatsDB)
+                    .filter(WrestlerStatsDB.wrestler_id == p.wrestler_id)
+                    .first()
+                )
                 if stats:
                     grow_specialization(stats, match.stipulation)
     except Exception as e:
@@ -517,24 +606,38 @@ def _post_match_lifecycle(db: Session, match: MatchDB,
 
 def compute_win_loss(db: Session, wrestler_id: str) -> dict:
     """Compute win/loss/draw record from match participation."""
-    wins = db.query(MatchParticipantDB).filter(
-        MatchParticipantDB.wrestler_id == wrestler_id,
-        MatchParticipantDB.role == "competitor",
-        MatchParticipantDB.is_winner == True,
-    ).count()
+    wins = (
+        db.query(MatchParticipantDB)
+        .filter(
+            MatchParticipantDB.wrestler_id == wrestler_id,
+            MatchParticipantDB.role == "competitor",
+            MatchParticipantDB.is_winner == True,
+        )
+        .count()
+    )
 
-    total = db.query(MatchParticipantDB).join(MatchDB).filter(
-        MatchParticipantDB.wrestler_id == wrestler_id,
-        MatchParticipantDB.role == "competitor",
-        MatchDB.is_completed == True,
-    ).count()
+    total = (
+        db.query(MatchParticipantDB)
+        .join(MatchDB)
+        .filter(
+            MatchParticipantDB.wrestler_id == wrestler_id,
+            MatchParticipantDB.role == "competitor",
+            MatchDB.is_completed == True,
+        )
+        .count()
+    )
 
-    draws = db.query(MatchParticipantDB).join(MatchDB).filter(
-        MatchParticipantDB.wrestler_id == wrestler_id,
-        MatchParticipantDB.role == "competitor",
-        MatchDB.is_completed == True,
-        MatchDB.winner_id == None,
-    ).count()
+    draws = (
+        db.query(MatchParticipantDB)
+        .join(MatchDB)
+        .filter(
+            MatchParticipantDB.wrestler_id == wrestler_id,
+            MatchParticipantDB.role == "competitor",
+            MatchDB.is_completed == True,
+            MatchDB.winner_id == None,
+        )
+        .count()
+    )
 
     losses = total - wins - draws
     return {"wins": wins, "losses": losses, "draws": draws}
@@ -543,6 +646,7 @@ def compute_win_loss(db: Session, wrestler_id: str) -> dict:
 # ---------------------------------------------------------------------------
 # Botch consequences
 # ---------------------------------------------------------------------------
+
 
 def _process_botch_consequences(db: Session, match: MatchDB, game_date: str):
     """Handle the aftermath of botched moves.
@@ -580,74 +684,121 @@ def _process_botch_consequences(db: Session, match: MatchDB, game_date: str):
         # --- Trust degradation between these wrestlers ---
         rel = _get_relationship(db, match.world_id, attacker_id, victim_id)
         if rel:
-            trust_drop = BOTCH_TRUST_DROP_MINOR if severity == 2 else BOTCH_TRUST_DROP_SEVERE
+            trust_drop = (
+                BOTCH_TRUST_DROP_MINOR if severity == 2 else BOTCH_TRUST_DROP_SEVERE
+            )
             rel.trust_level = max(0, (rel.trust_level or 50) - trust_drop)
-            logger.info("Trust between %s and %s dropped by %d to %d (botch on %s)",
-                        attacker.name, victim.name, trust_drop, rel.trust_level, move_name)
+            logger.info(
+                "Trust between %s and %s dropped by %d to %d (botch on %s)",
+                attacker.name,
+                victim.name,
+                trust_drop,
+                rel.trust_level,
+                move_name,
+            )
 
         # --- History entries: both wrestlers remember ---
         if severity >= 3:
             # Dangerous botch — victim remembers being hurt
-            db.add(WrestlerHistoryDB(
-                wrestler_id=victim_id,
-                game_date=game_date,
-                event_type="botch_victim",
-                description=f"Was hurt by a botched {move_name} from {attacker.name}",
-                details={"caused_by": attacker_id, "caused_by_name": attacker.name,
-                         "move": move_name, "severity": severity, "match_id": match.id},
-            ))
+            db.add(
+                WrestlerHistoryDB(
+                    wrestler_id=victim_id,
+                    game_date=game_date,
+                    event_type="botch_victim",
+                    description=f"Was hurt by a botched {move_name} from {attacker.name}",
+                    details={
+                        "caused_by": attacker_id,
+                        "caused_by_name": attacker.name,
+                        "move": move_name,
+                        "severity": severity,
+                        "match_id": match.id,
+                    },
+                )
+            )
             # Attacker remembers hurting someone
-            db.add(WrestlerHistoryDB(
-                wrestler_id=attacker_id,
-                game_date=game_date,
-                event_type="botch_perpetrator",
-                description=f"Botched {move_name} and hurt {victim.name}",
-                details={"victim": victim_id, "victim_name": victim.name,
-                         "move": move_name, "severity": severity, "match_id": match.id},
-            ))
+            db.add(
+                WrestlerHistoryDB(
+                    wrestler_id=attacker_id,
+                    game_date=game_date,
+                    event_type="botch_perpetrator",
+                    description=f"Botched {move_name} and hurt {victim.name}",
+                    details={
+                        "victim": victim_id,
+                        "victim_name": victim.name,
+                        "move": move_name,
+                        "severity": severity,
+                        "match_id": match.id,
+                    },
+                )
+            )
 
             # Injury check from dangerous botch
-            stats = db.query(WrestlerStatsDB).filter(
-                WrestlerStatsDB.wrestler_id == victim_id
-            ).first()
-            injury_risk = BOTCH_BASE_INJURY_RISK + (stats.injury_prone if stats else 30) / BOTCH_INJURY_PRONE_DIVISOR
+            stats = (
+                db.query(WrestlerStatsDB)
+                .filter(WrestlerStatsDB.wrestler_id == victim_id)
+                .first()
+            )
+            injury_risk = (
+                BOTCH_BASE_INJURY_RISK
+                + (stats.injury_prone if stats else 30) / BOTCH_INJURY_PRONE_DIVISOR
+            )
             if random.random() < injury_risk:
                 weeks_out = random.randint(*BOTCH_WEEKS_RANGE)
                 from game_service.world_ticker import advance_game_date
+
                 victim.is_injured = True
                 victim.injury_return_date = advance_game_date(game_date, weeks_out * 7)
-                victim.condition = max(0, victim.condition - random.randint(*BOTCH_CONDITION_LOSS_RANGE))
+                victim.condition = max(
+                    0, victim.condition - random.randint(*BOTCH_CONDITION_LOSS_RANGE)
+                )
 
-                db.add(GameNarrativeLogDB(
-                    world_id=match.world_id,
-                    game_date=game_date, tick=0,
-                    event_type="botch_injury",
-                    description=f"{victim.name} injured by botched {move_name} from {attacker.name}! Out {weeks_out} weeks.",
-                    involved_entities=[victim_id, attacker_id],
-                    importance=8,
-                ))
-                logger.info("BOTCH INJURY: %s hurt by %s's %s, out %d weeks",
-                            victim.name, attacker.name, move_name, weeks_out)
+                db.add(
+                    GameNarrativeLogDB(
+                        world_id=match.world_id,
+                        game_date=game_date,
+                        tick=0,
+                        event_type="botch_injury",
+                        description=f"{victim.name} injured by botched {move_name} from {attacker.name}! Out {weeks_out} weeks.",
+                        involved_entities=[victim_id, attacker_id],
+                        importance=8,
+                    )
+                )
+                logger.info(
+                    "BOTCH INJURY: %s hurt by %s's %s, out %d weeks",
+                    victim.name,
+                    attacker.name,
+                    move_name,
+                    weeks_out,
+                )
 
             # Locker room standing drops for the botcher
             attacker.locker_room_standing = STANDING_DOWNGRADE.get(
-                attacker.locker_room_standing, "neutral")
+                attacker.locker_room_standing, "neutral"
+            )
 
         elif severity == 2:
             # Bad botch — attacker remembers
-            db.add(WrestlerHistoryDB(
-                wrestler_id=attacker_id,
-                game_date=game_date,
-                event_type="botch_perpetrator",
-                description=f"Botched {move_name} against {victim.name}",
-                details={"victim": victim_id, "victim_name": victim.name,
-                         "move": move_name, "severity": severity, "match_id": match.id},
-            ))
+            db.add(
+                WrestlerHistoryDB(
+                    wrestler_id=attacker_id,
+                    game_date=game_date,
+                    event_type="botch_perpetrator",
+                    description=f"Botched {move_name} against {victim.name}",
+                    details={
+                        "victim": victim_id,
+                        "victim_name": victim.name,
+                        "move": move_name,
+                        "severity": severity,
+                        "match_id": match.id,
+                    },
+                )
+            )
 
 
 # ---------------------------------------------------------------------------
 # Going-into-business consequences
 # ---------------------------------------------------------------------------
+
 
 def _process_shoot_consequences(db: Session, match: MatchDB, game_date: str):
     """Handle consequences when a wrestler goes into business for themselves.
@@ -678,88 +829,128 @@ def _process_shoot_consequences(db: Session, match: MatchDB, game_date: str):
     # --- Trust DESTROYED between these wrestlers ---
     rel = _get_relationship(db, match.world_id, shooter_id, victim_id)
     if rel:
-        rel.trust_level = max(0, min(SHOOT_TRUST_MAX_AFTER, (rel.trust_level or 50) - SHOOT_TRUST_DROP))
+        rel.trust_level = max(
+            0, min(SHOOT_TRUST_MAX_AFTER, (rel.trust_level or 50) - SHOOT_TRUST_DROP)
+        )
         rel.rivalry_heat = min(HEAT_MAX, (rel.rivalry_heat or 0) + SHOOT_HEAT_INCREASE)
         rel.real_relationship = "enemies"  # This is personal now
-        logger.info("SHOOT: Trust between %s and %s DESTROYED (now %d)",
-                    shooter.name, victim.name, rel.trust_level)
+        logger.info(
+            "SHOOT: Trust between %s and %s DESTROYED (now %d)",
+            shooter.name,
+            victim.name,
+            rel.trust_level,
+        )
 
     # --- Locker room standing tanks for the shooter ---
     shooter.locker_room_standing = "toxic"
 
     # --- Federation discipline ---
     from models.game_models import ContractDB, GameFederationDB
-    contract = db.query(ContractDB).filter(
-        ContractDB.wrestler_id == shooter_id,
-        ContractDB.status == "active",
-    ).first()
+
+    contract = (
+        db.query(ContractDB)
+        .filter(
+            ContractDB.wrestler_id == shooter_id,
+            ContractDB.status == "active",
+        )
+        .first()
+    )
     if contract:
-        fed = db.query(GameFederationDB).filter(
-            GameFederationDB.id == contract.federation_id
-        ).first()
+        fed = (
+            db.query(GameFederationDB)
+            .filter(GameFederationDB.id == contract.federation_id)
+            .first()
+        )
         if fed:
             fine = contract.salary_weekly * SHOOT_FINE_MULTIPLIER
             fed.budget += fine  # Federation collects the fine
-            db.add(GameNarrativeLogDB(
-                world_id=match.world_id,
-                game_date=game_date, tick=0,
-                event_type="discipline_fine",
-                description=f"{shooter.name} fined ${fine:,.0f} for going into business for themselves!",
-                involved_entities=[shooter_id, fed.id],
-                importance=9,
-            ))
+            db.add(
+                GameNarrativeLogDB(
+                    world_id=match.world_id,
+                    game_date=game_date,
+                    tick=0,
+                    event_type="discipline_fine",
+                    description=f"{shooter.name} fined ${fine:,.0f} for going into business for themselves!",
+                    involved_entities=[shooter_id, fed.id],
+                    importance=9,
+                )
+            )
 
             # Strict federations may also suspend
             if (fed.kayfabe_strictness or 50) > KAYFABE_STRICTNESS_THRESHOLD:
                 from game_service.world_ticker import advance_game_date
+
                 suspension_weeks = random.randint(*SHOOT_SUSPENSION_WEEKS_RANGE)
                 shooter.is_injured = True  # Use injury system for suspension
-                shooter.injury_return_date = advance_game_date(game_date, suspension_weeks * 7)
-                db.add(GameNarrativeLogDB(
-                    world_id=match.world_id,
-                    game_date=game_date, tick=0,
-                    event_type="discipline_suspension",
-                    description=f"{shooter.name} SUSPENDED for {suspension_weeks} weeks! Management is furious!",
-                    involved_entities=[shooter_id, fed.id],
-                    importance=9,
-                ))
+                shooter.injury_return_date = advance_game_date(
+                    game_date, suspension_weeks * 7
+                )
+                db.add(
+                    GameNarrativeLogDB(
+                        world_id=match.world_id,
+                        game_date=game_date,
+                        tick=0,
+                        event_type="discipline_suspension",
+                        description=f"{shooter.name} SUSPENDED for {suspension_weeks} weeks! Management is furious!",
+                        involved_entities=[shooter_id, fed.id],
+                        importance=9,
+                    )
+                )
 
     # --- History entries: permanent memory for both wrestlers ---
-    db.add(WrestlerHistoryDB(
-        wrestler_id=shooter_id,
-        game_date=game_date,
-        event_type="went_into_business",
-        description=f"Went into business for themselves against {victim.name} — refused to do the job",
-        details={"victim": victim_id, "victim_name": victim.name,
-                 "match_id": match.id, "was_title_match": match.is_title_match},
-    ))
-    db.add(WrestlerHistoryDB(
-        wrestler_id=victim_id,
-        game_date=game_date,
-        event_type="business_victim",
-        description=f"{shooter.name} went into business for themselves — refused to lose to you",
-        details={"shooter": shooter_id, "shooter_name": shooter.name,
-                 "match_id": match.id},
-    ))
+    db.add(
+        WrestlerHistoryDB(
+            wrestler_id=shooter_id,
+            game_date=game_date,
+            event_type="went_into_business",
+            description=f"Went into business for themselves against {victim.name} — refused to do the job",
+            details={
+                "victim": victim_id,
+                "victim_name": victim.name,
+                "match_id": match.id,
+                "was_title_match": match.is_title_match,
+            },
+        )
+    )
+    db.add(
+        WrestlerHistoryDB(
+            wrestler_id=victim_id,
+            game_date=game_date,
+            event_type="business_victim",
+            description=f"{shooter.name} went into business for themselves — refused to lose to you",
+            details={
+                "shooter": shooter_id,
+                "shooter_name": shooter.name,
+                "match_id": match.id,
+            },
+        )
+    )
 
     # --- Morale impact ---
     victim.morale = max(0, victim.morale - random.randint(*VICTIM_MORALE_LOSS_RANGE))
-    shooter.morale = max(0, min(100, shooter.morale + random.randint(-5, 5)))  # Mixed feelings
+    shooter.morale = max(
+        0, min(100, shooter.morale + random.randint(-5, 5))
+    )  # Mixed feelings
 
     # --- Controversial popularity boost for shooter (controversy sells) ---
-    shooter.popularity = min(100, shooter.popularity + random.randint(*SHOOTER_POP_BOOST_RANGE))
+    shooter.popularity = min(
+        100, shooter.popularity + random.randint(*SHOOTER_POP_BOOST_RANGE)
+    )
 
     # --- Narrative log for the world ---
-    db.add(GameNarrativeLogDB(
-        world_id=match.world_id,
-        game_date=game_date, tick=0,
-        event_type="went_into_business",
-        description=(
-            f"BACKSTAGE CHAOS: {shooter.name} went into business for themselves against {victim.name}! "
-            f"The planned finish was thrown out the window. Management is LIVID."
-        ),
-        involved_entities=[shooter_id, victim_id],
-        importance=10,  # Maximum importance — this is a defining event
-    ))
+    db.add(
+        GameNarrativeLogDB(
+            world_id=match.world_id,
+            game_date=game_date,
+            tick=0,
+            event_type="went_into_business",
+            description=(
+                f"BACKSTAGE CHAOS: {shooter.name} went into business for themselves against {victim.name}! "
+                f"The planned finish was thrown out the window. Management is LIVID."
+            ),
+            involved_entities=[shooter_id, victim_id],
+            importance=10,  # Maximum importance — this is a defining event
+        )
+    )
 
     logger.info("SHOOT: %s went into business against %s!", shooter.name, victim.name)

@@ -3,8 +3,16 @@ Federation models: federations, PPV events, booking visions, wrestler pushes, ta
 """
 
 from sqlalchemy import (
-    Column, String, Integer, Float, DateTime, JSON, ForeignKey, Text, Boolean,
-    UniqueConstraint, Index,
+    Column,
+    String,
+    Integer,
+    Float,
+    DateTime,
+    JSON,
+    ForeignKey,
+    Text,
+    Boolean,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
@@ -25,8 +33,10 @@ def _uuid():
 # Federations (game-level, distinct from legacy FederationDB)
 # ---------------------------------------------------------------------------
 
+
 class GameFederationDB(Base):
     """A wrestling federation/promotion in the game world."""
+
     __tablename__ = "game_federations"
 
     id = Column(String, primary_key=True, default=_uuid)
@@ -41,25 +51,43 @@ class GameFederationDB(Base):
     weekly_expenses = Column(Float, default=0.0)
     tv_deal_value = Column(Float, default=0.0)
     home_region = Column(String(50), default="Northeast")
-    style = Column(String(50), default="Sports Entertainment")  # Strong style, lucha, etc.
+    style = Column(
+        String(50), default="Sports Entertainment"
+    )  # Strong style, lucha, etc.
     founded_date = Column(String(10), nullable=True)  # In-game date
     market_share = Column(Float, default=0.0)  # Percentage of total viewership
     momentum = Column(Integer, default=50)  # 0-100, how "hot" the fed is
-    fanbase_loyalty = Column(Integer, default=50)  # 0-100, how loyal the audience is (affects floor)
-    regional_strength = Column(JSON, default=dict)  # {region: 0-100} strength per market
+    fanbase_loyalty = Column(
+        Integer, default=50
+    )  # 0-100, how loyal the audience is (affects floor)
+    regional_strength = Column(
+        JSON, default=dict
+    )  # {region: 0-100} strength per market
     is_active = Column(Boolean, default=True)
-    ai_personality = Column(JSON, default=dict)  # LLM personality traits for NPC booking
+    ai_personality = Column(
+        JSON, default=dict
+    )  # LLM personality traits for NPC booking
     # --- Kayfabe Profile ---
-    kayfabe_strictness = Column(Integer, default=50)  # 0-100, how strictly kayfabe is enforced
-    allows_worked_shoots = Column(Boolean, default=True)  # Whether worked shoots are permitted
-    social_media_policy = Column(String(20), default="guided")  # strict_kayfabe, guided, free
+    kayfabe_strictness = Column(
+        Integer, default=50
+    )  # 0-100, how strictly kayfabe is enforced
+    allows_worked_shoots = Column(
+        Boolean, default=True
+    )  # Whether worked shoots are permitted
+    social_media_policy = Column(
+        String(20), default="guided"
+    )  # strict_kayfabe, guided, free
     created_at = Column(DateTime, default=_utc_now)
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
     world = relationship("WorldDB", back_populates="federations")
     talent_offers = relationship("TalentOfferDB", back_populates="federation")
-    owner_player = relationship("PlayerDB", back_populates="federation",
-                                foreign_keys="PlayerDB.federation_id", uselist=False)
+    owner_player = relationship(
+        "PlayerDB",
+        back_populates="federation",
+        foreign_keys="PlayerDB.federation_id",
+        uselist=False,
+    )
     contracts = relationship("ContractDB", back_populates="federation")
     shows = relationship("ShowDB", back_populates="federation")
     championships = relationship("ChampionshipDB", back_populates="federation")
@@ -73,17 +101,25 @@ class GameFederationDB(Base):
 # Talent Offers (Inter-Federation)
 # ---------------------------------------------------------------------------
 
+
 class TalentOfferDB(Base):
     """A contract offer from a federation to a wrestler (poaching/signing)."""
+
     __tablename__ = "talent_offers"
 
     id = Column(String, primary_key=True, default=_uuid)
     world_id = Column(String, ForeignKey("worlds.id"), nullable=False, index=True)
-    federation_id = Column(String, ForeignKey("game_federations.id"), nullable=False, index=True)
-    wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
+    federation_id = Column(
+        String, ForeignKey("game_federations.id"), nullable=False, index=True
+    )
+    wrestler_id = Column(
+        String, ForeignKey("game_wrestlers.id"), nullable=False, index=True
+    )
     salary_offered = Column(Float, default=2000.0)
     contract_length_weeks = Column(Integer, default=52)
-    status = Column(String(20), default="pending")  # pending, accepted, rejected, expired
+    status = Column(
+        String(20), default="pending"
+    )  # pending, accepted, rejected, expired
     offered_date = Column(String(10), nullable=False)
     expires_date = Column(String(10), nullable=True)
     created_at = Column(DateTime, default=_utc_now)
@@ -95,29 +131,43 @@ class TalentOfferDB(Base):
 # Promoter Vision & Booking Plans
 # ---------------------------------------------------------------------------
 
+
 class PPVEventDB(Base):
     """A planned or completed PPV event on a federation's annual calendar.
 
     PPVs are the destination -- weekly TV exists to build toward them.
     Created at world gen for the full year, then rolled forward annually.
     """
+
     __tablename__ = "ppv_events"
 
     id = Column(String, primary_key=True, default=_uuid)
     world_id = Column(String, ForeignKey("worlds.id"), nullable=False, index=True)
-    federation_id = Column(String, ForeignKey("game_federations.id"), nullable=False, index=True)
+    federation_id = Column(
+        String, ForeignKey("game_federations.id"), nullable=False, index=True
+    )
     name = Column(String(100), nullable=False)  # "WrestleMania", "SummerSlam", etc.
-    theme = Column(String(50), nullable=True)  # tournament, grudge_matches, showcase, etc.
+    theme = Column(
+        String(50), nullable=True
+    )  # tournament, grudge_matches, showcase, etc.
     scheduled_date = Column(String(10), nullable=False)  # YYYY-MM-DD
-    is_crown_jewel = Column(Boolean, default=False)  # The big one (WrestleMania equivalent)
+    is_crown_jewel = Column(
+        Boolean, default=False
+    )  # The big one (WrestleMania equivalent)
     is_completed = Column(Boolean, default=False)
-    show_id = Column(String, ForeignKey("shows.id"), nullable=True)  # Linked when show is created
+    show_id = Column(
+        String, ForeignKey("shows.id"), nullable=True
+    )  # Linked when show is created
     capacity = Column(Integer, default=10000)
     venue = Column(String(100), nullable=True)
 
     # Penciled-in main event (may change)
-    planned_main_event = Column(JSON, default=dict)  # {wrestler_ids: [], title_id: str, storyline_id: str}
-    planned_matches = Column(JSON, default=list)  # [{wrestler_ids, title_id, match_type, storyline_id, status: "penciled"|"ink"}]
+    planned_main_event = Column(
+        JSON, default=dict
+    )  # {wrestler_ids: [], title_id: str, storyline_id: str}
+    planned_matches = Column(
+        JSON, default=list
+    )  # [{wrestler_ids, title_id, match_type, storyline_id, status: "penciled"|"ink"}]
 
     created_at = Column(DateTime, default=_utc_now)
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
@@ -130,16 +180,25 @@ class BookingVisionDB(Base):
     crown jewel PPV should look like. NPC feds get one at world gen;
     player feds get a suggested one they can edit.
     """
+
     __tablename__ = "booking_visions"
 
     id = Column(String, primary_key=True, default=_uuid)
     world_id = Column(String, ForeignKey("worlds.id"), nullable=False, index=True)
-    federation_id = Column(String, ForeignKey("game_federations.id"), nullable=False, unique=True)
+    federation_id = Column(
+        String, ForeignKey("game_federations.id"), nullable=False, unique=True
+    )
 
     # Strategic identity
-    identity = Column(String(200), nullable=True)  # "The workrate company", "Sports entertainment empire"
-    long_term_goal = Column(String(200), nullable=True)  # "Become #1 federation", "Dominate the Southeast"
-    crown_jewel_vision = Column(JSON, default=dict)  # {main_event_dream: str, theme: str, ideal_wrestlers: []}
+    identity = Column(
+        String(200), nullable=True
+    )  # "The workrate company", "Sports entertainment empire"
+    long_term_goal = Column(
+        String(200), nullable=True
+    )  # "Become #1 federation", "Dominate the Southeast"
+    crown_jewel_vision = Column(
+        JSON, default=dict
+    )  # {main_event_dream: str, theme: str, ideal_wrestlers: []}
 
     # Push tiers -- who the promoter sees at each level
     push_tiers = Column(JSON, default=dict)
@@ -188,16 +247,27 @@ class WrestlerPushDB(Base):
 
     Separate from BookingVisionDB for efficient querying -- 'who are my main eventers?'
     """
+
     __tablename__ = "wrestler_pushes"
 
     id = Column(String, primary_key=True, default=_uuid)
     world_id = Column(String, ForeignKey("worlds.id"), nullable=False, index=True)
-    federation_id = Column(String, ForeignKey("game_federations.id"), nullable=False, index=True)
-    wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
+    federation_id = Column(
+        String, ForeignKey("game_federations.id"), nullable=False, index=True
+    )
+    wrestler_id = Column(
+        String, ForeignKey("game_wrestlers.id"), nullable=False, index=True
+    )
 
-    push_tier = Column(String(20), default="midcard")  # main_event, upper_midcard, midcard, lower_card, jobber, developmental
-    direction = Column(String(20), default="established")  # rising, established, transitional, cooling_off
-    confidence = Column(Integer, default=50)  # 0-100, how confident the booker is in this push
+    push_tier = Column(
+        String(20), default="midcard"
+    )  # main_event, upper_midcard, midcard, lower_card, jobber, developmental
+    direction = Column(
+        String(20), default="established"
+    )  # rising, established, transitional, cooling_off
+    confidence = Column(
+        Integer, default=50
+    )  # 0-100, how confident the booker is in this push
     protected = Column(Boolean, default=False)  # Protected wrestlers don't job clean
     weeks_at_tier = Column(Integer, default=0)  # How long they've been at current tier
 

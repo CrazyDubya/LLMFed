@@ -103,7 +103,6 @@ class AutoScheduler:
         """Advance every non-paused world by one game day and broadcast."""
         # Import here to avoid circular imports at module level
         from api_gateway.websocket_hub import manager as ws_manager
-        from game_service.world_ticker import WorldTicker
 
         # Run DB work in a thread so we don't block the event loop
         loop = asyncio.get_running_loop()
@@ -111,25 +110,33 @@ class AutoScheduler:
 
         # Broadcast results via WebSocket
         for world_id, result in results.items():
-            await ws_manager.broadcast_to_world(world_id, {
-                "type": "tick",
-                "world_id": world_id,
-                "game_date": result.get("new_game_date"),
-                "tick": result.get("new_tick"),
-                "events": result.get("day_results", [{}])[-1].get("events", []) if result.get("day_results") else [],
-                "auto": True,
-            })
+            await ws_manager.broadcast_to_world(
+                world_id,
+                {
+                    "type": "tick",
+                    "world_id": world_id,
+                    "game_date": result.get("new_game_date"),
+                    "tick": result.get("new_tick"),
+                    "events": result.get("day_results", [{}])[-1].get("events", [])
+                    if result.get("day_results")
+                    else [],
+                    "auto": True,
+                },
+            )
 
             # If any shows were completed this tick, send show_completed events
             day_results = result.get("day_results", [])
             for day in day_results:
                 for event in day.get("events", []):
                     if "show" in event.lower() and "completed" in event.lower():
-                        await ws_manager.broadcast_to_world(world_id, {
-                            "type": "show_completed",
-                            "world_id": world_id,
-                            "description": event,
-                        })
+                        await ws_manager.broadcast_to_world(
+                            world_id,
+                            {
+                                "type": "show_completed",
+                                "world_id": world_id,
+                                "description": event,
+                            },
+                        )
 
     def _tick_worlds_sync(self) -> Dict[str, dict]:
         """Synchronous DB work: tick each world and return results."""

@@ -6,7 +6,8 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    PromoDB, GameWrestlerDB, WrestlerStatsDB, GameFederationDB,
+    GameWrestlerDB,
+    WrestlerStatsDB,
 )
 from game_service.world_service import create_world
 from game_service.promo_service import generate_promo
@@ -25,9 +26,12 @@ def db_session():
 @pytest.fixture
 def world_wrestlers(db_session):
     world = create_world(db_session, "Promo World")
-    wrestlers = db_session.query(GameWrestlerDB).filter(
-        GameWrestlerDB.world_id == world.id
-    ).limit(3).all()
+    wrestlers = (
+        db_session.query(GameWrestlerDB)
+        .filter(GameWrestlerDB.world_id == world.id)
+        .limit(3)
+        .all()
+    )
     return world, wrestlers
 
 
@@ -35,7 +39,9 @@ class TestPromoGeneration:
     def test_generate_basic_promo(self, db_session, world_wrestlers):
         world, wrestlers = world_wrestlers
         promo = generate_promo(
-            db_session, world.id, wrestlers[0].id,
+            db_session,
+            world.id,
+            wrestlers[0].id,
             game_date="2026-01-01",
         )
         db_session.commit()
@@ -50,7 +56,9 @@ class TestPromoGeneration:
     def test_promo_with_target(self, db_session, world_wrestlers):
         world, wrestlers = world_wrestlers
         promo = generate_promo(
-            db_session, world.id, wrestlers[0].id,
+            db_session,
+            world.id,
+            wrestlers[0].id,
             target_wrestler_id=wrestlers[1].id,
             game_date="2026-01-01",
         )
@@ -64,7 +72,9 @@ class TestPromoGeneration:
         world, wrestlers = world_wrestlers
         custom_text = "I am the greatest wrestler alive and nobody can stop me!"
         promo = generate_promo(
-            db_session, world.id, wrestlers[0].id,
+            db_session,
+            world.id,
+            wrestlers[0].id,
             is_player_written=True,
             player_content=custom_text,
             game_date="2026-01-01",
@@ -93,9 +103,11 @@ class TestPromoGeneration:
         # Ensure wrestler is face with good mic skills
         w = wrestlers[0]
         w.alignment = "face"
-        stats = db_session.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == w.id
-        ).first()
+        stats = (
+            db_session.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == w.id)
+            .first()
+        )
         stats.mic_skill = 90
         stats.charisma = 90
         db_session.commit()
@@ -108,9 +120,11 @@ class TestPromoGeneration:
         world, wrestlers = world_wrestlers
         w = wrestlers[0]
         w.alignment = "heel"
-        stats = db_session.query(WrestlerStatsDB).filter(
-            WrestlerStatsDB.wrestler_id == w.id
-        ).first()
+        stats = (
+            db_session.query(WrestlerStatsDB)
+            .filter(WrestlerStatsDB.wrestler_id == w.id)
+            .first()
+        )
         stats.mic_skill = 90
         stats.charisma = 90
         db_session.commit()

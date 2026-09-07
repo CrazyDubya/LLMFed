@@ -12,8 +12,10 @@ import logging
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    PromoDB, GameWrestlerDB, WrestlerStatsDB,
-    GimmickHistoryDB, WrestlerBackstoryDB,
+    PromoDB,
+    GameWrestlerDB,
+    WrestlerStatsDB,
+    GimmickHistoryDB,
     LifeEventDB,
 )
 
@@ -53,6 +55,7 @@ def _get_target_wrestler(db, target_id):
     if not target_id:
         return None
     return db.query(GameWrestlerDB).filter(GameWrestlerDB.id == target_id).first()
+
 
 # ---------------------------------------------------------------------------
 # Legacy alignment-based templates (fallback)
@@ -289,11 +292,19 @@ for _arch in ARCHETYPE_OPENERS:
 
 # Event type classifications for emotional state
 NEGATIVE_LIFE_EVENT_TYPES = {
-    "divorce", "death_in_family", "legal_trouble", "substance_issue",
-    "financial_trouble", "mental_health", "public_controversy",
+    "divorce",
+    "death_in_family",
+    "legal_trouble",
+    "substance_issue",
+    "financial_trouble",
+    "mental_health",
+    "public_controversy",
 }
 POSITIVE_LIFE_EVENT_TYPES = {
-    "marriage", "child_born", "personal_achievement", "charity_work",
+    "marriage",
+    "child_born",
+    "personal_achievement",
+    "charity_work",
     "family_reconciliation",
 }
 
@@ -368,32 +379,39 @@ WORKED_SHOOT_FRAGMENTS = [
 # Promo generation (persona-aware, with legacy fallback)
 # ---------------------------------------------------------------------------
 
-def generate_promo(db: Session, world_id: str, wrestler_id: str,
-                   target_wrestler_id: str = None,
-                   promo_type: str = "in_ring",
-                   player_direction: str = None,
-                   game_date: str = None,
-                   is_player_written: bool = False,
-                   player_content: str = None) -> PromoDB:
+
+def generate_promo(
+    db: Session,
+    world_id: str,
+    wrestler_id: str,
+    target_wrestler_id: str = None,
+    promo_type: str = "in_ring",
+    player_direction: str = None,
+    game_date: str = None,
+    is_player_written: bool = False,
+    player_content: str = None,
+) -> PromoDB:
     """Generate a promo for a wrestler.
 
     If player_content is provided, use that directly.
     Otherwise, generate from archetype templates (with legacy fallback).
     """
-    wrestler = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.id == wrestler_id
-    ).first()
+    wrestler = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == wrestler_id).first()
     if not wrestler:
         raise ValueError("Wrestler not found")
 
-    stats = db.query(WrestlerStatsDB).filter(
-        WrestlerStatsDB.wrestler_id == wrestler_id
-    ).first()
+    stats = (
+        db.query(WrestlerStatsDB)
+        .filter(WrestlerStatsDB.wrestler_id == wrestler_id)
+        .first()
+    )
 
     if player_content:
         content = player_content
     else:
-        content = _generate_persona_promo(wrestler, stats, target_wrestler_id, db, promo_type)
+        content = _generate_persona_promo(
+            wrestler, stats, target_wrestler_id, db, promo_type
+        )
 
     # Evaluate promo quality
     gimmick = _get_current_gimmick(db, wrestler_id)
@@ -436,18 +454,26 @@ def generate_promo(db: Session, world_id: str, wrestler_id: str,
 
 def _get_current_gimmick(db, wrestler_id):
     """Get the wrestler's current active gimmick, if any."""
-    return db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler_id,
-        GimmickHistoryDB.is_active == True,
-    ).first()
+    return (
+        db.query(GimmickHistoryDB)
+        .filter(
+            GimmickHistoryDB.wrestler_id == wrestler_id,
+            GimmickHistoryDB.is_active == True,
+        )
+        .first()
+    )
 
 
 def _get_active_life_events(db, wrestler_id):
     """Get active life events affecting the wrestler."""
-    return db.query(LifeEventDB).filter(
-        LifeEventDB.wrestler_id == wrestler_id,
-        LifeEventDB.is_active == True,
-    ).all()
+    return (
+        db.query(LifeEventDB)
+        .filter(
+            LifeEventDB.wrestler_id == wrestler_id,
+            LifeEventDB.is_active == True,
+        )
+        .all()
+    )
 
 
 def _determine_emotional_state(life_events, kayfabe_commitment):
@@ -490,6 +516,7 @@ def _generate_persona_promo(wrestler, stats, target_id, db, promo_type):
     if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
         try:
             from game_service.character_agent import character_speak
+
             target = _get_target_wrestler(db, target_id)
             target_name = target.name if target else ""
 
@@ -572,19 +599,27 @@ def _generate_worked_shoot_promo(wrestler, gimmick, target_id, db):
     if life_events:
         event = random.choice(life_events)
         if event.is_public:
-            parts.append(f"Everyone knows what I've been dealing with. And instead of support, what do I get? More matches, more promos, more demands.")
+            parts.append(
+                "Everyone knows what I've been dealing with. And instead of support, what do I get? More matches, more promos, more demands."
+            )
     else:
-        parts.append("I've given everything to this company. EVERYTHING. And what do I have to show for it?")
+        parts.append(
+            "I've given everything to this company. EVERYTHING. And what do I have to show for it?"
+        )
 
     if wrestler.morale < 40:
         parts.append("I'm tired. Not 'storyline tired.' Really, genuinely TIRED.")
     elif wrestler.popularity > 70:
-        parts.append("I don't need this. I could walk out that door right now and every company in the world would be calling.")
+        parts.append(
+            "I don't need this. I could walk out that door right now and every company in the world would be calling."
+        )
 
     if target_id:
         target = _get_target_wrestler(db, target_id)
         if target:
-            parts.append(f"And {target.name} — forget the storyline. You and I both know what this is really about.")
+            parts.append(
+                f"And {target.name} — forget the storyline. You and I both know what this is really about."
+            )
 
     parts.append("This is real. Whether you believe it or not.")
 
@@ -624,8 +659,9 @@ def _generate_template_promo(wrestler, stats, target_id, db):
     return " ".join(parts)
 
 
-def _evaluate_promo_quality(stats, content: str, is_player: bool,
-                            gimmick=None) -> float:
+def _evaluate_promo_quality(
+    stats, content: str, is_player: bool, gimmick=None
+) -> float:
     """Rate a promo 0.0 - 5.0 based on wrestler stats, content, and character depth."""
     mic = _get_stat(stats, "mic_skill")
     charisma = _get_stat(stats, "charisma")
@@ -677,7 +713,9 @@ def _calculate_promo_heat(wrestler, quality: float, has_target: bool) -> int:
         base += 5
 
     # Kayfabe breaks generate extra heat (pipe bomb effect)
-    if (wrestler.kayfabe_break_count or 0) > 0 and random.random() < KAYFABE_BREAK_HEAT_CHANCE:
+    if (
+        wrestler.kayfabe_break_count or 0
+    ) > 0 and random.random() < KAYFABE_BREAK_HEAT_CHANCE:
         base += random.randint(5, 15)
 
     return max(HEAT_MIN, min(HEAT_MAX, base + random.randint(-3, 3)))
@@ -711,6 +749,7 @@ def _determine_crowd_reaction(wrestler, quality, promo_type, gimmick):
 # Faction / stable promos
 # ---------------------------------------------------------------------------
 
+
 def generate_faction_promo(
     db: Session,
     world_id: str,
@@ -723,7 +762,7 @@ def generate_faction_promo(
 
     The speaker (usually the mouthpiece) delivers using stable identity.
     """
-    from models.game_models import StableDB, StableMemberDB
+    from models.game_models import StableDB
 
     stable = db.query(StableDB).filter_by(id=stable_id).first()
     speaker = db.query(GameWrestlerDB).filter_by(id=speaker_wrestler_id).first()

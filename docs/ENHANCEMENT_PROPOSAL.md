@@ -62,23 +62,24 @@ This document outlines a comprehensive plan to transform LLMFed from a simulatio
 from fastapi import WebSocket
 import asyncio
 
+
 class EventBroadcaster:
     def __init__(self):
         self.connections: List[WebSocket] = []
-    
+
     async def broadcast_tick_result(self, result: TickResult):
         message = {
             "type": "tick_update",
             "data": result.dict(),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
         await self._broadcast(message)
-    
+
     async def broadcast_match_event(self, event: MatchEvent):
         message = {
-            "type": "match_event", 
+            "type": "match_event",
             "data": event.dict(),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
         await self._broadcast(message)
 ```
@@ -150,17 +151,15 @@ class MatchScheduler:
         # Analyze agent availability and storylines
         available_agents = self._get_available_agents(federation)
         active_storylines = self._get_active_storylines(federation)
-        
+
         # Generate match card based on:
         # - Storyline progression needs
         # - Agent win/loss records
         # - Fan engagement metrics
         # - Title picture implications
-        
-        matches = self._create_optimal_match_card(
-            available_agents, active_storylines
-        )
-        
+
+        matches = self._create_optimal_match_card(available_agents, active_storylines)
+
         return WeeklyShow(matches=matches, storylines=active_storylines)
 ```
 
@@ -216,26 +215,26 @@ class FanEngagement:
     def process_fan_vote(self, poll: Poll, user_vote: Vote):
         # Update poll results
         poll.add_vote(user_vote)
-        
+
         # Influence agent heat/momentum
         if poll.poll_type == "popularity":
             self._update_agent_popularity(poll.subject_agent, poll.results)
-        
+
         # Feed into match scheduler
         if poll.poll_type == "match_booking":
             self._influence_next_booking(poll.results)
-    
+
     def generate_fan_reaction(self, event: MatchEvent) -> FanReaction:
         # Simulate crowd reaction based on:
         # - Agent popularity
         # - Move quality/impact
         # - Storyline significance
         # - Surprise factor
-        
+
         return FanReaction(
             intensity=self._calculate_intensity(event),
             sentiment=self._determine_sentiment(event),
-            chants=self._generate_chants(event)
+            chants=self._generate_chants(event),
         )
 ```
 
@@ -255,25 +254,22 @@ class MediaGenerator:
     def create_highlight_reel(self, match: Match) -> HighlightReel:
         # Identify key moments
         key_moments = self._extract_highlights(match.events)
-        
+
         # Generate descriptions
-        descriptions = [
-            self.narrator.describe_moment(moment) 
-            for moment in key_moments
-        ]
-        
+        descriptions = [self.narrator.describe_moment(moment) for moment in key_moments]
+
         # Create shareable content
         return HighlightReel(
             moments=key_moments,
             descriptions=descriptions,
-            social_media_snippets=self._create_social_snippets(key_moments)
+            social_media_snippets=self._create_social_snippets(key_moments),
         )
-    
+
     def generate_weekly_recap(self, week: WeeklyShow) -> WeeklyRecap:
         return WeeklyRecap(
             top_stories=self._identify_top_stories(week),
             power_rankings=self._calculate_power_rankings(week),
-            upcoming_preview=self._preview_next_week(week)
+            upcoming_preview=self._preview_next_week(week),
         )
 ```
 
@@ -389,10 +385,10 @@ class StorylineDirector:
 **Developer Features**:
 ```python
 # Public API endpoints for developers
-GET /api/v1/federations/{id}/live-events
-GET /api/v1/agents/{id}/stats
-POST /api/v1/webhooks/match-events
-GET /api/v1/storylines/{id}/timeline
+GET / api / v1 / federations / {id} / live - events
+GET / api / v1 / agents / {id} / stats
+POST / api / v1 / webhooks / match - events
+GET / api / v1 / storylines / {id} / timeline
 
 # SDK for easy integration
 from llmfed_sdk import LLMFedClient
