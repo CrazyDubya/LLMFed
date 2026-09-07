@@ -74,15 +74,25 @@ replace(
 replace(
     "api_gateway/routes/core_routes.py",
     """async def engine_debug(engine=Depends(get_engine_dependency)):
-    if os.getenv("DEBUG_MODE", "false").lower() != "true":
-        raise HTTPException(status_code=404, detail="Endpoint not found")
-    try:
-        eng = engine
+    \"\"\"Return engine and database status. Only available in debug mode.\"\"\"
+    debug_enabled = os.getenv(\"DEBUG_MODE\", \"false\").lower() == \"true\"
+    if not debug_enabled:
+        raise HTTPException(status_code=404, detail=\"Endpoint not found\")
+
+    from agent_service.database import engine as db_engine
+    from sqlalchemy import inspect
+
+    eng = engine
 """,
     """async def engine_debug(request: Request):
-    if os.getenv("DEBUG_MODE", "false").lower() != "true":
-        raise HTTPException(status_code=404, detail="Endpoint not found")
-    try:
-        eng = get_engine_dependency(request)
+    \"\"\"Return engine and database status. Only available in debug mode.\"\"\"
+    debug_enabled = os.getenv(\"DEBUG_MODE\", \"false\").lower() == \"true\"
+    if not debug_enabled:
+        raise HTTPException(status_code=404, detail=\"Endpoint not found\")
+
+    from agent_service.database import engine as db_engine
+    from sqlalchemy import inspect
+
+    eng = get_engine_dependency(request)
 """,
 )
