@@ -17,7 +17,7 @@ dependencies = [
     "python-dotenv",
     "httpx",
     "openai",
-    "python-jose[cryptography]",
+    "PyJWT>=2.10,<3",
     "passlib[bcrypt]",
     "python-multipart",
     "slowapi",
