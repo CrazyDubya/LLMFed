@@ -33,14 +33,12 @@ jobs:
                   raise SystemExit(f"expected text not found in {path}: {old!r}")
               p.write_text(text.replace(old, new, count))
 
-          # A route already used await but was accidentally declared as sync.
           replace(
               "api_gateway/routes/core_routes.py",
               "\ndef list_agents_in_federation_endpoint(",
               "\nasync def list_agents_in_federation_endpoint(",
               1,
           )
-          # Use the repository's existing dependency hook instead of undefined globals.
           replace(
               "api_gateway/routes/core_routes.py",
               "async def engine_debug():",
@@ -54,7 +52,6 @@ jobs:
               1,
           )
 
-          # Metrics use the same injected LLM object as the rest of the API.
           replace(
               "api_gateway/routes/metrics_routes.py",
               "from fastapi import APIRouter",
@@ -86,9 +83,6 @@ jobs:
               1,
           )
 
-          # The core engine is intentionally still synchronous internally; restore the
-          # matching compatibility session and load AgentDB directly rather than calling
-          # an async CRUD function without awaiting it.
           replace(
               "core_engine/engine.py",
               "from models.db_models import EngineRequestDB, NarrativeLogDB",
@@ -108,7 +102,19 @@ jobs:
               1,
           )
 
-          # Initialize the dependencies that api_gateway.dependencies reads from app.state.
+          replace(
+              "api_gateway/routes/world_routes.py",
+              "return [NarrativeLogResponse.model_validate(l) for l in logs]",
+              "return [NarrativeLogResponse.model_validate(log) for log in logs]",
+              1,
+          )
+          replace(
+              "game_service/politics_service.py",
+              "sum(l.morale or 50 for l in leaders)",
+              "sum(leader.morale or 50 for leader in leaders)",
+              1,
+          )
+
           p = Path("api_gateway/main.py")
           text = p.read_text()
           anchor = "from api_gateway.websocket_hub import websocket_endpoint, start_reaper\n"
