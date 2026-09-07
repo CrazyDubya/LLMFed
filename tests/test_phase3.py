@@ -453,7 +453,7 @@ class TestNewsGeneration:
 
     def test_dirt_sheet_generated(self, db_session):
         _create_world(db_session)
-        fed = _create_fed(db_session, budget=10000)  # Low budget
+        _create_fed(db_session, budget=10000)  # Low budget
 
         from game_service.news_service import generate_weekly_dirt_sheet
 
@@ -737,9 +737,8 @@ class TestTagMatchSimulation:
         assert len(result.spots) > 5
 
         # Verify that tag-specific spots were generated
-        spot_types = [s.move_type for s in result.spots]
-        spot_names = [s.move_name for s in result.spots]
-        has_tag = "tag" in spot_types or "Tag" in spot_names or "Hot Tag" in spot_names
+        [s.move_type for s in result.spots]
+        [s.move_name for s in result.spots]
         # Tag spots are probabilistic; at minimum verify the match completed
         assert result.finish_type in ("pinfall", "submission", "time_limit_draw")
 

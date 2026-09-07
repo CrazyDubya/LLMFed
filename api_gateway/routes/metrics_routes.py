@@ -1,4 +1,3 @@
-
 """
 Observability routes — metrics, LLM health, and match config.
 
@@ -12,7 +11,9 @@ import logging
 import time
 from typing import Any, Dict
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from api_gateway.dependencies import get_llm_dependency
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["monitoring"])
@@ -24,13 +25,12 @@ router = APIRouter(tags=["monitoring"])
 
 
 @router.get("/metrics", summary="System metrics snapshot")
-async def get_metrics() -> Dict[str, Any]:
+async def get_metrics(llm=Depends(get_llm_dependency)) -> Dict[str, Any]:
     """Return a snapshot of runtime metrics for monitoring/alerting."""
     metrics: Dict[str, Any] = {"timestamp": time.time()}
 
     # LLM budget
     try:
-        llm = get_llm()
         metrics["llm_budget"] = llm.get_budget_summary()
         metrics["llm_provider"] = llm.provider_name
         metrics["llm_model"] = llm.model
@@ -54,7 +54,6 @@ async def get_metrics() -> Dict[str, Any]:
 
     # LLM cache stats (if async wrapper is in use)
     try:
-
         # The cache stats are best accessed through AsyncLLM instances,
         # but we expose a basic cache summary if the singleton exists.
         metrics["llm_cache_note"] = (
@@ -72,14 +71,13 @@ async def get_metrics() -> Dict[str, Any]:
 
 
 @router.get("/health/llm", summary="LLM provider health probe")
-async def llm_health() -> Dict[str, Any]:
+async def llm_health(llm=Depends(get_llm_dependency)) -> Dict[str, Any]:
     """Probe the active LLM provider and return status + latency.
 
     Useful for load-balancer health checks and operator dashboards.
     """
     result: Dict[str, Any] = {"status": "unknown", "provider": None}
     try:
-        llm = get_llm()
         result["provider"] = llm.provider_name
         result["model"] = llm.model
 

@@ -1,4 +1,3 @@
-
 from core_engine.rulebook import RuleBook
 from core_engine.engine import AppliedAction
 

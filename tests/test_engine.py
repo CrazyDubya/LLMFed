@@ -1,4 +1,3 @@
-
 from core_engine.engine import engine_instance, AppliedAction
 
 

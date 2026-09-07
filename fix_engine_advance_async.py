@@ -1,4 +1,3 @@
-
 filepath = "api_gateway/routes/core_routes.py"
 with open(filepath, "r") as f:
     content = f.read()

@@ -1297,7 +1297,7 @@ class WorldTicker:
 
     def _generate_year_end_summary(self, game_date: str):
         """Generate year-end awards and summary news. Fires on Dec 31."""
-        news_svc = _get_news_service()
+        _get_news_service()
         year = game_date[:4]
 
         # Find all completed shows this year

@@ -55,7 +55,9 @@ AsyncSessionLocal = async_sessionmaker(
 sync_engine = create_engine(
     SYNC_DATABASE_URL,
     echo=os.getenv("SQL_ECHO", "false").lower() == "true",
-    connect_args={"check_same_thread": False} if SYNC_DATABASE_URL.startswith("sqlite") else {},
+    connect_args={"check_same_thread": False}
+    if SYNC_DATABASE_URL.startswith("sqlite")
+    else {},
 )
 SessionLocal = sessionmaker(
     bind=sync_engine,

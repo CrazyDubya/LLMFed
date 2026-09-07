@@ -193,7 +193,7 @@ async def get_federation_endpoint(
     response_model=List[Agent],
     tags=["federations"],
 )
-def list_agents_in_federation_endpoint(
+async def list_agents_in_federation_endpoint(
     federation_id: str, db: AsyncSession = Depends(get_db)
 ):
     """Retrieves all agents belonging to a specific federation."""
@@ -406,7 +406,7 @@ async def list_narrative_logs(
 
 
 @router.get("/engine/debug", summary="Engine Debug Info", tags=["engine"])
-async def engine_debug():
+async def engine_debug(engine=Depends(get_engine_dependency)):
     """Return engine and database status. Only available in debug mode."""
     debug_enabled = os.getenv("DEBUG_MODE", "false").lower() == "true"
     if not debug_enabled:
@@ -427,7 +427,9 @@ async def engine_debug():
 
 
 @router.post("/prompter/hints", summary="Prompter Hints", tags=["engine"])
-async def prompter_hints(request: PrompterHintRequest):
+async def prompter_hints(
+    request: PrompterHintRequest, engine=Depends(get_engine_dependency)
+):
     """Accepts promoter hints, stores them, and builds LLM prompt."""
     eng = engine
     eng.set_hints(request.hints)

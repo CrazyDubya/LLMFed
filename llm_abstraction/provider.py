@@ -258,7 +258,7 @@ class LLMAbstraction:
                     provider = self._create_provider(provider_name)
                     if provider.validate_config():
                         return provider
-                except Exception as e:
+                except Exception:
                     pass
             raise RuntimeError("No LLM provider could be initialized")
 

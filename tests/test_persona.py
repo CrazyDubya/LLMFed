@@ -595,7 +595,7 @@ class TestMigration:
     def test_migrate_is_idempotent(self, db_session, wrestler, world):
         from game_service.persona_service import migrate_existing_wrestlers
 
-        count1 = migrate_existing_wrestlers(db_session, world.id)
+        migrate_existing_wrestlers(db_session, world.id)
         count2 = migrate_existing_wrestlers(db_session, world.id)
         assert count2 == 0  # Already migrated
 

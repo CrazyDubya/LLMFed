@@ -53,9 +53,9 @@ async def api_create_show(
 ):
     """Create a new show for a federation (promoter action)."""
     try:
-        player = get_player_for_user(db, current_user.user_id, None)
+        get_player_for_user(db, current_user.user_id, None)
     except ValueError:
-        player = None
+        pass
 
     fed = (
         db.query(GameFederationDB).filter(GameFederationDB.id == federation_id).first()

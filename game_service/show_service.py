@@ -431,7 +431,6 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
             w2 = next((w for w in wrestlers if w.id == w2_id), None)
             if w1 and w2 and not w1.is_injured and not w2.is_injured:
                 # Higher-heat storyline gets higher card position
-                is_main = storyline_matches_booked == 0 and sl.heat >= 70
                 planned_winner = (
                     w1
                     if _calculate_wrestler_score(w1, push_map, PUSH_TIERS)

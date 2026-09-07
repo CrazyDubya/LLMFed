@@ -368,7 +368,6 @@ def generate_backstory(db: Session, wrestler: GameWrestlerDB) -> WrestlerBacksto
 def _pick_archetype(wrestler):
     """Pick an archetype based on existing wrestler attributes."""
     alignment = wrestler.alignment or "face"
-    personality = wrestler.personality_traits or {}
 
     # Weighted selection based on alignment
     if alignment == "heel":

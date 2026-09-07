@@ -46,6 +46,9 @@ from api_gateway.game_routes import router as game_router
 from api_gateway.routes.core_routes import router as core_router
 from api_gateway.routes.metrics_routes import router as metrics_router
 from api_gateway.websocket_hub import websocket_endpoint, start_reaper
+from agent_service.database import init_db
+from core_engine.engine import get_engine
+from llm_abstraction.provider import get_llm
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -155,6 +158,9 @@ register_error_handlers(app)
 # ---------------------------------------------------------------------------
 @app.on_event("startup")
 async def _on_startup():
+    init_db()
+    app.state.llm = get_llm()
+    app.state.engine = get_engine()
     start_reaper()
 
     # Setup Redis Cache

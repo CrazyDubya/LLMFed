@@ -275,7 +275,7 @@ async def api_get_narrative(
         .limit(limit)
         .all()
     )
-    return [NarrativeLogResponse.model_validate(l) for l in logs]
+    return [NarrativeLogResponse.model_validate(log) for log in logs]
 
 
 @router.get("/worlds/{world_id}/news", response_model=List[WorldNewsResponse])

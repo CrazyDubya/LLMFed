@@ -1,4 +1,3 @@
-
 filepath = "api_gateway/main.py"
 with open(filepath, "r") as f:
     content = f.read()

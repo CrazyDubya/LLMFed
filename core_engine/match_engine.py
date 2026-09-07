@@ -1216,4 +1216,3 @@ class MatchSimulator:
 # DB integration functions — delegated to match_db_integration module.
 # Re-exported here for backward compatibility.
 # ---------------------------------------------------------------------------
-

@@ -27,9 +27,9 @@ from core_engine.dispatcher import LLMDispatcher
 from core_engine.rulebook import RuleBook
 from core_engine.prompt_builder import PromptBuilder
 
-from models.db_models import EngineRequestDB, NarrativeLogDB
+from models.db_models import AgentDB, EngineRequestDB, NarrativeLogDB
 from agent_service.database import SessionLocal, init_db
-from agent_service.crud import get_agents
+from llm_abstraction.provider import get_llm
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +245,7 @@ class Engine:
         self.state.current_tick = tick_index
         tick_id = str(uuid.uuid4())
 
-        agents = get_agents(db)
+        agents = db.query(AgentDB).all()
         if not agents:
             agents = [_DefaultAgent()]
 

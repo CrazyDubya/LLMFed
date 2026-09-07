@@ -120,7 +120,7 @@ def generate_ppv_calendar(
     ppv_names = available_names[: num_ppvs - 1]  # Reserve slot for crown jewel
 
     # Crown jewel goes near end of year (last quarter)
-    crown_jewel_month = random.randint(10, 12)
+    random.randint(10, 12)
 
     ppvs = []
     name_idx = 0
@@ -368,7 +368,7 @@ def rollover_ppv_calendar(
 ):
     """Generate next year's PPV calendar. Called when current year's events are done."""
     # Check if next year's PPVs already exist
-    next_year = datetime.strptime(new_year_start, "%Y-%m-%d").year
+    datetime.strptime(new_year_start, "%Y-%m-%d").year
     existing = (
         db.query(PPVEventDB)
         .filter(

@@ -510,7 +510,6 @@ def _execute_alignment_turn(
     world_id: str,
 ):
     """Execute an alignment turn — shared logic for face/heel transitions."""
-    old_alignment = wrestler.alignment
     wrestler.alignment = new_alignment
     wrestler.alignment_momentum = 0
     wrestler.popularity = min(100, wrestler.popularity + TURN_POPULARITY_BONUS)
