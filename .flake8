@@ -1,6 +1,8 @@
 [flake8]
 max-line-length = 120
-extend-ignore = D, I, E261, E501, W291, W293, W292, E302, E305, E701, E402, E401, B008, E111, E117, E114, W391
+# E711/E712 are intentionally ignored: SQLAlchemy overloads ==/!= to build SQL
+# expressions, so replacing them with `is` / `is not` changes program semantics.
+extend-ignore = D, I, E261, E501, W291, W293, W292, E302, E305, E701, E402, E401, B008, E111, E117, E114, W391, E711, E712
 # F401/F811: main.py; F401: crud.py
 per-file-ignores =
     api_gateway/main.py: F401, F811
