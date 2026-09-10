@@ -3,7 +3,7 @@
 import logging
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from agent_service.database import get_db
 from api_gateway.security import get_current_user, TokenData
@@ -28,11 +28,11 @@ router = APIRouter(prefix="/game", tags=["game-wrestler"])
 # ---------------------------------------------------------------------------
 
 @router.get("/worlds/{world_id}/wrestlers", response_model=List[WrestlerResponse])
-async def api_list_wrestlers(
+def api_list_wrestlers(
     world_id: str,
     limit: int = 100,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List wrestlers in a world."""
     wrestlers = get_world_wrestlers(db, world_id, limit=limit)
@@ -40,10 +40,10 @@ async def api_list_wrestlers(
 
 
 @router.get("/wrestlers/{wrestler_id}", response_model=WrestlerDetailResponse)
-async def api_get_wrestler(
+def api_get_wrestler(
     wrestler_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get wrestler details with stats."""
     try:
@@ -82,10 +82,10 @@ async def api_get_wrestler(
 
 
 @router.get("/wrestlers/{wrestler_id}/manager")
-async def api_get_wrestler_manager(
+def api_get_wrestler_manager(
     wrestler_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get a wrestler's active manager."""
     result = manager_service.get_wrestler_manager(db, wrestler_id)
@@ -105,10 +105,10 @@ async def api_get_wrestler_manager(
 
 
 @router.get("/wrestlers/{wrestler_id}/stable")
-async def api_get_wrestler_stable(
+def api_get_wrestler_stable(
     wrestler_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get the stable a wrestler belongs to, if any."""
     result = stable_service.get_wrestler_stable(db, wrestler_id)

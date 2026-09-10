@@ -2,7 +2,7 @@
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from agent_service.database import get_db
 from api_gateway.security import (
@@ -32,7 +32,7 @@ def _handle_value_error(e: ValueError):
 # ---------------------------------------------------------------------------
 
 @router.post("/auth/register", response_model=TokenResponse, status_code=201)
-async def api_register(data: UserRegister, db: AsyncSession = Depends(get_db)):
+def api_register(data: UserRegister, db: Session = Depends(get_db)):
     """Register a new user account."""
     try:
         user = register_user(db, data.email, data.username, data.password, data.display_name)
@@ -46,7 +46,7 @@ async def api_register(data: UserRegister, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-async def api_login(data: UserLogin, db: AsyncSession = Depends(get_db)):
+def api_login(data: UserLogin, db: Session = Depends(get_db)):
     """Login and receive JWT token."""
     try:
         user = authenticate_user(db, data.username, data.password)
@@ -60,7 +60,7 @@ async def api_login(data: UserLogin, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/auth/refresh")
-async def api_refresh_token(refresh_token: str, db: AsyncSession = Depends(get_db)):
+def api_refresh_token(refresh_token: str, db: Session = Depends(get_db)):
     """Exchange a refresh token for a new access + refresh token pair."""
     token_data = decode_token(refresh_token, expected_type="refresh")
     pair = create_token_pair(token_data.user_id, token_data.username or "", token_data.role)
@@ -72,9 +72,9 @@ async def api_refresh_token(refresh_token: str, db: AsyncSession = Depends(get_d
 
 
 @router.get("/auth/me", response_model=UserResponse)
-async def api_get_me(
+def api_get_me(
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get current user info."""
     from game_service.auth_service import get_user_by_id
@@ -86,9 +86,9 @@ async def api_get_me(
 
 
 @router.post("/auth/api-key")
-async def api_generate_api_key(
+def api_generate_api_key(
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Generate a new API key for the current user."""
     from models.game_models import UserDB
@@ -104,9 +104,9 @@ async def api_generate_api_key(
 
 
 @router.delete("/auth/api-key")
-async def api_revoke_api_key(
+def api_revoke_api_key(
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Revoke the current user's API key."""
     from models.game_models import UserDB
