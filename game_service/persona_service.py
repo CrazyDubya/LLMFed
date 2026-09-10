@@ -120,6 +120,20 @@ LIFE_EVENT_POOL = {
     "family_reconciliation": {"description": "{name} has reconnected with estranged family members.", "severity": 4, "morale": 15, "performance": 2, "public_chance": 0.4, "storyline_pot": False},
 }
 
+# Ongoing struggles a negative life event weighs the real person down with.
+# Tracked on WrestlerBackstoryDB.personal_struggles for as long as the
+# originating event stays active.
+STRUGGLE_LABELS = {
+    "divorce": "divorce",
+    "death_in_family": "grief",
+    "legal_trouble": "legal_trouble",
+    "substance_issue": "substance_abuse",
+    "public_controversy": "public_scrutiny",
+    "financial_trouble": "financial_pressure",
+    "mental_health": "mental_health_struggle",
+    "relationship_end": "heartbreak",
+}
+
 
 # ---------------------------------------------------------------------------
 # Backstory generation
@@ -306,6 +320,14 @@ def generate_life_event(db: Session, wrestler_id: str, world_id: str,
         is_active=True,
     )
     db.add(event)
+
+    label = STRUGGLE_LABELS.get(event_type)
+    if label and backstory:
+        struggles = list(backstory.personal_struggles or [])
+        if label not in struggles:
+            struggles.append(label)
+            backstory.personal_struggles = struggles
+
     db.flush()
 
     logger.info("Life event '%s' for %s (public=%s)", event_type, wrestler.name, is_public)
@@ -343,6 +365,23 @@ def process_life_event_effects(db: Session, event: LifeEventDB):
     # Auto-resolve low-severity events after creation
     if event.severity <= 3:
         event.is_active = False
+        event.resolved_date = event.game_date
+
+    if not event.is_active and backstory:
+        label = STRUGGLE_LABELS.get(event.event_type)
+        if label and label in (backstory.personal_struggles or []):
+            # Only drop the label once no other active event of the same
+            # type is still weighing on this wrestler.
+            still_active = db.query(LifeEventDB).filter(
+                LifeEventDB.wrestler_id == wrestler.id,
+                LifeEventDB.event_type == event.event_type,
+                LifeEventDB.is_active == True,
+                LifeEventDB.id != event.id,
+            ).first()
+            if not still_active:
+                backstory.personal_struggles = [
+                    s for s in backstory.personal_struggles if s != label
+                ]
 
 
 # ---------------------------------------------------------------------------

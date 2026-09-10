@@ -925,8 +925,32 @@ class WorldTicker:
                 for sl in check_relationship_collision_storylines(self.db, self.world.id, game_date):
                     self.events.append(f"Collision storyline '{sl.name}' created!")
 
+            def _tick_persona_collisions():
+                # Surface where a wrestler's real life and kayfabe are
+                # colliding — a crisis during a push, or a facade cracking
+                # under low personal stability with a strict kayfabe
+                # commitment. The relationship-based collisions here overlap
+                # with _tick_kayfabe's storyline triggers, so this is
+                # throttled to avoid repeating the same note every week.
+                from game_service.persona_service import detect_collision_events
+                for wrestler in get_active_wrestlers(self.db, self.world.id):
+                    for collision in detect_collision_events(self.db, wrestler, game_date):
+                        if random.random() > 0.15:
+                            continue
+                        self.db.add(GameNarrativeLogDB(
+                            world_id=self.world.id,
+                            game_date=game_date,
+                            tick=0,
+                            event_type="persona_collision",
+                            description=collision["description"],
+                            involved_entities=[wrestler.id],
+                            importance=min(10, collision["severity"]),
+                        ))
+                        self.events.append(collision["description"])
+
             self._safe_tick("Persona tick", _tick_persona)
             self._safe_tick("Kayfabe collision check", _tick_kayfabe)
+            self._safe_tick("Persona collision detection", _tick_persona_collisions)
 
         # Daily social media tick
         def _tick_social():
