@@ -1,5 +1,7 @@
 """Tests for the world ticker - game day advancement."""
 
+import random
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -132,8 +134,20 @@ class TestWorldTicker:
         db_session.refresh(stats)
         assert stats.stamina >= initial_stamina  # Should increase (or stay same at max)
 
-    def test_condition_recovery(self, db_session, world_with_player):
-        world, _ = world_with_player
+    def test_condition_recovery(self, db_session):
+        # Seeded from before world creation so the whole scenario —
+        # roster, and the tick's show/match simulation — is deterministic.
+        # Unseeded, this could occasionally book the tracked wrestler into
+        # a damaging match, masking the recovery this test checks for.
+        random.seed(0)
+        world = create_world(db_session, "Ticker Test World")
+        user = UserDB(email="t@t.com", username="ticker_user", password_hash="h")
+        db_session.add(user)
+        db_session.commit()
+        create_player(
+            db_session, user.id, world.id, "promoter",
+            federation_name="Test Fed",
+        )
 
         # Set a wrestler's condition low
         wrestler = db_session.query(GameWrestlerDB).filter(
