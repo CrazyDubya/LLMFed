@@ -12,6 +12,7 @@ from models.game_models import (
     GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
     ContractDB, ChampionshipDB,
 )
+from game_service import fan_service
 
 logger = logging.getLogger(__name__)
 
@@ -328,6 +329,11 @@ def create_world(db: Session, name: str, description: str = None,
         db.flush()
         federations.append(fed)
 
+        size_tier = "large" if fed.prestige >= 70 else "medium" if fed.prestige >= 45 else "small"
+        fed.fan_base_snapshot = fan_service.fan_base_to_json(
+            fan_service.create_initial_fan_base(fed.id, federation_size=size_tier)
+        )
+
         # Create a championship per federation
         db.add(ChampionshipDB(
             world_id=world.id,
@@ -466,6 +472,10 @@ def _create_player_federation(db: Session, world_id: str, kwargs: dict) -> GameF
     )
     db.add(fed)
     db.flush()
+
+    fed.fan_base_snapshot = fan_service.fan_base_to_json(
+        fan_service.create_initial_fan_base(fed.id, federation_size="small")
+    )
 
     # Create a starting championship
     db.add(ChampionshipDB(

@@ -273,6 +273,49 @@ def process_show_impact(
     }
 
 
+def fan_base_to_json(fan_base: FanBase) -> Dict[str, Any]:
+    """Serialize a FanBase to a JSON-safe dict for DB storage."""
+    return {
+        "federation_id": fan_base.federation_id,
+        "total_merch_revenue": fan_base.total_merch_revenue,
+        "shows_processed": fan_base.shows_processed,
+        "segments": {
+            archetype.value: {
+                "population": seg.population,
+                "satisfaction": seg.satisfaction,
+                "loyalty": seg.loyalty,
+                "buzz": seg.buzz,
+                "merch_spend_per_capita": seg.merch_spend_per_capita,
+                "favorite_wrestlers": seg.favorite_wrestlers,
+                "disliked_wrestlers": seg.disliked_wrestlers,
+            }
+            for archetype, seg in fan_base.segments.items()
+        },
+    }
+
+
+def fan_base_from_json(data: Dict[str, Any]) -> FanBase:
+    """Reconstruct a FanBase from a dict produced by fan_base_to_json."""
+    fan_base = FanBase(
+        federation_id=data["federation_id"],
+        total_merch_revenue=data.get("total_merch_revenue", 0.0),
+        shows_processed=data.get("shows_processed", 0),
+    )
+    for archetype_str, seg_data in (data.get("segments") or {}).items():
+        archetype = FanArchetype(archetype_str)
+        fan_base.segments[archetype] = FanSegment(
+            archetype=archetype,
+            population=seg_data.get("population", 0),
+            satisfaction=seg_data.get("satisfaction", 50.0),
+            loyalty=seg_data.get("loyalty", 50.0),
+            buzz=seg_data.get("buzz", 0.0),
+            merch_spend_per_capita=seg_data.get("merch_spend_per_capita", 10.0),
+            favorite_wrestlers=seg_data.get("favorite_wrestlers", []),
+            disliked_wrestlers=seg_data.get("disliked_wrestlers", []),
+        )
+    return fan_base
+
+
 def predict_attendance(
     fan_base: FanBase,
     venue_capacity: int,

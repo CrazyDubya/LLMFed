@@ -190,6 +190,25 @@ def simulate_show(
     if fed:
         vs.update_federation_fanbase(db, fed, show)
 
+    # Granular fan-segment tracking (casual/hardcore/family/smark/lapsed):
+    # satisfaction, churn, and merch revenue by demographic.
+    if fed and fed.fan_base_snapshot:
+        try:
+            from game_service import fan_service
+            fan_base = fan_service.fan_base_from_json(fed.fan_base_snapshot)
+            avg_quality = sum(match_ratings) / len(match_ratings) if match_ratings else 2.5
+            impact = fan_service.process_show_impact(fan_base, {
+                "match_quality": avg_quality,
+                "storyline_quality": 50,
+                "star_power": card_draw,
+                "spectacle": 70 if show.show_type == "ppv" else 40,
+                "surprise": 30,
+            })
+            fed.fan_base_snapshot = fan_service.fan_base_to_json(fan_base)
+            fed.weekly_revenue += impact["merch_revenue_this_show"]
+        except Exception as e:
+            logger.warning("Fan base tracking failed for show %s: %s", show.id, e)
+
     # Update wrestler draw ratings for everyone on the card
     for seg in segments:
         if seg.segment_type == "match" and seg.match_id:

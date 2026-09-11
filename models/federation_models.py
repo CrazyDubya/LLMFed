@@ -47,6 +47,7 @@ class GameFederationDB(Base):
     momentum = Column(Integer, default=50)  # 0-100, how "hot" the fed is
     fanbase_loyalty = Column(Integer, default=50)  # 0-100, how loyal the audience is (affects floor)
     regional_strength = Column(JSON, default=dict)  # {region: 0-100} strength per market
+    fan_base_snapshot = Column(JSON, nullable=True)  # Serialized fan_service.FanBase (segments, satisfaction, merch)
     is_active = Column(Boolean, default=True)
     ai_personality = Column(JSON, default=dict)  # LLM personality traits for NPC booking
     # --- Kayfabe Profile ---
