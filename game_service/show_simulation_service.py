@@ -373,13 +373,17 @@ def _simulate_match_segment(
             db, match, world.current_game_date
         )
     except Exception as e:
+        # Leave the segment genuinely incomplete rather than inventing a
+        # plausible-looking rating — a fabricated number here would silently
+        # mask a real simulation bug as a mediocre-but-real match, and would
+        # corrupt the show's overall_rating average with data that never
+        # actually happened.
         logger.error(
             "Match simulation failed for match %s: %s",
             match.id, e, exc_info=True,
         )
-        seg.is_completed = True
-        seg.rating = round(random.uniform(2.0, 4.0), 1)
-        match_ratings.append(seg.rating)
+        seg.is_completed = False
+        seg.rating = None
 
     return show_momentum, events
 
