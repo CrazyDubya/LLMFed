@@ -7,7 +7,20 @@ ticker pipeline (active wrestlers, NPC federations, etc.).
 
 from sqlalchemy.orm import Session
 
-from models.game_models import GameWrestlerDB, GameFederationDB
+from models.game_models import GameWrestlerDB, GameFederationDB, ContractDB
+
+
+def get_wrestler_federation(db: Session, wrestler_id: str):
+    """Return the federation a wrestler currently holds an active contract with."""
+    contract = db.query(ContractDB).filter(
+        ContractDB.wrestler_id == wrestler_id,
+        ContractDB.status == "active",
+    ).first()
+    if not contract:
+        return None
+    return db.query(GameFederationDB).filter(
+        GameFederationDB.id == contract.federation_id,
+    ).first()
 
 
 def get_active_wrestlers(db: Session, world_id: str):

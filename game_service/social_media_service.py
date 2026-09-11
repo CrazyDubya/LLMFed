@@ -13,8 +13,9 @@ from sqlalchemy.orm import Session
 from models.game_models import (
     GameWrestlerDB, SocialMediaPostDB, GimmickHistoryDB,
     WrestlerBackstoryDB, StorylineDB, StorylineParticipantDB,
-    WrestlerRelationshipDB, WorldNewsDB, ContractDB, GameFederationDB,
+    WrestlerRelationshipDB, WorldNewsDB,
 )
+from game_service.ticker_query_helpers import get_wrestler_federation
 
 logger = logging.getLogger(__name__)
 
@@ -88,19 +89,6 @@ RESPONSE_POSTS = [
 # Post generation
 # ---------------------------------------------------------------------------
 
-def _get_wrestler_federation(db: Session, wrestler_id: str):
-    """Look up the federation a wrestler is currently under contract with."""
-    contract = db.query(ContractDB).filter(
-        ContractDB.wrestler_id == wrestler_id,
-        ContractDB.status == "active",
-    ).first()
-    if not contract:
-        return None
-    return db.query(GameFederationDB).filter(
-        GameFederationDB.id == contract.federation_id,
-    ).first()
-
-
 def generate_social_post(db: Session, wrestler_id: str, world_id: str,
                          game_date: str, context: str = None) -> SocialMediaPostDB:
     """Generate a social media post for a wrestler."""
@@ -119,7 +107,7 @@ def generate_social_post(db: Session, wrestler_id: str, world_id: str,
         WrestlerBackstoryDB.wrestler_id == wrestler_id,
     ).first()
 
-    fed = _get_wrestler_federation(db, wrestler_id)
+    fed = get_wrestler_federation(db, wrestler_id)
     policy = (fed.social_media_policy if fed else None) or "guided"
 
     # Determine post type based on kayfabe commitment and the federation's

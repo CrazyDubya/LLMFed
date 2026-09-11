@@ -312,7 +312,7 @@ def snapshot_export(
         )
         path = export_snapshot_to_file(snapshot, filepath)
         console.print(f"[green]Snapshot written to {path} ({snapshot['size_bytes']} bytes)[/green]")
-    except ValueError as e:
+    except (ValueError, OSError) as e:
         console.print(f"[red]{e}[/red]")
     finally:
         db.close()
@@ -336,6 +336,8 @@ def snapshot_import(
             create_new_world=target_world_id is None,
         )
         console.print(f"[green]Restored: {result}[/green]")
+    except (ValueError, OSError) as e:
+        console.print(f"[red]{e}[/red]")
     finally:
         db.close()
 

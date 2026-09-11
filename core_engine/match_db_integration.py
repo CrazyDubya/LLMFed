@@ -81,21 +81,32 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None):
 
     from game_service.wrestler_lifecycle_service import calculate_stipulation_bonus
 
+    # Fetch each participant's wrestler row once and reuse it below, rather
+    # than re-querying per wrestler for the body-modifier precompute and
+    # again while building participant states.
+    wrestlers_by_id = {
+        w.id: w for w in db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.id.in_([p.wrestler_id for p in participants_db]),
+        ).all()
+    }
+
     # Body-weight modifiers are pairwise (attacker vs. defender), so they're
     # only well-defined for a two-person match — precompute both sides here.
     body_mods = {}
     if len(participants_db) == 2:
         from game_service.wrestler_lifecycle_service import calculate_body_modifier
-        w_a = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == participants_db[0].wrestler_id).first()
-        w_b = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == participants_db[1].wrestler_id).first()
+        w_a = wrestlers_by_id.get(participants_db[0].wrestler_id)
+        w_b = wrestlers_by_id.get(participants_db[1].wrestler_id)
         if w_a and w_b:
             body_mods[w_a.id] = calculate_body_modifier(w_a.weight_kg, w_b.weight_kg)
             body_mods[w_b.id] = calculate_body_modifier(w_b.weight_kg, w_a.weight_kg)
 
+    interference_map = getattr(match, "_manager_interference", {})
+
     # Build participant states with morale modifier
     participant_states = []
     for p in participants_db:
-        wrestler = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == p.wrestler_id).first()
+        wrestler = wrestlers_by_id.get(p.wrestler_id)
         stats = db.query(WrestlerStatsDB).filter(WrestlerStatsDB.wrestler_id == p.wrestler_id).first()
 
         if not wrestler or not stats:
@@ -115,7 +126,7 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None):
             calculate_stipulation_bonus(stats, match.stipulation),
         )
         body_mod = body_mods.get(wrestler.id, {})
-        interference_boost = getattr(match, "_manager_interference", {}).get(wrestler.id, 0)
+        interference_boost = interference_map.get(wrestler.id, 0)
 
         # Load signature moves
         sig_moves = []

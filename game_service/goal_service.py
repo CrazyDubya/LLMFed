@@ -52,6 +52,13 @@ def evaluate_goals(db: Session, wrestler: GameWrestlerDB, game_date: str):
     ).all()
 
     completed = []
+    tier_progress_cache = {}
+
+    def cached_tier_progress():
+        if "value" not in tier_progress_cache:
+            tier_progress_cache["value"] = _tier_progress(db, wrestler)
+        return tier_progress_cache["value"]
+
     for goal in active:
         if _check_goal_completed(db, wrestler, goal):
             goal.status = "completed"
@@ -69,7 +76,7 @@ def evaluate_goals(db: Session, wrestler: GameWrestlerDB, game_date: str):
                 description=f"Achieved career goal: {goal.goal_type}",
             ))
         else:
-            goal.progress = _estimate_goal_progress(db, wrestler, goal)
+            goal.progress = _estimate_goal_progress(db, wrestler, goal, cached_tier_progress)
 
             # Frustration grows when stuck
             goal.frustration = min(100, (goal.frustration or 0) + GOAL_FRUSTRATION_PER_WEEK)
@@ -173,15 +180,22 @@ def _tier_progress(db: Session, wrestler: GameWrestlerDB) -> float:
     return (len(PUSH_TIERS) - 1 - rank) / (len(PUSH_TIERS) - 1) * 100
 
 
-def _estimate_goal_progress(db: Session, wrestler: GameWrestlerDB, goal: WrestlerGoalDB) -> int:
-    """Estimate 0-100 fractional progress toward a still-active goal."""
+def _estimate_goal_progress(db: Session, wrestler: GameWrestlerDB, goal: WrestlerGoalDB,
+                            tier_progress_fn=None) -> int:
+    """Estimate 0-100 fractional progress toward a still-active goal.
+
+    tier_progress_fn, if given, is called instead of re-querying
+    WrestlerPushDB — callers evaluating multiple goals for the same
+    wrestler in one pass can memoize it once and reuse it here.
+    """
     gt = goal.goal_type
+    get_tier_progress = tier_progress_fn or (lambda: _tier_progress(db, wrestler))
 
     if gt in ("win_title", "become_champion", "win_first_title", "one_more_title_run"):
-        return int(_tier_progress(db, wrestler))
+        return int(get_tier_progress())
 
     if gt == "main_event_ppv":
-        return int(_tier_progress(db, wrestler))
+        return int(get_tier_progress())
 
     if gt in ("have_5_star_match", "5_star_match"):
         best = db.query(MatchDB).join(MatchParticipantDB).filter(
@@ -206,7 +220,7 @@ def _estimate_goal_progress(db: Session, wrestler: GameWrestlerDB, goal: Wrestle
         return int(max(0, min(100, (pop_pct + morale_pct) / 2)))
 
     if gt == "make_it_to_main_event":
-        return int(_tier_progress(db, wrestler))
+        return int(get_tier_progress())
 
     if gt == "headline_biggest_show":
         return int(max(0, min(100, (wrestler.popularity or 0) / GOAL_HEADLINE_POP * 100)))

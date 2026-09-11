@@ -362,7 +362,10 @@ class WorldTicker:
         # Go-home week: convert the penciled card to ink — publicly
         # announced and no longer subject to hot/cold-act reshuffling.
         if next_ppv and is_go_home_week(game_date, next_ppv.scheduled_date):
-            for match in ([next_ppv.planned_main_event] if next_ppv.planned_main_event else []) + list(next_ppv.planned_matches or []):
+            card_matches = list(next_ppv.planned_matches or [])
+            if next_ppv.planned_main_event:
+                card_matches.append(next_ppv.planned_main_event)
+            for match in card_matches:
                 if match.get("status") == "penciled":
                     ink_ppv_match(next_ppv, match.get("wrestler_ids", []))
 

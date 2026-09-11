@@ -14,8 +14,9 @@ from sqlalchemy.orm import Session
 from models.game_models import (
     PromoDB, GameWrestlerDB, WrestlerStatsDB,
     GimmickHistoryDB, WrestlerBackstoryDB,
-    LifeEventDB, ContractDB, GameFederationDB,
+    LifeEventDB,
 )
+from game_service.ticker_query_helpers import get_wrestler_federation
 
 logger = logging.getLogger(__name__)
 
@@ -488,15 +489,7 @@ def _determine_emotional_state(life_events, kayfabe_commitment):
 
 def _federation_allows_worked_shoots(db, wrestler_id: str) -> bool:
     """Check whether the wrestler's current federation permits worked shoots."""
-    contract = db.query(ContractDB).filter(
-        ContractDB.wrestler_id == wrestler_id,
-        ContractDB.status == "active",
-    ).first()
-    if not contract:
-        return True  # No federation context — don't block
-    fed = db.query(GameFederationDB).filter(
-        GameFederationDB.id == contract.federation_id,
-    ).first()
+    fed = get_wrestler_federation(db, wrestler_id)
     return fed.allows_worked_shoots if fed else True
 
 
