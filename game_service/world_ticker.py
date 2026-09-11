@@ -571,6 +571,15 @@ class WorldTicker:
                     importance=8,
                 )
                 self.events.append(f"RETIREMENT: {w.name}")
+
+                from game_service.audit_service import record_change
+                record_change(
+                    self.db, entity_type="wrestler", entity_id=w.id,
+                    field_name="is_active", old_value=True, new_value=False,
+                    action="retire", actor_type="system", world_id=self.world.id,
+                    reason=f"retirement_pressure={pressure}",
+                )
+
                 break  # One retirement per day max
 
     # ------------------------------------------------------------------
@@ -603,6 +612,14 @@ class WorldTicker:
                     importance=6,
                 )
                 self.events.append(f"Contract expired: {wrestler.name} is now a free agent")
+
+                from game_service.audit_service import record_change
+                record_change(
+                    self.db, entity_type="contract", entity_id=contract.id,
+                    field_name="status", old_value="active", new_value="expired",
+                    action="expire", actor_type="system", world_id=self.world.id,
+                    reason="end_date_reached",
+                )
 
                 def _tick_vision_departure(wrestler_id=wrestler.id, federation_id=contract.federation_id):
                     from models.game_models import BookingVisionDB
