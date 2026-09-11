@@ -126,6 +126,17 @@ def redistribute_market_share(db: Session, world: WorldDB, events: List[str],
         # Gradual shift toward target (10% per week)
         fed.market_share = round(current + (target_share - current) * 0.1, 1)
 
+        # Regional strength in the fed's home market tracks its momentum
+        # more directly than the (national) market_share figure does.
+        region = fed.home_region
+        if region:
+            strengths = dict(fed.regional_strength or {})
+            current_regional = strengths.get(region, 50)
+            strengths[region] = round(
+                max(0, min(100, current_regional + ((fed.momentum or 50) - current_regional) * 0.1)), 1,
+            )
+            fed.regional_strength = strengths
+
 
 def generate_talent_offers(db: Session, world: WorldDB, events: List[str],
                            log_event: Callable, game_date: str):

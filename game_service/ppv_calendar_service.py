@@ -259,6 +259,25 @@ def plan_ppv_card_from_vision(
             )
             main_event_set = True
 
+    # Crown jewels get the promoter's dream match — the whole reason this
+    # is the biggest show of the year. Book it as the main event if no
+    # title match claimed that slot, otherwise as a second marquee bout —
+    # unless one of the dream wrestlers is already booked in a title match.
+    if ppv.is_crown_jewel:
+        dream = (vision.crown_jewel_vision or {}).get("ideal_wrestlers", [])
+        already_booked = set((ppv.planned_main_event or {}).get("wrestler_ids", []))
+        for m in (ppv.planned_matches or []):
+            already_booked.update(m.get("wrestler_ids", []))
+
+        if len(dream) >= 2 and not already_booked.intersection(dream[:2]):
+            pencil_in_ppv_match(
+                db, ppv,
+                wrestler_ids=dream[:2],
+                match_type="singles",
+                is_main_event=not main_event_set,
+            )
+            main_event_set = True
+
     # Add matches from planned storylines at climax
     planned_sls = vision.planned_storylines or []
     for sl in planned_sls:

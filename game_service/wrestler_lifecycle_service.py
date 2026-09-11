@@ -131,6 +131,31 @@ def calculate_ring_rust_modifier(wrestler: GameWrestlerDB) -> float:
     return max(LC.RING_RUST_MIN_MODIFIER, 1.0 - (rust / LC.RING_RUST_DIVISOR))
 
 
+def update_public_perception(wrestler: GameWrestlerDB) -> str:
+    """Derive how the audience sees this wrestler right now.
+
+    beloved/respected/controversial/forgotten/neutral — a summary label
+    consumed by news and character-prompt flavor text.
+    """
+    pop = wrestler.popularity or 0
+    breaks = wrestler.kayfabe_break_count or 0
+    legacy = wrestler.legacy_score or 0
+
+    if breaks >= 3 or (pop >= 60 and wrestler.alignment == "heel" and breaks >= 1):
+        perception = "controversial"
+    elif pop >= 75:
+        perception = "beloved" if wrestler.alignment != "heel" else "controversial"
+    elif pop < 15:
+        perception = "forgotten"
+    elif legacy >= 60 or (pop >= 40 and (wrestler.morale or 50) >= 60):
+        perception = "respected"
+    else:
+        perception = "neutral"
+
+    wrestler.public_perception = perception
+    return perception
+
+
 # -- Group 4: Developmental Pipeline ----------------------------------------
 
 def assign_mentor(db: Session, federation: GameFederationDB,

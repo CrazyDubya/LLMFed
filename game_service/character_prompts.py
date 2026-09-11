@@ -203,6 +203,8 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
     parts.append(f"Popularity: {wrestler.popularity}/100. Morale: {wrestler.morale}/100.")
     if wrestler.career_phase:
         parts.append(f"Career phase: {wrestler.career_phase}.")
+    if wrestler.public_perception and wrestler.public_perception != "neutral":
+        parts.append(f"The audience currently sees you as {wrestler.public_perception}.")
 
     # Current federation
     contract = db.query(ContractDB).filter(

@@ -904,7 +904,7 @@ class WorldTicker:
         from game_service.wrestler_lifecycle_service import (
             evaluate_goals, create_wrestler_goals,
             update_locker_room_dynamics, auto_assign_mentors,
-            update_conditioning,
+            update_conditioning, update_public_perception,
         )
 
         wrestlers = get_active_wrestlers(self.db, self.world.id)
@@ -913,6 +913,7 @@ class WorldTicker:
             completed = evaluate_goals(self.db, w, game_date)
             for g in completed:
                 self.events.append(f"{w.name} achieved: {g}")
+            update_public_perception(w)
 
         feds = get_active_federations(self.db, self.world.id)
         for fed in feds:
