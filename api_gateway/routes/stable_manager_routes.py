@@ -10,6 +10,7 @@ from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
     ManagerCreate, ManagerResponse, ManagerClientCreate, ManagerClientResponse,
     StableCreate, StableResponse, StableMemberResponse, StableAddMember, StableUpdate,
+    StableMemberRoleUpdate,
 )
 from models.game_models import (
     GameWrestlerDB, ContractDB, StableDB,
@@ -251,6 +252,23 @@ def api_remove_stable_member(
         game_date=world.current_game_date if world else None,
     ):
         raise HTTPException(status_code=404, detail="Member not found")
+
+
+@router.patch("/stables/{stable_id}/members/{wrestler_id}/role", status_code=200)
+def api_promote_stable_member(
+    stable_id: str,
+    wrestler_id: str,
+    data: StableMemberRoleUpdate,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Change a stable member's role (e.g. promote to leader)."""
+    stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
+    if not stable:
+        raise HTTPException(status_code=404, detail="Stable not found")
+    if not stable_service.promote_member(db, stable_id, wrestler_id, data.new_role):
+        raise HTTPException(status_code=404, detail="Member not found")
+    return {"wrestler_id": wrestler_id, "role": data.new_role}
 
 
 @router.patch("/stables/{stable_id}", response_model=StableResponse)

@@ -543,6 +543,7 @@ def adapt_vision_for_hot_act(
         push.push_tier = new_tier
         push.direction = "rising"
         push.confidence = min(100, push.confidence + 15)
+        push.weeks_at_tier = 0
 
     log = list(vision.adaptation_log or [])
     log.append({
@@ -611,6 +612,7 @@ def adapt_vision_for_cold_act(
         push.push_tier = new_tier
         push.direction = "cooling_off"
         push.confidence = max(10, push.confidence - 15)
+        push.weeks_at_tier = 0
 
     log = list(vision.adaptation_log or [])
     log.append({

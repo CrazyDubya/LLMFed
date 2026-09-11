@@ -547,6 +547,12 @@ class StableAddMember(BaseModel):
     )
 
 
+class StableMemberRoleUpdate(BaseModel):
+    new_role: str = Field(
+        pattern=r"^(leader|enforcer|mouthpiece|lieutenant|member|recruit)$"
+    )
+
+
 class StableUpdate(BaseModel):
     name: Optional[str] = Field(default=None, max_length=100)
     short_name: Optional[str] = Field(default=None, max_length=20)

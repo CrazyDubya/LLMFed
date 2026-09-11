@@ -338,7 +338,8 @@ class WorldTicker:
         """Weekly strategic check — plan PPV cards and adapt to hot/cold acts."""
         from models.game_models import BookingVisionDB, PPVEventDB
         from game_service.ppv_calendar_service import (
-            get_next_ppv, is_build_window, plan_ppv_card_from_vision,
+            get_next_ppv, is_build_window, is_go_home_week,
+            plan_ppv_card_from_vision, ink_ppv_match,
         )
         from game_service.booking_vision_service import (
             adapt_vision_for_hot_act, adapt_vision_for_cold_act,
@@ -358,6 +359,13 @@ class WorldTicker:
                 plan_ppv_card_from_vision(self.db, next_ppv, vision)
                 self.events.append(f"{fed.short_name}: PPV card planned for {next_ppv.name}")
 
+        # Go-home week: convert the penciled card to ink — publicly
+        # announced and no longer subject to hot/cold-act reshuffling.
+        if next_ppv and is_go_home_week(game_date, next_ppv.scheduled_date):
+            for match in ([next_ppv.planned_main_event] if next_ppv.planned_main_event else []) + list(next_ppv.planned_matches or []):
+                if match.get("status") == "penciled":
+                    ink_ppv_match(next_ppv, match.get("wrestler_ids", []))
+
         # Check for hot/cold acts — wrestlers whose popularity diverges from push tier
         from models.game_models import WrestlerPushDB
         pushes = self.db.query(WrestlerPushDB).filter(
@@ -365,6 +373,7 @@ class WorldTicker:
         ).all()
 
         for push in pushes:
+            push.weeks_at_tier = (push.weeks_at_tier or 0) + 1
             wrestler = self.db.query(GameWrestlerDB).filter(
                 GameWrestlerDB.id == push.wrestler_id,
             ).first()
@@ -523,6 +532,23 @@ class WorldTicker:
             self.db, self.world.id, victim, weeks_out, game_date,
         )
 
+        def _tick_vision_injury():
+            from models.game_models import BookingVisionDB
+            from game_service.booking_vision_service import adapt_vision_for_injury
+            contract = self.db.query(ContractDB).filter(
+                ContractDB.wrestler_id == victim.id,
+                ContractDB.status == "active",
+            ).first()
+            if not contract:
+                return
+            vision = self.db.query(BookingVisionDB).filter(
+                BookingVisionDB.federation_id == contract.federation_id,
+            ).first()
+            if vision:
+                adapt_vision_for_injury(self.db, vision, victim.id, weeks_out, game_date)
+
+        self._safe_tick("Vision adaptation for injury", _tick_vision_injury)
+
     def _random_retirement(self, game_date: str):
         """Pressure-based retirement (replaces flat random)."""
         from game_service.wrestler_lifecycle_service import calculate_retirement_pressure
@@ -577,6 +603,17 @@ class WorldTicker:
                     importance=6,
                 )
                 self.events.append(f"Contract expired: {wrestler.name} is now a free agent")
+
+                def _tick_vision_departure(wrestler_id=wrestler.id, federation_id=contract.federation_id):
+                    from models.game_models import BookingVisionDB
+                    from game_service.booking_vision_service import adapt_vision_for_departure
+                    vision = self.db.query(BookingVisionDB).filter(
+                        BookingVisionDB.federation_id == federation_id,
+                    ).first()
+                    if vision:
+                        adapt_vision_for_departure(self.db, vision, wrestler_id, game_date)
+
+                self._safe_tick("Vision adaptation for departure", _tick_vision_departure)
 
     # ------------------------------------------------------------------
     # Phase 8: Recovery

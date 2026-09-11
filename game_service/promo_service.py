@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from models.game_models import (
     PromoDB, GameWrestlerDB, WrestlerStatsDB,
     GimmickHistoryDB, WrestlerBackstoryDB,
-    LifeEventDB,
+    LifeEventDB, ContractDB, GameFederationDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -400,6 +400,13 @@ def generate_promo(db: Session, world_id: str, wrestler_id: str,
     quality = _evaluate_promo_quality(stats, content, is_player_written, gimmick)
     heat = _calculate_promo_heat(wrestler, quality, target_wrestler_id is not None)
 
+    # A manager at ringside/backstage boosts both the delivery and the pop
+    from game_service.manager_service import calculate_manager_bonus
+    manager_bonus = calculate_manager_bonus(db, wrestler_id)
+    if manager_bonus.get("has_manager"):
+        quality = min(5.0, quality + manager_bonus["charisma_bonus"] / 10)
+        heat += manager_bonus["heat_bonus"]
+
     # Crowd reaction: persona-aware
     crowd = _determine_crowd_reaction(wrestler, quality, promo_type, gimmick)
 
@@ -479,6 +486,20 @@ def _determine_emotional_state(life_events, kayfabe_commitment):
     return None
 
 
+def _federation_allows_worked_shoots(db, wrestler_id: str) -> bool:
+    """Check whether the wrestler's current federation permits worked shoots."""
+    contract = db.query(ContractDB).filter(
+        ContractDB.wrestler_id == wrestler_id,
+        ContractDB.status == "active",
+    ).first()
+    if not contract:
+        return True  # No federation context — don't block
+    fed = db.query(GameFederationDB).filter(
+        GameFederationDB.id == contract.federation_id,
+    ).first()
+    return fed.allows_worked_shoots if fed else True
+
+
 def _generate_persona_promo(wrestler, stats, target_id, db, promo_type):
     """Generate a promo using the persona duality system.
 
@@ -518,10 +539,12 @@ def _generate_persona_promo(wrestler, stats, target_id, db, promo_type):
     parts = []
 
     # Check for worked-shoot promo (low kayfabe commitment + high frustration/life events)
-    if promo_type == "worked_shoot" or (
-        wrestler.kayfabe_commitment < LOW_KAYFABE_THRESHOLD
-        and random.random() < WORKED_SHOOT_CHANCE
-    ):
+    if (
+        promo_type == "worked_shoot" or (
+            wrestler.kayfabe_commitment < LOW_KAYFABE_THRESHOLD
+            and random.random() < WORKED_SHOOT_CHANCE
+        )
+    ) and _federation_allows_worked_shoots(db, wrestler.id):
         return _generate_worked_shoot_promo(wrestler, gimmick, target_id, db)
 
     # Check emotional bleed from life events

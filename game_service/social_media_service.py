@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from models.game_models import (
     GameWrestlerDB, SocialMediaPostDB, GimmickHistoryDB,
     WrestlerBackstoryDB, StorylineDB, StorylineParticipantDB,
-    WrestlerRelationshipDB, WorldNewsDB,
+    WrestlerRelationshipDB, WorldNewsDB, ContractDB, GameFederationDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,6 +88,19 @@ RESPONSE_POSTS = [
 # Post generation
 # ---------------------------------------------------------------------------
 
+def _get_wrestler_federation(db: Session, wrestler_id: str):
+    """Look up the federation a wrestler is currently under contract with."""
+    contract = db.query(ContractDB).filter(
+        ContractDB.wrestler_id == wrestler_id,
+        ContractDB.status == "active",
+    ).first()
+    if not contract:
+        return None
+    return db.query(GameFederationDB).filter(
+        GameFederationDB.id == contract.federation_id,
+    ).first()
+
+
 def generate_social_post(db: Session, wrestler_id: str, world_id: str,
                          game_date: str, context: str = None) -> SocialMediaPostDB:
     """Generate a social media post for a wrestler."""
@@ -106,11 +119,17 @@ def generate_social_post(db: Session, wrestler_id: str, world_id: str,
         WrestlerBackstoryDB.wrestler_id == wrestler_id,
     ).first()
 
-    # Determine post type based on kayfabe commitment
+    fed = _get_wrestler_federation(db, wrestler_id)
+    policy = (fed.social_media_policy if fed else None) or "guided"
+
+    # Determine post type based on kayfabe commitment and the federation's
+    # social media policy — a strict_kayfabe fed keeps everyone in character.
     kayfabe_commit = wrestler.kayfabe_commitment or 50
     roll = random.random() * 100
 
-    if roll < kayfabe_commit * 0.6:
+    if policy == "strict_kayfabe":
+        post_type = "kayfabe"
+    elif roll < kayfabe_commit * 0.6:
         post_type = "kayfabe"
     elif roll < kayfabe_commit * 0.6 + 20:
         post_type = "personal"
@@ -118,6 +137,9 @@ def generate_social_post(db: Session, wrestler_id: str, world_id: str,
         post_type = "shoot"
     else:
         post_type = "worked_shoot"
+
+    if post_type == "worked_shoot" and fed and not fed.allows_worked_shoots:
+        post_type = "shoot"
 
     # Generate content
     content = _generate_post_content(wrestler, gimmick, backstory, post_type, db=db)

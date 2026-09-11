@@ -115,6 +115,21 @@ def book_match(db: Session, show_id: str, world_id: str,
     if not show:
         raise ValueError("Show not found")
 
+    # Creative control: a high-influence veteran booked to take a clean
+    # loss may refuse it, forcing a non-decisive finish instead.
+    if planned_winner_id:
+        from game_service.politics_service import apply_politics_to_booking
+        for loser_id in wrestler_ids:
+            if loser_id == planned_winner_id:
+                continue
+            loser = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == loser_id).first()
+            if not loser:
+                continue
+            adjusted = apply_politics_to_booking(db, loser, planned_finish)
+            if adjusted != planned_finish:
+                planned_finish = adjusted
+                break
+
     # Create match
     match = MatchDB(
         world_id=world_id,

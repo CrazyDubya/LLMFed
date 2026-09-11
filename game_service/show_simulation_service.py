@@ -258,6 +258,29 @@ def _simulate_match_segment(
     # Pass show momentum to match engine
     match._show_momentum = show_momentum
 
+    # Manager interference: a manager at ringside may tip the match early —
+    # a successful attempt gives their client a momentum boost, a caught
+    # attempt is just narrative color.
+    try:
+        from game_service.manager_service import get_wrestler_manager, attempt_interference
+        participant_ids = [p.wrestler_id for p in db.query(MatchParticipantDB).filter(
+            MatchParticipantDB.match_id == match.id,
+            MatchParticipantDB.role == "competitor",
+        ).all()]
+        interference_boosts = {}
+        for wid in participant_ids:
+            info = get_wrestler_manager(db, wid)
+            if not info:
+                continue
+            outcome = attempt_interference(db, info["bond"].manager_id, match.id, show.game_date)
+            if outcome.get("description"):
+                events.append(outcome["description"])
+            if outcome.get("success"):
+                interference_boosts[wid] = 15
+        match._manager_interference = interference_boosts
+    except Exception as e:
+        logger.debug("Manager interference check skipped: %s", e)
+
     try:
         result = me.simulate_match_from_db(db, match, game_date=show.game_date)
         seg.is_completed = True

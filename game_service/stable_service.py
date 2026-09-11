@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from models.game_models import (
     StableDB, StableMemberDB, GameWrestlerDB, GameNarrativeLogDB,
-    StorylineDB, StorylineParticipantDB, ManagerDB,
+    StorylineDB, StorylineParticipantDB, ManagerDB, ChampionshipDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -316,11 +316,13 @@ def tick_stable_dynamics(db: Session, stable: StableDB, game_date: str = None):
         return
 
     leader = next((m for m in members if m.role == "leader"), None)
+    wrestlers = []
 
     for member in members:
         wrestler = db.query(GameWrestlerDB).filter_by(id=member.wrestler_id).first()
         if not wrestler:
             continue
+        wrestlers.append(wrestler)
 
         # --- Loyalty drift ---
         # Winners gain loyalty, losers while stablemates win lose it
@@ -347,6 +349,20 @@ def tick_stable_dynamics(db: Session, stable: StableDB, game_date: str = None):
     # --- Cohesion calculation ---
     avg_loyalty = sum(m.loyalty for m in members) / len(members) if members else 80
     stable.cohesion = int(avg_loyalty)
+
+    # --- Dominance: how much this stable controls the federation ---
+    if stable.federation_id:
+        titles = db.query(ChampionshipDB).filter(
+            ChampionshipDB.federation_id == stable.federation_id,
+            ChampionshipDB.is_active == True,
+        ).all()
+        member_ids = {m.wrestler_id for m in members}
+        title_share = (
+            sum(1 for t in titles if t.current_holder_id in member_ids) / len(titles) * 100
+            if titles else 0
+        )
+        avg_popularity = sum(w.popularity for w in wrestlers) / len(wrestlers) if wrestlers else 0
+        stable.dominance = int(max(0, min(100, title_share * 0.6 + avg_popularity * 0.4)))
 
     # --- Auto-generate storylines from tension ---
     if stable.cohesion < 40:
