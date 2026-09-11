@@ -1094,9 +1094,14 @@ class WorldTicker:
     def _seasonal_king_of_the_ring(self, game_date: str):
         """Q2 event: King of the Ring tournament across all NPC feds.
 
-        Picks top 8 by popularity per federation, announces a tournament via
-        narrative log, and crowns a winner with +10 popularity.
+        Picks top 8 by popularity per federation, runs a properly seeded
+        single-elimination bracket via tournament_service, and crowns a
+        winner with +10 popularity.
         """
+        from game_service.tournament_service import (
+            TournamentFormat, create_tournament, record_match_result,
+        )
+
         npc_feds = get_npc_federations(self.db, self.world.id)
 
         for fed in npc_feds:
@@ -1110,25 +1115,36 @@ class WorldTicker:
             if len(wrestlers) < 4:
                 continue
 
-            # Simulate single-elimination tournament (simplified)
-            bracket = list(wrestlers)
-            round_num = 1
-            while len(bracket) > 1:
-                next_round = []
-                for i in range(0, len(bracket) - 1, 2):
-                    w1, w2 = bracket[i], bracket[i + 1]
-                    # Higher popularity + randomness wins
+            by_id = {w.id: w for w in wrestlers}
+            # Rank 1 = most popular, so the seeded bracket keeps top seeds
+            # apart for as long as possible, same as a real KOTR draw.
+            rankings = {w.id: i + 1 for i, w in enumerate(wrestlers)}
+
+            bracket = create_tournament(
+                name=f"{fed.short_name or fed.name} King of the Ring",
+                format=TournamentFormat.SINGLE_ELIMINATION,
+                wrestler_ids=[w.id for w in wrestlers],
+                wrestler_names={w.id: w.name for w in wrestlers},
+                rankings=rankings,
+                stakes="King of the Ring crown",
+            )
+
+            while not bracket.is_complete:
+                pending = bracket.get_pending_matches()
+                if not pending:
+                    break
+                for match in pending:
+                    w1 = by_id[match.participant_a_id]
+                    w2 = by_id[match.participant_b_id]
                     w1_score = w1.popularity + random.randint(-20, 20)
                     w2_score = w2.popularity + random.randint(-20, 20)
-                    winner = w1 if w1_score >= w2_score else w2
-                    next_round.append(winner)
-                # Handle odd bracket
-                if len(bracket) % 2 == 1:
-                    next_round.append(bracket[-1])
-                bracket = next_round
-                round_num += 1
+                    winner_id = w1.id if w1_score >= w2_score else w2.id
+                    record_match_result(bracket, match.match_id, winner_id)
 
-            king = bracket[0]
+            if not bracket.winner_id:
+                continue
+
+            king = by_id[bracket.winner_id]
             old_pop = king.popularity
             king.popularity = min(100, king.popularity + 10)
 
