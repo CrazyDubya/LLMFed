@@ -394,6 +394,10 @@ class ShowCardResponse(BaseModel):
     segments: List[ShowSegmentResponse] = []
 
 
+class CardReorderRequest(BaseModel):
+    segment_order: List[str] = Field(description="Segment IDs in the desired order")
+
+
 # ---------------------------------------------------------------------------
 # Promo
 # ---------------------------------------------------------------------------

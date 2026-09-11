@@ -58,6 +58,7 @@ def create_agent(db: Session, agent_data: AgentCreateData) -> AgentDB:
         federation_id=agent_data.federation_id,
         current_heat=agent_data.current_heat,
         momentum=agent_data.momentum,
+        webhook_url=agent_data.webhook_url,
     )
 
     try:

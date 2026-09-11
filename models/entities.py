@@ -113,6 +113,7 @@ class Agent(BaseModel):
     federation_id: Optional[str] = Field(description="Federation this agent belongs to")
     current_heat: int = Field(default=0, description="Current crowd heat level")
     momentum: int = Field(default=0, description="Current momentum in match")
+    webhook_url: Optional[str] = Field(default=None, description="Webhook URL for event notifications")
     created_at: datetime = Field(description="When the agent was created")
     updated_at: datetime = Field(description="When the agent was last updated")
 
@@ -144,6 +145,7 @@ class Federation(BaseModel):
     description: str = Field(description="Federation description")
     tier: str = Field(description="Federation tier level")
     owner_user_id: str = Field(description="ID of the owning user")
+    webhook_url: Optional[str] = Field(default=None, description="Webhook URL for event notifications")
     created_at: datetime = Field(description="When the federation was created")
     updated_at: datetime = Field(description="When the federation was last updated")
 

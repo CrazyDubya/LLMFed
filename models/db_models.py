@@ -30,6 +30,7 @@ class AgentDB(Base):
     federation_id = Column(String, ForeignKey("federations.federation_id"), nullable=True)
     current_heat = Column(Integer, default=0)
     momentum = Column(Integer, default=0)
+    webhook_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=_utc_now)
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
@@ -46,11 +47,30 @@ class FederationDB(Base):
     description = Column(Text, nullable=False)
     tier = Column(String, nullable=False, default="independent")
     owner_user_id = Column(String, nullable=False, index=True)
+    webhook_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=_utc_now)
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
     # Relationship to agents
     agents = relationship("AgentDB", back_populates="federation")
+
+
+class AgentActionLogDB(Base):
+    """Records an action an agent submitted in response to an event.
+
+    Distinct from EngineRequestDB (which logs what the engine asked of an
+    agent each tick) — this is the agent's own submitted response.
+    """
+    __tablename__ = "agent_action_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(String, nullable=False, index=True)
+    agent_id = Column(String, nullable=False, index=True)
+    target_agent_id = Column(String, nullable=True)
+    chosen_action_id = Column(String, nullable=False)
+    commentary = Column(Text, nullable=True)
+    intensity = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=_utc_now)
 
 
 class EngineRequestDB(Base):

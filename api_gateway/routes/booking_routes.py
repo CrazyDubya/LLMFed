@@ -10,7 +10,7 @@ from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
     ShowCreate, ShowResponse, ShowSegmentResponse, ShowCardResponse,
     MatchResultResponse,
-    MatchBooking,
+    MatchBooking, CardReorderRequest,
 )
 from models.game_models import (
     GameFederationDB, ShowDB, MatchDB,
@@ -19,6 +19,7 @@ from game_service.world_service import get_player_for_user
 from game_service.show_service import (
     create_show as svc_create_show, book_match as svc_book_match,
     book_promo_segment as svc_book_promo_segment, get_show_card,
+    reorder_card as svc_reorder_card,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,28 @@ def api_get_show_card(
     show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
+
+    segments = get_show_card(db, show_id)
+    return ShowCardResponse(
+        show=ShowResponse.model_validate(show),
+        segments=[ShowSegmentResponse.model_validate(s) for s in segments],
+    )
+
+
+@router.patch("/shows/{show_id}/card/order", response_model=ShowCardResponse)
+def api_reorder_card(
+    show_id: str,
+    data: CardReorderRequest,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Reorder the segments on a show's card."""
+    show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
+    if not show:
+        raise HTTPException(status_code=404, detail="Show not found")
+
+    svc_reorder_card(db, show_id, data.segment_order)
+    db.commit()
 
     segments = get_show_card(db, show_id)
     return ShowCardResponse(

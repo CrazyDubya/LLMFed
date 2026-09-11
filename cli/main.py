@@ -18,6 +18,7 @@ Usage:
 import logging
 import sys
 import os
+from typing import Optional
 
 import typer
 from rich.console import Console
@@ -36,9 +37,11 @@ console = Console()
 world_app = typer.Typer(help="Manage game worlds")
 fed_app = typer.Typer(help="Manage federations")
 sim_app = typer.Typer(help="Simulation controls")
+snapshot_app = typer.Typer(help="Export/import world snapshots to/from files")
 app.add_typer(world_app, name="world")
 app.add_typer(fed_app, name="fed")
 app.add_typer(sim_app, name="sim")
+app.add_typer(snapshot_app, name="snapshot")
 
 
 def _get_db():
@@ -282,6 +285,59 @@ def sim_run(
 def sim_status(world_id: str = typer.Argument(..., help="World ID")):
     """Show simulation status (alias for world status)."""
     world_status(world_id)
+
+
+# ---------------------------------------------------------------------------
+# Snapshot export/import
+#
+# The snapshot API (api_gateway/routes/snapshot_routes.py) only keeps
+# snapshots in an in-process dict, so they don't survive a restart and
+# can't be handed to someone else. These file-backed commands are the
+# durable path — kept on the CLI (not an HTTP route) since they take a
+# server-side file path, which isn't safe to accept from a public API.
+# ---------------------------------------------------------------------------
+
+@snapshot_app.command("export")
+def snapshot_export(
+    world_id: str = typer.Argument(..., help="World ID"),
+    filepath: str = typer.Argument(..., help="Output file path"),
+    description: str = typer.Option("", "--description", "-m", help="Snapshot description"),
+):
+    """Create a snapshot of a world and write it to a file."""
+    from game_service.snapshot_service import create_snapshot, export_snapshot_to_file
+    db = _get_db()
+    try:
+        snapshot = create_snapshot(
+            db, world_id=world_id, description=description, snapshot_type="cli_export",
+        )
+        path = export_snapshot_to_file(snapshot, filepath)
+        console.print(f"[green]Snapshot written to {path} ({snapshot['size_bytes']} bytes)[/green]")
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+    finally:
+        db.close()
+
+
+@snapshot_app.command("import")
+def snapshot_import(
+    filepath: str = typer.Argument(..., help="Snapshot file path"),
+    target_world_id: Optional[str] = typer.Option(
+        None, "--target", help="Overwrite this world instead of creating a new one",
+    ),
+):
+    """Restore a world from a snapshot file."""
+    from game_service.snapshot_service import import_snapshot_from_file, restore_snapshot
+    db = _get_db()
+    try:
+        data = import_snapshot_from_file(filepath)
+        result = restore_snapshot(
+            db, snapshot_data=data,
+            target_world_id=target_world_id,
+            create_new_world=target_world_id is None,
+        )
+        console.print(f"[green]Restored: {result}[/green]")
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------

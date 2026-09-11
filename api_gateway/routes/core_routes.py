@@ -173,6 +173,8 @@ def delete_federation_endpoint(federation_id: str, db: Session = Depends(get_db)
 @router.post("/agents/{agent_id}/actions", summary="Submit Agent Action", status_code=202, tags=["agents"])
 def submit_agent_action(agent_id: str, action_response: AgentActionResponse, db: Session = Depends(get_db)):
     """Endpoint for an agent to submit its chosen action in response to an event."""
+    from models.db_models import AgentActionLogDB
+
     db_agent = crud.get_agent_by_id(db=db, agent_id=agent_id)
     if not db_agent:
         raise HTTPException(status_code=404, detail=f"Agent with ID '{agent_id}' not found.")
@@ -181,6 +183,16 @@ def submit_agent_action(agent_id: str, action_response: AgentActionResponse, db:
         db_target = crud.get_agent_by_id(db=db, agent_id=action_response.target_agent_id)
         if not db_target:
             raise HTTPException(status_code=404, detail=f"Target agent with ID '{action_response.target_agent_id}' not found.")
+
+    db.add(AgentActionLogDB(
+        event_id=action_response.event_id,
+        agent_id=agent_id,
+        target_agent_id=action_response.target_agent_id,
+        chosen_action_id=action_response.chosen_action_id,
+        commentary=action_response.commentary,
+        intensity=action_response.intensity,
+    ))
+    db.commit()
 
     return {
         "message": "Action received and accepted for processing.",
@@ -194,7 +206,9 @@ def subscribe_agent(agent_id: str, webhook_url: str = Query(...), db: Session = 
     db_agent = crud.get_agent_by_id(db=db, agent_id=agent_id)
     if not db_agent:
         raise HTTPException(status_code=404, detail=f"Agent with ID '{agent_id}' not found.")
-    return {"message": f"Subscription request for agent {agent_id} to URL: {webhook_url} (DB update TBD)"}
+    db_agent.webhook_url = webhook_url
+    db.commit()
+    return {"message": f"Agent {agent_id} subscribed to webhook: {webhook_url}"}
 
 
 @router.post("/federations/{federation_id}/subscribe", summary="Subscribe to Federation Events", tags=["federations"])
@@ -202,7 +216,9 @@ def subscribe_federation(federation_id: str, webhook_url: str = Query(...), db: 
     db_federation = crud.get_federation_by_id(db=db, federation_id=federation_id)
     if not db_federation:
         raise HTTPException(status_code=404, detail=f"Federation with ID '{federation_id}' not found.")
-    return {"message": f"Subscription request for federation {federation_id} to URL: {webhook_url} (DB update TBD)"}
+    db_federation.webhook_url = webhook_url
+    db.commit()
+    return {"message": f"Federation {federation_id} subscribed to webhook: {webhook_url}"}
 
 
 # ---------------------------------------------------------------------------
