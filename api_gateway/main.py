@@ -31,6 +31,7 @@ from api_gateway.game_routes import router as game_router
 from api_gateway.routes.core_routes import router as core_router
 from api_gateway.routes.metrics_routes import router as metrics_router
 from api_gateway.websocket_hub import websocket_endpoint, start_reaper
+from api_gateway.security import validate_production_config
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -132,6 +133,7 @@ register_error_handlers(app)
 # ---------------------------------------------------------------------------
 @app.on_event("startup")
 async def _on_startup():
+    validate_production_config()
     start_reaper()
 
 

@@ -15,7 +15,7 @@ from models.game_schemas import (
 from models.game_models import (
     GameWrestlerDB, ContractDB, StableDB,
 )
-from game_service.world_service import get_world
+from game_service.world_service import get_world, require_federation_owner
 from game_service import stable_service, manager_service
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,22 @@ router = APIRouter(prefix="/game", tags=["game-stable-manager"])
 
 def _handle_value_error(e: ValueError):
     raise HTTPException(status_code=400, detail=str(e))
+
+
+def _require_federation_owner_if_any(db: Session, user_id: str, federation_id: Optional[str]):
+    """Verify federation ownership when a federation_id is known.
+
+    Some managers/bonds are freelance (no federation), in which case
+    there's no owner to check against.
+    """
+    if not federation_id:
+        return
+    try:
+        require_federation_owner(db, user_id, federation_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
 # ---------------------------------------------------------------------------
@@ -52,6 +68,7 @@ def api_create_manager(
     db: Session = Depends(get_db),
 ):
     """Create a new manager character."""
+    _require_federation_owner_if_any(db, current_user.user_id, federation_id)
     try:
         mgr = manager_service.create_manager(
             db, world_id, name=data.name, alignment=data.alignment,
@@ -91,6 +108,11 @@ def api_assign_manager(
     db: Session = Depends(get_db),
 ):
     """Assign a manager to a wrestler client."""
+    from models.game_models import ManagerDB
+    mgr = db.query(ManagerDB).filter_by(id=data.manager_id).first()
+    if not mgr:
+        raise HTTPException(status_code=404, detail="Manager not found")
+    _require_federation_owner_if_any(db, current_user.user_id, mgr.federation_id)
     try:
         world = get_world(db, world_id)
         if not world:
@@ -113,6 +135,13 @@ def api_remove_manager_bond(
     db: Session = Depends(get_db),
 ):
     """End a manager-client relationship."""
+    from models.game_models import ManagerClientDB, ManagerDB
+    bond = db.query(ManagerClientDB).filter_by(id=bond_id).first()
+    if not bond:
+        raise HTTPException(status_code=404, detail="Bond not found")
+    mgr = db.query(ManagerDB).filter_by(id=bond.manager_id).first()
+    _require_federation_owner_if_any(db, current_user.user_id, mgr.federation_id if mgr else None)
+
     if not manager_service.remove_manager(db, bond_id):
         raise HTTPException(status_code=404, detail="Bond not found")
 
@@ -177,6 +206,7 @@ def api_create_stable(
         fed_id = contract.federation_id if contract else None
         if not fed_id:
             raise HTTPException(status_code=400, detail="Leader has no active contract")
+        _require_federation_owner_if_any(db, current_user.user_id, fed_id)
 
         world = get_world(db, world_id)
         stable = stable_service.create_stable(
@@ -227,6 +257,7 @@ def api_add_stable_member(
     stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
     if not stable:
         raise HTTPException(status_code=404, detail="Stable not found")
+    _require_federation_owner_if_any(db, current_user.user_id, stable.federation_id)
     world = get_world(db, stable.world_id)
     member = stable_service.add_member(
         db, stable_id, data.wrestler_id, data.role,
@@ -246,6 +277,7 @@ def api_remove_stable_member(
     stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
     if not stable:
         raise HTTPException(status_code=404, detail="Stable not found")
+    _require_federation_owner_if_any(db, current_user.user_id, stable.federation_id)
     world = get_world(db, stable.world_id)
     if not stable_service.remove_member(
         db, stable_id, wrestler_id,
@@ -266,6 +298,7 @@ def api_promote_stable_member(
     stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
     if not stable:
         raise HTTPException(status_code=404, detail="Stable not found")
+    _require_federation_owner_if_any(db, current_user.user_id, stable.federation_id)
     if not stable_service.promote_member(db, stable_id, wrestler_id, data.new_role):
         raise HTTPException(status_code=404, detail="Member not found")
     return {"wrestler_id": wrestler_id, "role": data.new_role}
@@ -282,6 +315,7 @@ def api_update_stable(
     stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
     if not stable:
         raise HTTPException(status_code=404, detail="Stable not found")
+    _require_federation_owner_if_any(db, current_user.user_id, stable.federation_id)
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(stable, field, value)
     db.commit()

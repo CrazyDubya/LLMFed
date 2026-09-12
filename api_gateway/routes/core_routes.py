@@ -26,6 +26,7 @@ from agent_service.database import get_db
 from core_engine.engine import get_engine
 from core_engine.prompt_builder import PromptBuilder
 from api_gateway.logging_config import performance_monitor
+from api_gateway.security import get_current_user, TokenData
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,11 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 @router.post("/agents", summary="Create Agent", response_model=Agent, status_code=201, tags=["agents"])
-def create_agent_endpoint(request: Request, agent_data: AgentCreateData, db: Session = Depends(get_db)):
+def create_agent_endpoint(
+    request: Request, agent_data: AgentCreateData,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Creates a new LLM agent in the database."""
     logger.info(f"Received request to create agent for user: {agent_data.user_id}")
     try:
@@ -55,7 +60,11 @@ def create_agent_endpoint(request: Request, agent_data: AgentCreateData, db: Ses
 
 
 @router.get("/agents/{agent_id}", summary="Get Agent by ID", response_model=Agent, tags=["agents"])
-def get_agent_endpoint(agent_id: str, db: Session = Depends(get_db)):
+def get_agent_endpoint(
+    agent_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Retrieves details for a specific agent by their ID."""
     db_agent = crud.get_agent_by_id(db=db, agent_id=agent_id)
     if db_agent is None:
@@ -64,7 +73,11 @@ def get_agent_endpoint(agent_id: str, db: Session = Depends(get_db)):
 
 
 @router.patch("/agents/{agent_id}", summary="Update Agent", response_model=Agent, tags=["agents"])
-def update_agent_endpoint(agent_id: str, update_data: AgentUpdateData, db: Session = Depends(get_db)):
+def update_agent_endpoint(
+    agent_id: str, update_data: AgentUpdateData,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Updates specific fields of an existing agent."""
     if update_data.llm_config is not None:
         try:
@@ -83,7 +96,11 @@ def update_agent_endpoint(agent_id: str, update_data: AgentUpdateData, db: Sessi
 
 
 @router.delete("/agents/{agent_id}", summary="Delete Agent", status_code=204, tags=["agents"])
-def delete_agent_endpoint(agent_id: str, db: Session = Depends(get_db)):
+def delete_agent_endpoint(
+    agent_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Deletes an agent from the database."""
     existing_agent = crud.get_agent_by_id(db=db, agent_id=agent_id)
     if not existing_agent:
@@ -97,13 +114,21 @@ def delete_agent_endpoint(agent_id: str, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 @router.get("/federations", summary="List All Federations", response_model=List[Federation], tags=["federations"])
-def list_federations_endpoint(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_federations_endpoint(
+    skip: int = 0, limit: int = 100,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Retrieves a list of all federations, with optional pagination."""
     return crud.get_federations(db=db, skip=skip, limit=limit)
 
 
 @router.post("/federations", summary="Create Federation", response_model=Federation, status_code=201, tags=["federations"])
-def create_federation_endpoint(fed_data: FederationCreateData, db: Session = Depends(get_db)):
+def create_federation_endpoint(
+    fed_data: FederationCreateData,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Creates a new Wrestling Federation."""
     try:
         db_federation = crud.create_federation(db=db, fed_data=fed_data)
@@ -113,7 +138,11 @@ def create_federation_endpoint(fed_data: FederationCreateData, db: Session = Dep
 
 
 @router.get("/federations/{federation_id}", summary="Get Federation by ID", response_model=Federation, tags=["federations"])
-def get_federation_endpoint(federation_id: str, db: Session = Depends(get_db)):
+def get_federation_endpoint(
+    federation_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Retrieves details for a specific federation by its ID."""
     db_federation = crud.get_federation_by_id(db=db, federation_id=federation_id)
     if db_federation is None:
@@ -127,7 +156,11 @@ def get_federation_endpoint(federation_id: str, db: Session = Depends(get_db)):
     response_model=List[Agent],
     tags=["federations"],
 )
-def list_agents_in_federation_endpoint(federation_id: str, db: Session = Depends(get_db)):
+def list_agents_in_federation_endpoint(
+    federation_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Retrieves all agents belonging to a specific federation."""
     db_federation = crud.get_federation_by_id(db=db, federation_id=federation_id)
     if db_federation is None:
@@ -136,7 +169,11 @@ def list_agents_in_federation_endpoint(federation_id: str, db: Session = Depends
 
 
 @router.patch("/federations/{federation_id}", summary="Update Federation", response_model=Federation, tags=["federations"])
-def update_federation_endpoint(federation_id: str, update_data: FederationUpdateData, db: Session = Depends(get_db)):
+def update_federation_endpoint(
+    federation_id: str, update_data: FederationUpdateData,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Updates specific fields of an existing federation."""
     try:
         updated_federation = crud.update_federation(db=db, federation_id=federation_id, update_data=update_data)
@@ -148,7 +185,11 @@ def update_federation_endpoint(federation_id: str, update_data: FederationUpdate
 
 
 @router.delete("/federations/{federation_id}", summary="Delete Federation", status_code=204, tags=["federations"])
-def delete_federation_endpoint(federation_id: str, db: Session = Depends(get_db)):
+def delete_federation_endpoint(
+    federation_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Deletes a federation. Requires the federation to be empty of agents."""
     existing = crud.get_federation_by_id(db=db, federation_id=federation_id)
     if not existing:
@@ -171,7 +212,11 @@ def delete_federation_endpoint(federation_id: str, db: Session = Depends(get_db)
 # ---------------------------------------------------------------------------
 
 @router.post("/agents/{agent_id}/actions", summary="Submit Agent Action", status_code=202, tags=["agents"])
-def submit_agent_action(agent_id: str, action_response: AgentActionResponse, db: Session = Depends(get_db)):
+def submit_agent_action(
+    agent_id: str, action_response: AgentActionResponse,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Endpoint for an agent to submit its chosen action in response to an event."""
     from models.db_models import AgentActionLogDB
 
@@ -202,7 +247,11 @@ def submit_agent_action(agent_id: str, action_response: AgentActionResponse, db:
 
 
 @router.post("/agents/{agent_id}/subscribe", summary="Subscribe Agent to Events", tags=["agents"])
-def subscribe_agent(agent_id: str, webhook_url: str = Query(...), db: Session = Depends(get_db)):
+def subscribe_agent(
+    agent_id: str, webhook_url: str = Query(...),
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     db_agent = crud.get_agent_by_id(db=db, agent_id=agent_id)
     if not db_agent:
         raise HTTPException(status_code=404, detail=f"Agent with ID '{agent_id}' not found.")
@@ -212,7 +261,11 @@ def subscribe_agent(agent_id: str, webhook_url: str = Query(...), db: Session = 
 
 
 @router.post("/federations/{federation_id}/subscribe", summary="Subscribe to Federation Events", tags=["federations"])
-def subscribe_federation(federation_id: str, webhook_url: str = Query(...), db: Session = Depends(get_db)):
+def subscribe_federation(
+    federation_id: str, webhook_url: str = Query(...),
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     db_federation = crud.get_federation_by_id(db=db, federation_id=federation_id)
     if not db_federation:
         raise HTTPException(status_code=404, detail=f"Federation with ID '{federation_id}' not found.")
@@ -226,7 +279,10 @@ def subscribe_federation(federation_id: str, webhook_url: str = Query(...), db: 
 # ---------------------------------------------------------------------------
 
 @router.post("/engine/advance", summary="Advance Simulation Ticks", tags=["engine"])
-def advance_engine(n_ticks: int = Query(1, ge=1, description="Number of ticks to advance")):
+def advance_engine(
+    n_ticks: int = Query(1, ge=1, description="Number of ticks to advance"),
+    current_user: TokenData = Depends(get_current_user),
+):
     """Advance the core engine by n_ticks ticks."""
     try:
         results = get_engine().run_ticks(n_ticks)
@@ -239,7 +295,11 @@ def advance_engine(n_ticks: int = Query(1, ge=1, description="Number of ticks to
 
 
 @router.get("/engine/requests", summary="List Engine Requests", tags=["engine"])
-def list_engine_requests(limit: int = 10, db: Session = Depends(get_db)):
+def list_engine_requests(
+    limit: int = 10,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Show persisted engine requests."""
     requests = db.query(EngineRequestDB).order_by(EngineRequestDB.due_tick.desc()).limit(limit).all()
     return [
@@ -255,7 +315,11 @@ def list_engine_requests(limit: int = 10, db: Session = Depends(get_db)):
 
 
 @router.get("/engine/narrative", summary="List Narrative Logs", tags=["engine"])
-def list_narrative_logs(limit: int = Query(100, ge=1, le=1000), db: Session = Depends(get_db)):
+def list_narrative_logs(
+    limit: int = Query(100, ge=1, le=1000),
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Retrieve recent narrative log entries."""
     logs = db.query(NarrativeLogDB).order_by(NarrativeLogDB.created_at.desc()).limit(limit).all()
     return [
@@ -273,7 +337,7 @@ def list_narrative_logs(limit: int = Query(100, ge=1, le=1000), db: Session = De
 
 
 @router.get("/engine/debug", summary="Engine Debug Info", tags=["engine"])
-def engine_debug():
+def engine_debug(current_user: TokenData = Depends(get_current_user)):
     """Return engine and database status. Only available in debug mode."""
     debug_enabled = os.getenv("DEBUG_MODE", "false").lower() == "true"
     if not debug_enabled:
@@ -294,7 +358,10 @@ def engine_debug():
 
 
 @router.post("/prompter/hints", summary="Prompter Hints", tags=["engine"])
-def prompter_hints(request: PrompterHintRequest):
+def prompter_hints(
+    request: PrompterHintRequest,
+    current_user: TokenData = Depends(get_current_user),
+):
     """Accepts promoter hints, stores them, and builds LLM prompt."""
     eng = get_engine()
     eng.set_hints(request.hints)
@@ -320,9 +387,14 @@ def health_check():
     }
 
 
-@router.get("/metrics", tags=["monitoring"], summary="Performance Metrics")
-def get_performance_metrics():
-    """Get performance metrics for API endpoints."""
+@router.get("/metrics/performance", tags=["monitoring"], summary="Performance Metrics")
+def get_performance_metrics(current_user: TokenData = Depends(get_current_user)):
+    """Get performance metrics for API endpoints.
+
+    Distinct path from GET /metrics (metrics_routes.py's system-wide
+    snapshot — LLM budget/circuit breaker/websocket stats) — the two
+    used to collide on the same path, silently shadowing one handler.
+    """
     from datetime import datetime, timezone
     return {
         "endpoints": performance_monitor.get_metrics(),
@@ -330,15 +402,15 @@ def get_performance_metrics():
     }
 
 
-@router.post("/metrics/reset", tags=["monitoring"], summary="Reset Metrics")
-def reset_performance_metrics():
+@router.post("/metrics/performance/reset", tags=["monitoring"], summary="Reset Metrics")
+def reset_performance_metrics(current_user: TokenData = Depends(get_current_user)):
     """Reset performance metrics."""
     performance_monitor.reset_metrics()
     return {"message": "Metrics reset successfully"}
 
 
 @router.get("/api/tags", summary="List available LLM models from proxy", tags=["engine"])
-def list_proxy_models():
+def list_proxy_models(current_user: TokenData = Depends(get_current_user)):
     """Fetch model IDs from the local LLM proxy."""
     base = os.getenv("OPENAI_API_BASE", "http://127.0.0.1:11434/v1")
     url = f"{base.rstrip('/')}/models"
@@ -361,55 +433,58 @@ class SchedulerConfig(BaseModel):
 
 
 @router.get("/scheduler/status", summary="Get auto-scheduler status", tags=["engine"])
-def scheduler_status():
+def scheduler_status(current_user: TokenData = Depends(get_current_user)):
     from game_service.auto_scheduler import scheduler as auto_scheduler
     return auto_scheduler.status()
 
 
 @router.post("/scheduler/start", summary="Start auto-scheduler", tags=["engine"])
-async def scheduler_start(config: SchedulerConfig = SchedulerConfig()):
+async def scheduler_start(
+    config: SchedulerConfig = SchedulerConfig(),
+    current_user: TokenData = Depends(get_current_user),
+):
     from game_service.auto_scheduler import scheduler as auto_scheduler
     await auto_scheduler.start(interval_seconds=config.interval_seconds)
     return auto_scheduler.status()
 
 
 @router.post("/scheduler/stop", summary="Stop auto-scheduler", tags=["engine"])
-async def scheduler_stop():
+async def scheduler_stop(current_user: TokenData = Depends(get_current_user)):
     from game_service.auto_scheduler import scheduler as auto_scheduler
     await auto_scheduler.stop()
     return auto_scheduler.status()
 
 
 @router.post("/scheduler/interval", summary="Change tick interval", tags=["engine"])
-def scheduler_set_interval(config: SchedulerConfig):
+def scheduler_set_interval(
+    config: SchedulerConfig,
+    current_user: TokenData = Depends(get_current_user),
+):
     from game_service.auto_scheduler import scheduler as auto_scheduler
     auto_scheduler.set_interval(config.interval_seconds)
     return auto_scheduler.status()
 
 
 @router.post("/scheduler/pause/{world_id}", summary="Pause a world", tags=["engine"])
-def scheduler_pause_world(world_id: str):
+def scheduler_pause_world(world_id: str, current_user: TokenData = Depends(get_current_user)):
     from game_service.auto_scheduler import scheduler as auto_scheduler
     auto_scheduler.pause_world(world_id)
     return {"paused": world_id}
 
 
 @router.post("/scheduler/resume/{world_id}", summary="Resume a world", tags=["engine"])
-def scheduler_resume_world(world_id: str):
+def scheduler_resume_world(world_id: str, current_user: TokenData = Depends(get_current_user)):
     from game_service.auto_scheduler import scheduler as auto_scheduler
     auto_scheduler.resume_world(world_id)
     return {"resumed": world_id}
 
-
-# ---------------------------------------------------------------------------
-# Public shows (no auth required)
-# ---------------------------------------------------------------------------
 
 @router.get("/worlds/{world_id}/shows", summary="List all shows in a world", tags=["engine"])
 def list_world_shows(
     world_id: str,
     limit: int = Query(50, ge=1, le=200),
     completed_only: bool = False,
+    current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """List all shows across all federations in a world."""
@@ -419,9 +494,13 @@ def list_world_shows(
         query = query.filter(ShowDB.is_completed == True)  # noqa: E712
     shows = query.order_by(ShowDB.game_date.desc()).limit(limit).all()
 
+    fed_names = {
+        f.id: f.name for f in db.query(GameFederationDB).filter(
+            GameFederationDB.id.in_({s.federation_id for s in shows}),
+        ).all()
+    }
     results = []
     for show in shows:
-        fed = db.query(GameFederationDB).filter(GameFederationDB.id == show.federation_id).first()
         results.append({
             "id": show.id,
             "name": show.name,
@@ -436,6 +515,6 @@ def list_world_shows(
             "gate_revenue": show.gate_revenue,
             "ppv_buys": show.ppv_buys,
             "federation_id": show.federation_id,
-            "federation_name": fed.name if fed else "Unknown",
+            "federation_name": fed_names.get(show.federation_id, "Unknown"),
         })
     return results

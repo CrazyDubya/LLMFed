@@ -578,6 +578,23 @@ def get_player_for_user(db: Session, user_id: str, world_id: str) -> PlayerDB:
     return player
 
 
+def require_federation_owner(db: Session, user_id: str, federation_id: str) -> PlayerDB:
+    """Verify the user is the promoter player who controls this federation.
+
+    Raises ValueError (federation doesn't exist — 404) or PermissionError
+    (it exists but this user doesn't control it — 403).
+    """
+    fed = db.query(GameFederationDB).filter(GameFederationDB.id == federation_id).first()
+    if not fed:
+        raise ValueError("Federation not found")
+    player = db.query(PlayerDB).filter(
+        PlayerDB.user_id == user_id, PlayerDB.world_id == fed.world_id,
+    ).first()
+    if not player or player.federation_id != federation_id:
+        raise PermissionError("You do not control this federation")
+    return player
+
+
 def get_federation(db: Session, federation_id: str) -> GameFederationDB:
     """Get a federation by ID."""
     fed = db.query(GameFederationDB).filter(GameFederationDB.id == federation_id).first()

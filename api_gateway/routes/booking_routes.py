@@ -15,7 +15,7 @@ from models.game_schemas import (
 from models.game_models import (
     GameFederationDB, ShowDB, MatchDB,
 )
-from game_service.world_service import get_player_for_user
+from game_service.world_service import require_federation_owner
 from game_service.show_service import (
     create_show as svc_create_show, book_match as svc_book_match,
     book_promo_segment as svc_book_promo_segment, get_show_card,
@@ -31,6 +31,16 @@ def _handle_value_error(e: ValueError):
     raise HTTPException(status_code=400, detail=str(e))
 
 
+def _require_show_owner(db: Session, user_id: str, show: ShowDB):
+    """Verify the current user controls the federation that owns this show."""
+    try:
+        require_federation_owner(db, user_id, show.federation_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
 # ---------------------------------------------------------------------------
 # Show creation
 # ---------------------------------------------------------------------------
@@ -44,15 +54,15 @@ def api_create_show(
 ):
     """Create a new show for a federation (promoter action)."""
     try:
-        player = get_player_for_user(db, current_user.user_id, None)
-    except ValueError:
-        player = None
+        require_federation_owner(db, current_user.user_id, federation_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
     fed = db.query(GameFederationDB).filter(
         GameFederationDB.id == federation_id
     ).first()
-    if not fed:
-        raise HTTPException(status_code=404, detail="Federation not found")
 
     show = svc_create_show(
         db, fed.world_id, federation_id,
@@ -97,6 +107,7 @@ def api_reorder_card(
     show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
+    _require_show_owner(db, current_user.user_id, show)
 
     svc_reorder_card(db, show_id, data.segment_order)
     db.commit()
@@ -123,6 +134,7 @@ def api_book_match(
     show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
+    _require_show_owner(db, current_user.user_id, show)
 
     try:
         seg = svc_book_match(
@@ -160,6 +172,7 @@ def api_book_promo(
     show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
+    _require_show_owner(db, current_user.user_id, show)
     try:
         seg = svc_book_promo_segment(
             db, show_id, show.world_id,

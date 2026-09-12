@@ -14,7 +14,7 @@ from api_gateway.security import (
     generate_api_key,
 )
 from models.game_schemas import (
-    UserRegister, UserLogin, UserResponse, TokenResponse,
+    UserRegister, UserLogin, UserResponse, TokenResponse, RefreshTokenRequest,
 )
 from game_service.auth_service import register_user, authenticate_user
 
@@ -60,9 +60,9 @@ def api_login(data: UserLogin, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/refresh")
-def api_refresh_token(refresh_token: str, db: Session = Depends(get_db)):
+def api_refresh_token(body: RefreshTokenRequest, db: Session = Depends(get_db)):
     """Exchange a refresh token for a new access + refresh token pair."""
-    token_data = decode_token(refresh_token, expected_type="refresh")
+    token_data = decode_token(body.refresh_token, expected_type="refresh")
     pair = create_token_pair(token_data.user_id, token_data.username or "", token_data.role)
     return {
         "access_token": pair.access_token,

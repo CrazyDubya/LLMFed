@@ -134,13 +134,14 @@ def test_debug_endpoint_protection():
     from api_gateway.main import app
     import os
     
-    client = TestClient(app)
-    
+    token = create_access_token({"sub": "test-user", "username": "tester", "role": "admin"})
+    client = TestClient(app, headers={"Authorization": f"Bearer {token}"})
+
     # Ensure DEBUG_MODE is not set
     original_debug = os.environ.get("DEBUG_MODE")
     if "DEBUG_MODE" in os.environ:
         del os.environ["DEBUG_MODE"]
-    
+
     try:
         response = client.get("/engine/debug")
         

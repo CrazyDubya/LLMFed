@@ -13,12 +13,17 @@ from fastapi.testclient import TestClient
 os.environ["ALLOWED_HOSTS"] = "localhost,127.0.0.1,testserver"
 
 from api_gateway.main import app  # noqa: E402
+from api_gateway.security import create_access_token  # noqa: E402
 from agent_service.database import init_db  # noqa: E402
 
 # Initialise the test database once
 init_db()
 
-client = TestClient(app, raise_server_exceptions=False)
+_TOKEN = create_access_token({"sub": "test-user-1", "username": "tester", "role": "admin"})
+client = TestClient(
+    app, raise_server_exceptions=False,
+    headers={"Authorization": f"Bearer {_TOKEN}"},
+)
 
 
 def _unique(prefix: str = "") -> str:
@@ -45,14 +50,14 @@ class TestHealthRoutes:
         assert "services" in body
 
     def test_metrics_endpoint(self):
-        resp = client.get("/metrics")
+        resp = client.get("/metrics/performance")
         assert resp.status_code == 200
         body = resp.json()
         assert "endpoints" in body
         assert "timestamp" in body
 
     def test_metrics_reset(self):
-        resp = client.post("/metrics/reset")
+        resp = client.post("/metrics/performance/reset")
         assert resp.status_code == 200
         assert resp.json()["message"] == "Metrics reset successfully"
 

@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from agent_service.database import get_db
+from api_gateway.security import get_current_user, TokenData
 from game_service.snapshot_service import (
     create_snapshot,
     restore_snapshot,
@@ -66,7 +67,11 @@ class SnapshotDiff(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("", response_model=SnapshotMeta, status_code=201)
-def api_create_snapshot(body: SnapshotCreate, db: Session = Depends(get_db)):
+def api_create_snapshot(
+    body: SnapshotCreate,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Create a snapshot of the current world state."""
     try:
         result = create_snapshot(
@@ -96,7 +101,10 @@ def api_create_snapshot(body: SnapshotCreate, db: Session = Depends(get_db)):
 
 
 @router.get("", response_model=List[SnapshotMeta])
-def api_list_snapshots(world_id: Optional[str] = Query(None)):
+def api_list_snapshots(
+    world_id: Optional[str] = Query(None),
+    current_user: TokenData = Depends(get_current_user),
+):
     """List all saved snapshots, optionally filtered by world_id."""
     results = []
     for sid, snap in _snapshots.items():
@@ -119,7 +127,11 @@ def api_list_snapshots(world_id: Optional[str] = Query(None)):
 
 
 @router.post("/restore")
-def api_restore_snapshot(body: SnapshotRestore, db: Session = Depends(get_db)):
+def api_restore_snapshot(
+    body: SnapshotRestore,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Restore a world from a previously saved snapshot."""
     snap = _snapshots.get(body.snapshot_id)
     if snap is None:
@@ -136,6 +148,7 @@ def api_restore_snapshot(body: SnapshotRestore, db: Session = Depends(get_db)):
 def api_compare_snapshots(
     snapshot_a: str = Query(..., description="First snapshot ID"),
     snapshot_b: str = Query(..., description="Second snapshot ID"),
+    current_user: TokenData = Depends(get_current_user),
 ):
     """Compare table counts between two snapshots to visualize divergence."""
     a = _snapshots.get(snapshot_a)
