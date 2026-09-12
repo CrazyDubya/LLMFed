@@ -406,7 +406,7 @@ def generate_promo(db: Session, world_id: str, wrestler_id: str,
     manager_bonus = calculate_manager_bonus(db, wrestler_id)
     if manager_bonus.get("has_manager"):
         quality = min(5.0, quality + manager_bonus["charisma_bonus"] / 10)
-        heat += manager_bonus["heat_bonus"]
+        heat = max(HEAT_MIN, min(HEAT_MAX, heat + manager_bonus["heat_bonus"]))
 
     # Crowd reaction: persona-aware
     crowd = _determine_crowd_reaction(wrestler, quality, promo_type, gimmick)

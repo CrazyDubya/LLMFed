@@ -5,7 +5,7 @@ Extracted from wrestler_lifecycle_service.py (Group 2).
 """
 
 import logging
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from models.game_models import (
     GameWrestlerDB, WrestlerStatsDB, ChampionshipDB,
@@ -135,10 +135,17 @@ def _check_goal_completed(db: Session, wrestler: GameWrestlerDB, goal: WrestlerG
 
     if gt == "defeat_rival":
         if goal.target_entity_id:
-            win = db.query(MatchParticipantDB).join(MatchDB).filter(
+            # The wrestler must have beaten this specific rival — not just
+            # won any match while the rival happened to exist elsewhere.
+            rival_in_match = aliased(MatchParticipantDB)
+            win = db.query(MatchParticipantDB).join(
+                MatchDB, MatchParticipantDB.match_id == MatchDB.id,
+            ).join(
+                rival_in_match, rival_in_match.match_id == MatchDB.id,
+            ).filter(
                 MatchParticipantDB.wrestler_id == wrestler.id,
-                MatchParticipantDB.is_winner == True,
                 MatchDB.winner_id == wrestler.id,
+                rival_in_match.wrestler_id == goal.target_entity_id,
             ).first()
             return win is not None
         return False

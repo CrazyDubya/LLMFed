@@ -328,6 +328,14 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
 
     segments = []
     used = set()
+    # Several booking sub-paths below each want a specific card slot (dark
+    # match first, tag mid-card, climax storyline as main event, ...), but
+    # request it independently of one another and of how many segments
+    # already exist — hardcoding/auto-incrementing positions per sub-path
+    # let two of them claim the same position. Track an intended priority
+    # per segment here instead, and renumber everything in one pass once
+    # the whole card is decided (see below, after the regular-match loop).
+    card_priority: dict = {}
 
     # Storyline-aware booking: feuding wrestlers should face each other
     from models.game_models import StorylineDB, StorylineParticipantDB
@@ -378,6 +386,9 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
                     planned_finish=finish,
                 )
                 segments.append(seg)
+                # A hot climax storyline claims the main-event slot;
+                # otherwise storylines sit just ahead of the regular card.
+                card_priority[seg.id] = 10_000 + storyline_matches_booked if is_main else 3 + storyline_matches_booked
                 used.add(w1.id)
                 used.add(w2.id)
                 storyline_matches_booked += 1
@@ -410,9 +421,9 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
                 match_type="tag_team",
                 planned_winner_id=planned_winner,
                 planned_finish="pinfall",
-                position=2,  # Midcard
             )
             segments.append(seg)
+            card_priority[seg.id] = 2  # Midcard
             for wid in tag_wrestlers:
                 used.add(wid)
             booked_tag = True
@@ -445,9 +456,9 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
                     match_type="singles",
                     planned_winner_id=pw.id if random.random() < PLAYER_MATCH_WIN_RATE else opp.id,
                     planned_finish="pinfall",
-                    position=1,  # Opening match — gets the player on TV
                 )
                 segments.append(seg)
+                card_priority[seg.id] = 1  # Opening match — gets the player on TV
                 used.add(pw.id)
                 used.add(opp.id)
                 player_match_booked = True
@@ -475,9 +486,9 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
                         match_type="singles",
                         planned_winner_id=w.id if random.random() < DARK_MATCH_WIN_RATE else opp.id,
                         planned_finish="pinfall",
-                        position=0,  # Dark match — position 0, before the card
                     )
                     segments.append(seg)
+                    card_priority[seg.id] = 0  # Dark match — before the card
                     used.add(w.id)
                     used.add(opp.id)
                 break  # One dark match max
@@ -519,9 +530,9 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
                 match_type=match_type,
                 planned_winner_id=planned_winner.id,
                 planned_finish="pinfall",
-                position=position,
             )
             segments.append(seg)
+            card_priority[seg.id] = 100 + position
             continue
 
         w1, w2 = available[0], available[1]
@@ -563,14 +574,27 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
             championship_id=champ_id,
             planned_winner_id=planned_winner.id,
             planned_finish=finish,
-            position=position,
         )
         segments.append(seg)
+        card_priority[seg.id] = 100 + position
+
+    # Finalize card order: renumber every match segment by its intended
+    # priority (dark match, player match, tag, storyline/main-event, then
+    # the regular card) so no two segments share a position — several of
+    # the paths above requested a slot independently of one another.
+    segments.sort(key=lambda s: card_priority.get(s.id, 500))
+    for idx, seg in enumerate(segments):
+        seg.position = idx + 1
 
     # Add a promo segment between matches
     total_segs = len(segments)
     if total_segs >= 3:
         promo_pos = total_segs // 2 + 1
+        # Make room for the promo rather than colliding with the match
+        # already sitting at that position.
+        for seg in segments:
+            if seg.position >= promo_pos:
+                seg.position += 1
         available = [w for w in wrestlers if w.id not in used]
         promo_wrestler = available[0] if available else max(wrestlers, key=lambda w: w.popularity, default=None)
         if promo_wrestler:
