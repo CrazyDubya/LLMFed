@@ -218,23 +218,32 @@ def _generate_single_elimination(bracket: TournamentBracket) -> None:
 
 
 def _generate_round_robin(bracket: TournamentBracket) -> None:
-    """Generate a full round-robin schedule."""
-    participants = bracket.participants
-    n = len(participants)
-    bracket.total_rounds = n - 1 if n % 2 == 0 else n
+    """Generate a full round-robin schedule using the circle method, so
+    each participant appears at most once per round (a bye if there's an
+    odd number of participants) rather than bucketing matches by creation
+    order, which could schedule the same participant twice in one round."""
+    arr = list(bracket.participants)
+    if len(arr) % 2 == 1:
+        arr.append(None)  # bye — sits out whichever round it rotates into
+    n = len(arr)
 
-    round_num = 0
+    bracket.total_rounds = n - 1
     match_num = 0
-    for i in range(n):
-        for j in range(i + 1, n):
-            round_num = (match_num // (n // 2)) + 1 if n > 2 else match_num + 1
-            match_num += 1
-            bracket.matches.append(TournamentMatch(
-                round_number=round_num,
-                match_number=match_num,
-                participant_a_id=participants[i].wrestler_id,
-                participant_b_id=participants[j].wrestler_id,
-            ))
+
+    for round_idx in range(n - 1):
+        round_num = round_idx + 1
+        for i in range(n // 2):
+            p1, p2 = arr[i], arr[n - 1 - i]
+            if p1 is not None and p2 is not None:
+                match_num += 1
+                bracket.matches.append(TournamentMatch(
+                    round_number=round_num,
+                    match_number=match_num,
+                    participant_a_id=p1.wrestler_id,
+                    participant_b_id=p2.wrestler_id,
+                ))
+        # Rotate everyone but the first seat one position around the circle.
+        arr = [arr[0], arr[-1]] + arr[1:-1]
 
 
 def _generate_royal_rumble(bracket: TournamentBracket) -> None:
