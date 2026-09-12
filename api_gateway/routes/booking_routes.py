@@ -31,6 +31,22 @@ def _handle_value_error(e: ValueError):
     raise HTTPException(status_code=400, detail=str(e))
 
 
+def _get_show_or_404(db: Session, show_id: str) -> ShowDB:
+    """Fetch a show by ID or raise a 404."""
+    show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
+    if not show:
+        raise HTTPException(status_code=404, detail="Show not found")
+    return show
+
+
+def _get_match_or_404(db: Session, match_id: str) -> MatchDB:
+    """Fetch a match by ID or raise a 404."""
+    match = db.query(MatchDB).filter(MatchDB.id == match_id).first()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match not found")
+    return match
+
+
 def _require_show_owner(db: Session, user_id: str, show: ShowDB):
     """Verify the current user controls the federation that owns this show."""
     try:
@@ -85,9 +101,7 @@ def api_get_show_card(
     db: Session = Depends(get_db),
 ):
     """Get the full card for a show."""
-    show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
-    if not show:
-        raise HTTPException(status_code=404, detail="Show not found")
+    show = _get_show_or_404(db, show_id)
 
     segments = get_show_card(db, show_id)
     return ShowCardResponse(
@@ -104,9 +118,7 @@ def api_reorder_card(
     db: Session = Depends(get_db),
 ):
     """Reorder the segments on a show's card."""
-    show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
-    if not show:
-        raise HTTPException(status_code=404, detail="Show not found")
+    show = _get_show_or_404(db, show_id)
     _require_show_owner(db, current_user.user_id, show)
 
     svc_reorder_card(db, show_id, data.segment_order)
@@ -131,9 +143,7 @@ def api_book_match(
     db: Session = Depends(get_db),
 ):
     """Book a match on a show."""
-    show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
-    if not show:
-        raise HTTPException(status_code=404, detail="Show not found")
+    show = _get_show_or_404(db, show_id)
     _require_show_owner(db, current_user.user_id, show)
 
     try:
@@ -169,9 +179,7 @@ def api_book_promo(
     db: Session = Depends(get_db),
 ):
     """Book a promo segment on a show."""
-    show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
-    if not show:
-        raise HTTPException(status_code=404, detail="Show not found")
+    show = _get_show_or_404(db, show_id)
     _require_show_owner(db, current_user.user_id, show)
     try:
         seg = svc_book_promo_segment(
@@ -198,9 +206,7 @@ def api_get_match(
     db: Session = Depends(get_db),
 ):
     """Get match result details."""
-    match = db.query(MatchDB).filter(MatchDB.id == match_id).first()
-    if not match:
-        raise HTTPException(status_code=404, detail="Match not found")
+    match = _get_match_or_404(db, match_id)
     return MatchResultResponse.model_validate(match)
 
 
@@ -216,9 +222,7 @@ def api_get_play_by_play(
     db: Session = Depends(get_db),
 ):
     """Get match play-by-play from simulation log."""
-    match = db.query(MatchDB).filter(MatchDB.id == match_id).first()
-    if not match:
-        raise HTTPException(status_code=404, detail="Match not found")
+    match = _get_match_or_404(db, match_id)
     if not match.is_completed:
         raise HTTPException(status_code=400, detail="Match not yet completed")
 

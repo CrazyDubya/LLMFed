@@ -43,6 +43,14 @@ def _require_federation_owner_if_any(db: Session, user_id: str, federation_id: O
         raise HTTPException(status_code=403, detail=str(e))
 
 
+def _get_active_stable_or_404(db: Session, stable_id: str) -> StableDB:
+    """Fetch an active stable by ID or raise a 404."""
+    stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
+    if not stable:
+        raise HTTPException(status_code=404, detail="Stable not found")
+    return stable
+
+
 # ---------------------------------------------------------------------------
 # Managers & Valets
 # ---------------------------------------------------------------------------
@@ -254,9 +262,7 @@ def api_add_stable_member(
     db: Session = Depends(get_db),
 ):
     """Add a wrestler to a stable."""
-    stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
-    if not stable:
-        raise HTTPException(status_code=404, detail="Stable not found")
+    stable = _get_active_stable_or_404(db, stable_id)
     _require_federation_owner_if_any(db, current_user.user_id, stable.federation_id)
     world = get_world(db, stable.world_id)
     member = stable_service.add_member(
@@ -274,9 +280,7 @@ def api_remove_stable_member(
     db: Session = Depends(get_db),
 ):
     """Remove a wrestler from a stable."""
-    stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
-    if not stable:
-        raise HTTPException(status_code=404, detail="Stable not found")
+    stable = _get_active_stable_or_404(db, stable_id)
     _require_federation_owner_if_any(db, current_user.user_id, stable.federation_id)
     world = get_world(db, stable.world_id)
     if not stable_service.remove_member(
@@ -295,9 +299,7 @@ def api_promote_stable_member(
     db: Session = Depends(get_db),
 ):
     """Change a stable member's role (e.g. promote to leader)."""
-    stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
-    if not stable:
-        raise HTTPException(status_code=404, detail="Stable not found")
+    stable = _get_active_stable_or_404(db, stable_id)
     _require_federation_owner_if_any(db, current_user.user_id, stable.federation_id)
     if not stable_service.promote_member(db, stable_id, wrestler_id, data.new_role):
         raise HTTPException(status_code=404, detail="Member not found")
@@ -312,9 +314,7 @@ def api_update_stable(
     db: Session = Depends(get_db),
 ):
     """Update a stable's details."""
-    stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
-    if not stable:
-        raise HTTPException(status_code=404, detail="Stable not found")
+    stable = _get_active_stable_or_404(db, stable_id)
     _require_federation_owner_if_any(db, current_user.user_id, stable.federation_id)
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(stable, field, value)
