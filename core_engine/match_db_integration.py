@@ -223,9 +223,7 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None):
     try:
         from models.game_models import WrestlerGoalDB
         for p_state in participant_states:
-            wrestler = db.query(GameWrestlerDB).filter(
-                GameWrestlerDB.id == p_state.wrestler_id
-            ).first()
+            wrestler = wrestlers_by_id.get(p_state.wrestler_id)
             if wrestler:
                 p_state._morale = wrestler.morale or 50
                 # Get max frustration from active goals
@@ -338,9 +336,7 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None):
 
     # Wear on wrestlers' condition
     for p_state in participant_states:
-        wrestler = db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == p_state.wrestler_id
-        ).first()
+        wrestler = wrestlers_by_id.get(p_state.wrestler_id)
         if wrestler:
             stamina_loss = int((100 - p_state.stamina) * STAMINA_WEAR_FACTOR)
             health_loss = int((100 - p_state.health) * HEALTH_WEAR_FACTOR)

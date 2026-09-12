@@ -102,8 +102,17 @@ STANDING_DOWNGRADE = {
 
 
 def _get_wrestler(db: Session, wrestler_id: str):
-    """Fetch a wrestler by ID."""
-    return db.query(GameWrestlerDB).filter(GameWrestlerDB.id == wrestler_id).first()
+    """Fetch a wrestler by ID.
+
+    Uses Session.get() rather than a filtered query: process_match_aftermath
+    re-fetches the same one or two wrestlers repeatedly across its many
+    sub-steps (title handling, popularity/morale, streaks, history,
+    relationships, ...) — get() checks the session's identity map first,
+    so the same row is only actually queried once per match, not ~6x.
+    """
+    if not wrestler_id:
+        return None
+    return db.get(GameWrestlerDB, wrestler_id)
 
 
 def _get_relationship(db: Session, world_id: str, id1: str, id2: str):
@@ -168,6 +177,12 @@ def process_match_aftermath(db: Session, match: MatchDB, game_date: str):
 
     # 11. Going-into-business consequences — discipline, locker room heat, trust destruction
     _process_shoot_consequences(db, match, game_date)
+
+    # _get_wrestler() now uses Session.get(), which (unlike the filtered
+    # queries used elsewhere in this module) does not autoflush — flush
+    # explicitly so every wrestler mutation above is visible to callers
+    # that refresh() or re-query these rows before the caller commits.
+    db.flush()
 
 
 def _handle_title_result(db: Session, match: MatchDB,
