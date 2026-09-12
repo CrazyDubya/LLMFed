@@ -151,6 +151,7 @@ class MatchResult:
     botch_events: List[Dict[str, Any]] = field(default_factory=list)  # [{attacker, victim, severity, move}]
     went_into_business: bool = False  # Someone deviated from the planned finish
     shoot_wrestler_id: Optional[str] = None  # Who went into business
+    elimination_order: List[str] = field(default_factory=list)  # wrestler_ids, earliest-eliminated first (multi-person matches only)
 
 
 # ---------------------------------------------------------------------------
@@ -318,7 +319,9 @@ class MatchSimulator:
                 finish_spot = self._attempt_finish(attacker, defender)
                 if finish_spot:
                     self.spots.append(finish_spot)
-                    return self._build_result(finish_spot, attacker, defender, participants)
+                    result = self._build_result(finish_spot, attacker, defender, participants)
+                    result.elimination_order = [p.wrestler_id for p in eliminated]
+                    return result
 
         # Time limit: pick the participant with the highest momentum as winner
         if len(active) >= 2:
@@ -333,6 +336,7 @@ class MatchSimulator:
                 crowd_heat=self._calculate_heat(),
                 duration_ticks=self.tick,
                 spots=self.spots,
+                elimination_order=[p.wrestler_id for p in eliminated],
             )
 
         return MatchResult(
@@ -343,6 +347,7 @@ class MatchSimulator:
             crowd_heat=self._calculate_heat(),
             duration_ticks=self.tick,
             spots=self.spots,
+            elimination_order=[p.wrestler_id for p in eliminated],
         )
 
     def _simulate_tag_match(self, participants: List[MatchParticipantState]) -> MatchResult:

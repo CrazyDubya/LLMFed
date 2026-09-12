@@ -426,7 +426,13 @@ def reset_engine() -> None:
         _engine_instance = None
 
 
-# Backwards-compatible alias — will be removed in a future release
+# Backwards-compatible alias — will be removed in a future release.
+# NOTE: unlike get_engine(), this line runs at import time (some existing
+# scripts/tests import `engine_instance` and use it immediately, without
+# calling get_engine() themselves), so importing this module *does* still
+# construct the Engine — including its init_db() call — as a side effect,
+# despite the "lazy" singleton machinery above. New code should call
+# get_engine() explicitly instead of importing this alias.
 engine_instance = get_engine()
 
 __all__ = [
