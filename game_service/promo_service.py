@@ -13,10 +13,10 @@ from sqlalchemy.orm import Session
 
 from models.game_models import (
     PromoDB, GameWrestlerDB, WrestlerStatsDB,
-    GimmickHistoryDB, WrestlerBackstoryDB,
+    WrestlerBackstoryDB,
     LifeEventDB,
 )
-from game_service.ticker_query_helpers import get_wrestler_federation
+from game_service.ticker_query_helpers import get_wrestler_federation, get_active_gimmick
 
 logger = logging.getLogger(__name__)
 
@@ -441,10 +441,7 @@ def generate_promo(db: Session, world_id: str, wrestler_id: str,
 
 def _get_current_gimmick(db, wrestler_id):
     """Get the wrestler's current active gimmick, if any."""
-    return db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler_id,
-        GimmickHistoryDB.is_active == True,
-    ).first()
+    return get_active_gimmick(db, wrestler_id)
 
 
 def _get_active_life_events(db, wrestler_id):

@@ -7,7 +7,9 @@ ticker pipeline (active wrestlers, NPC federations, etc.).
 
 from sqlalchemy.orm import Session
 
-from models.game_models import GameWrestlerDB, GameFederationDB, ContractDB
+from models.game_models import (
+    GameWrestlerDB, GameFederationDB, ContractDB, GimmickHistoryDB,
+)
 
 
 def get_wrestler_federation(db: Session, wrestler_id: str):
@@ -38,6 +40,14 @@ def get_npc_federations(db: Session, world_id: str):
         GameFederationDB.is_npc == True,
         GameFederationDB.is_active == True,
     ).all()
+
+
+def get_active_gimmick(db: Session, wrestler_id: str):
+    """Return a wrestler's current active gimmick, if any."""
+    return db.query(GimmickHistoryDB).filter(
+        GimmickHistoryDB.wrestler_id == wrestler_id,
+        GimmickHistoryDB.is_active == True,
+    ).first()
 
 
 def get_active_federations(db: Session, world_id: str):

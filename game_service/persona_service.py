@@ -15,6 +15,7 @@ from models.game_models import (
     ContractDB, GameFederationDB, StorylineParticipantDB, StorylineDB,
     GameNarrativeLogDB,
 )
+from game_service.ticker_query_helpers import get_active_gimmick
 
 logger = logging.getLogger(__name__)
 
@@ -401,12 +402,10 @@ def process_life_event_effects(db: Session, event: LifeEventDB):
 # Gimmick staleness & evolution
 # ---------------------------------------------------------------------------
 
-def tick_gimmick_staleness(db: Session, wrestler: GameWrestlerDB, game_date: str):
+def tick_gimmick_staleness(db: Session, wrestler: GameWrestlerDB, game_date: str,
+                           gimmick: GimmickHistoryDB = None):
     """Increase gimmick staleness over time."""
-    gimmick = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler.id,
-        GimmickHistoryDB.is_active == True,
-    ).first()
+    gimmick = gimmick or get_active_gimmick(db, wrestler.id)
     if not gimmick:
         return
 
@@ -432,12 +431,10 @@ def tick_gimmick_staleness(db: Session, wrestler: GameWrestlerDB, game_date: str
         gimmick.effectiveness = max(0, (gimmick.effectiveness or 50) - 1)
 
 
-def check_repackaging_pressure(db: Session, wrestler: GameWrestlerDB) -> dict:
+def check_repackaging_pressure(db: Session, wrestler: GameWrestlerDB,
+                               gimmick: GimmickHistoryDB = None) -> dict:
     """Check if a wrestler needs a gimmick change. Returns pressure score and reason."""
-    gimmick = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler.id,
-        GimmickHistoryDB.is_active == True,
-    ).first()
+    gimmick = gimmick or get_active_gimmick(db, wrestler.id)
     if not gimmick:
         return {"pressure": 0, "reason": "no_gimmick"}
 
@@ -469,13 +466,11 @@ def check_repackaging_pressure(db: Session, wrestler: GameWrestlerDB) -> dict:
 
 
 def execute_gimmick_change(db: Session, wrestler: GameWrestlerDB,
-                           game_date: str, reason: str = None) -> GimmickHistoryDB:
+                           game_date: str, reason: str = None,
+                           current: GimmickHistoryDB = None) -> GimmickHistoryDB:
     """Retire current gimmick and create a new one."""
     # Retire current gimmick
-    current = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler.id,
-        GimmickHistoryDB.is_active == True,
-    ).first()
+    current = current or get_active_gimmick(db, wrestler.id)
 
     old_name = None
     old_archetype = None
@@ -531,12 +526,10 @@ def execute_gimmick_change(db: Session, wrestler: GameWrestlerDB,
     return new_gimmick
 
 
-def evolve_gimmick(db: Session, wrestler: GameWrestlerDB, game_date: str):
+def evolve_gimmick(db: Session, wrestler: GameWrestlerDB, game_date: str,
+                   gimmick: GimmickHistoryDB = None):
     """Subtle gimmick evolution: adjust depth and fan investment based on activity."""
-    gimmick = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler.id,
-        GimmickHistoryDB.is_active == True,
-    ).first()
+    gimmick = gimmick or get_active_gimmick(db, wrestler.id)
     if not gimmick:
         return
 
@@ -646,10 +639,7 @@ def migrate_existing_wrestlers(db: Session, world_id: str):
             generate_backstory(db, wrestler)
             count += 1
 
-        gimmick = db.query(GimmickHistoryDB).filter(
-            GimmickHistoryDB.wrestler_id == wrestler.id,
-            GimmickHistoryDB.is_active == True,
-        ).first()
+        gimmick = get_active_gimmick(db, wrestler.id)
         if not gimmick:
             generate_initial_gimmick(db, wrestler, "migration")
 

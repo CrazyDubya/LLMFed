@@ -18,9 +18,10 @@ from models.game_models import (
     ShowDB, ShowSegmentDB, WrestlerPushDB,
     GameNarrativeLogDB,
     MentorshipDB, CareerHighlightDB, HallOfFameDB,
-    GimmickHistoryDB, WrestlerBackstoryDB, LifeEventDB,
+    WrestlerBackstoryDB, LifeEventDB,
 )
 import game_service.lifecycle_constants as LC
+from game_service.ticker_query_helpers import get_active_gimmick
 
 # Re-exports so existing imports from this module keep working
 from game_service.goal_service import (          # noqa: F401
@@ -518,22 +519,19 @@ def tick_persona(db: Session, world_id: str, game_date: str):
         if not backstory:
             persona_service.generate_backstory(db, wrestler)
 
-        gimmick = db.query(GimmickHistoryDB).filter(
-            GimmickHistoryDB.wrestler_id == wrestler.id,
-            GimmickHistoryDB.is_active == True,
-        ).first()
+        gimmick = get_active_gimmick(db, wrestler.id)
         if not gimmick:
             persona_service.generate_initial_gimmick(db, wrestler, game_date)
             continue
 
-        persona_service.tick_gimmick_staleness(db, wrestler, game_date)
-        persona_service.evolve_gimmick(db, wrestler, game_date)
+        persona_service.tick_gimmick_staleness(db, wrestler, game_date, gimmick)
+        persona_service.evolve_gimmick(db, wrestler, game_date, gimmick)
 
         if wrestler.is_npc:
-            pressure = persona_service.check_repackaging_pressure(db, wrestler)
+            pressure = persona_service.check_repackaging_pressure(db, wrestler, gimmick)
             if pressure["pressure"] > 80:
                 persona_service.execute_gimmick_change(
-                    db, wrestler, game_date, pressure["reason"]
+                    db, wrestler, game_date, pressure["reason"], gimmick
                 )
 
         persona_service.generate_life_event(db, wrestler.id, world_id, game_date)

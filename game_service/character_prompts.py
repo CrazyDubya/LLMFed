@@ -141,11 +141,12 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
     recent events, active storylines, relationships, and career state.
     """
     from models.game_models import (
-        GameWrestlerDB, WrestlerStatsDB, GimmickHistoryDB,
+        GameWrestlerDB, WrestlerStatsDB,
         WrestlerBackstoryDB, StorylineDB, StorylineParticipantDB,
         WrestlerRelationshipDB, ContractDB, GameFederationDB,
         ChampionshipDB,
     )
+    from game_service.ticker_query_helpers import get_active_gimmick
 
     wrestler = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.id == wrestler_id
@@ -157,10 +158,7 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
         WrestlerStatsDB.wrestler_id == wrestler_id
     ).first()
 
-    gimmick = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler_id,
-        GimmickHistoryDB.is_active == True,
-    ).first()
+    gimmick = get_active_gimmick(db, wrestler_id)
 
     backstory = db.query(WrestlerBackstoryDB).filter(
         WrestlerBackstoryDB.wrestler_id == wrestler_id,

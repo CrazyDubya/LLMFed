@@ -11,11 +11,11 @@ import logging
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    GameWrestlerDB, SocialMediaPostDB, GimmickHistoryDB,
+    GameWrestlerDB, SocialMediaPostDB,
     WrestlerBackstoryDB, StorylineDB, StorylineParticipantDB,
     WrestlerRelationshipDB, WorldNewsDB,
 )
-from game_service.ticker_query_helpers import get_wrestler_federation
+from game_service.ticker_query_helpers import get_wrestler_federation, get_active_gimmick
 
 logger = logging.getLogger(__name__)
 
@@ -98,10 +98,7 @@ def generate_social_post(db: Session, wrestler_id: str, world_id: str,
     if not wrestler:
         return None
 
-    gimmick = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler_id,
-        GimmickHistoryDB.is_active == True,
-    ).first()
+    gimmick = get_active_gimmick(db, wrestler_id)
 
     backstory = db.query(WrestlerBackstoryDB).filter(
         WrestlerBackstoryDB.wrestler_id == wrestler_id,
