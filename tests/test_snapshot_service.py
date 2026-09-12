@@ -84,6 +84,45 @@ class TestRestoreSnapshot:
         assert result["world_id"] != world_with_data.id
         assert result["original_world_id"] == world_with_data.id
 
+    def test_restore_actually_writes_data_with_valid_foreign_keys(self, db_session):
+        """restore_snapshot must persist real rows, not just return metadata."""
+        from models.wrestler_models import GameWrestlerDB, ContractDB
+        from models.federation_models import GameFederationDB
+
+        fed = GameFederationDB(world_id="w-src", name="Test Fed", short_name="TF")
+        db_session.add(fed)
+        db_session.flush()
+        wrestler = GameWrestlerDB(world_id="w-src", name="Test Wrestler")
+        db_session.add(wrestler)
+        db_session.flush()
+        contract = ContractDB(
+            world_id="w-src", wrestler_id=wrestler.id, federation_id=fed.id,
+            status="active", salary_weekly=1000.0, start_date="2026-01-01",
+        )
+        db_session.add(contract)
+        world = WorldDB(id="w-src", name="Source World")
+        db_session.add(world)
+        db_session.commit()
+
+        snapshot = create_snapshot(db_session, "w-src")
+        result = restore_snapshot(db_session, snapshot["data"], create_new_world=True)
+        db_session.commit()
+        new_world_id = result["world_id"]
+
+        restored_world = db_session.query(WorldDB).filter_by(id=new_world_id).first()
+        assert restored_world is not None
+        restored_fed = db_session.query(GameFederationDB).filter_by(world_id=new_world_id).first()
+        restored_wrestler = db_session.query(GameWrestlerDB).filter_by(world_id=new_world_id).first()
+        restored_contract = db_session.query(ContractDB).filter_by(world_id=new_world_id).first()
+        assert restored_fed is not None
+        assert restored_wrestler is not None
+        assert restored_contract is not None
+        # Foreign keys must point at the *restored* rows, not the originals
+        assert restored_contract.federation_id == restored_fed.id
+        assert restored_contract.wrestler_id == restored_wrestler.id
+        assert restored_contract.federation_id != fed.id
+        assert restored_contract.wrestler_id != wrestler.id
+
 
 class TestExportImport:
     def test_round_trip(self, db_session, world_with_data):
