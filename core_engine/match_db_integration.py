@@ -247,6 +247,19 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None):
     # Show momentum passed via match attribute (set by world_ticker)
     show_momentum = getattr(match, "_show_momentum", 50)
 
+    # Real venue capacity, for an accurate venue-atmosphere rating bonus
+    # (matches have no direct show_id — reached via the booking segment).
+    venue_capacity = None
+    try:
+        from models.show_models import ShowSegmentDB, ShowDB
+        segment = db.query(ShowSegmentDB).filter(ShowSegmentDB.match_id == match.id).first()
+        if segment:
+            show = db.query(ShowDB).filter(ShowDB.id == segment.show_id).first()
+            if show:
+                venue_capacity = show.capacity
+    except Exception:
+        pass  # Venue lookup is optional — falls back to the momentum approximation
+
     # Simulate
     simulator = MatchSimulator(
         planned_winner_id=match.winner_id,  # Pre-planned winner from booker
@@ -257,6 +270,7 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None):
         managers=managers,
         rivalry_heat=rivalry_heat,
         show_momentum=show_momentum,
+        venue_capacity=venue_capacity,
     )
     simulator._trust_penalty = trust_penalty
     result = simulator.simulate(participant_states)

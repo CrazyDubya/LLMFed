@@ -32,6 +32,7 @@ def calculate_rating(
     show_momentum: int,
     tick: int,
     participants,
+    venue_capacity: Optional[int] = None,
 ) -> float:
     """Calculate match star rating (0.0 - 5.0).
 
@@ -46,6 +47,11 @@ def calculate_rating(
     show_momentum : int
     tick : int  (total match ticks)
     participants : list[MatchParticipantState]
+    venue_capacity : int or None
+        The show's actual venue capacity, when known. show_momentum is a
+        0-100 value, so scaling it by 100 (the historical approximation
+        used when this isn't provided) tops out at 10,000 — never enough
+        to reach the large_arena (10,001+) or stadium (25,001+) tiers.
     """
     from core_engine.match_engine import get_venue_tier, VENUE_ATMOSPHERE
 
@@ -93,8 +99,10 @@ def calculate_rating(
     elif stip and stip not in ("", "standard"):
         stip_bonus = GENERIC_STIP_BONUS
 
-    # Venue atmosphere bonus (set by caller via show_momentum scaling)
-    venue_tier = get_venue_tier(show_momentum * 100)  # approximate
+    # Venue atmosphere bonus — use the real capacity when the caller has
+    # it; otherwise fall back to the show_momentum approximation (which
+    # can only ever reach the "arena" tier, never large_arena/stadium).
+    venue_tier = get_venue_tier(venue_capacity if venue_capacity is not None else show_momentum * 100)
     venue_mod = VENUE_ATMOSPHERE.get(venue_tier, {}).get("rating_mod", 0)
 
     rating = ((base_quality * 2.5) + variety_bonus + near_fall_bonus +

@@ -171,7 +171,8 @@ class MatchSimulator:
     def __init__(self, planned_winner_id: str = None, planned_finish: str = None,
                  card_position: str = "midcard", is_title_match: bool = False,
                  stipulation: str = None, managers: List[ManagerContext] = None,
-                 rivalry_heat: int = 0, show_momentum: int = 50):
+                 rivalry_heat: int = 0, show_momentum: int = 50,
+                 venue_capacity: int = None):
         self.planned_winner_id = planned_winner_id
         self.planned_finish = planned_finish or "pinfall"
         self.card_position = card_position
@@ -180,6 +181,7 @@ class MatchSimulator:
         self.managers = managers or []
         self.rivalry_heat = rivalry_heat  # 0-100, from storyline/relationship
         self.show_momentum = show_momentum  # crowd energy from earlier segments
+        self.venue_capacity = venue_capacity  # real show capacity, when known
         self.spots: List[MatchSpot] = []
         self.tick = 0
         self._interference_happened = False
@@ -881,6 +883,7 @@ class MatchSimulator:
             self.spots, self.is_title_match, self.rivalry_heat,
             self._interference_happened, self.stipulation,
             self.show_momentum, self.tick, participants,
+            venue_capacity=self.venue_capacity,
         )
 
     def _calculate_heat(self) -> int:
