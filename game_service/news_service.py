@@ -14,6 +14,7 @@ from models.game_models import (
     GameNarrativeLogDB, ContractDB, ChampionshipDB,
     SocialMediaPostDB, LifeEventDB, GimmickHistoryDB,
 )
+from game_service.persona_service import POSITIVE_LIFE_EVENT_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -249,9 +250,7 @@ def generate_life_event_news(db: Session, world_id: str, game_date: str):
             continue
 
         name = wrestler.name
-        positive_types = {"marriage", "child_born", "personal_achievement",
-                          "charity_work", "family_reconciliation"}
-        if event.event_type in positive_types:
+        if event.event_type in POSITIVE_LIFE_EVENT_TYPES:
             headline = f"Congratulations! {name} shares personal good news"
             source = "Wrestling Insider"
         else:

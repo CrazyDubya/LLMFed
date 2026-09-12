@@ -225,6 +225,16 @@ def _generate_trajectories(
                 "notes": "Young talent with main event potential",
                 "status": "penciled",
             }
+        # Older main eventers may be transitional — checked before the
+        # general "established" branch below, which would otherwise match
+        # every main eventer (including these) first and shadow this case.
+        elif w.id in main_eventers and w.age and w.age > 38:
+            trajectories[w.id] = {
+                "direction": "transitional",
+                "target_tier": "upper_midcard",
+                "notes": "Veteran to put over new talent",
+                "status": "penciled",
+            }
         # Established main eventers
         elif w.id in main_eventers:
             trajectories[w.id] = {
@@ -232,14 +242,6 @@ def _generate_trajectories(
                 "target_tier": "main_event",
                 "notes": "Franchise player",
                 "status": "ink",
-            }
-        # Older main eventers may be transitional
-        elif w.id in main_eventers and w.age and w.age > 38:
-            trajectories[w.id] = {
-                "direction": "transitional",
-                "target_tier": "upper_midcard",
-                "notes": "Veteran to put over new talent",
-                "status": "penciled",
             }
 
     return trajectories

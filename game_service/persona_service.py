@@ -120,6 +120,19 @@ LIFE_EVENT_POOL = {
     "family_reconciliation": {"description": "{name} has reconnected with estranged family members.", "severity": 4, "morale": 15, "performance": 2, "public_chance": 0.4, "storyline_pot": False},
 }
 
+# Single source of truth for event polarity, derived from each event's own
+# morale value — other modules (promo_service, news_service) previously
+# each hand-maintained their own positive/negative type sets, and they'd
+# drifted out of sync with each other and with this pool (e.g. news_service
+# reported a wrestler's new relationship or media appearance with a
+# "dealing with personal issues" headline).
+POSITIVE_LIFE_EVENT_TYPES = frozenset(
+    et for et, data in LIFE_EVENT_POOL.items() if data["morale"] >= 0
+)
+NEGATIVE_LIFE_EVENT_TYPES = frozenset(
+    et for et, data in LIFE_EVENT_POOL.items() if data["morale"] < 0
+)
+
 # Ongoing struggles a negative life event weighs the real person down with.
 # Tracked on WrestlerBackstoryDB.personal_struggles for as long as the
 # originating event stays active.

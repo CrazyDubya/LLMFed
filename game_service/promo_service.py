@@ -288,15 +288,12 @@ for _arch in ARCHETYPE_OPENERS:
         "closers": ARCHETYPE_CLOSERS.get(_arch, []),
     }
 
-# Event type classifications for emotional state
-NEGATIVE_LIFE_EVENT_TYPES = {
-    "divorce", "death_in_family", "legal_trouble", "substance_issue",
-    "financial_trouble", "mental_health", "public_controversy",
-}
-POSITIVE_LIFE_EVENT_TYPES = {
-    "marriage", "child_born", "personal_achievement", "charity_work",
-    "family_reconciliation",
-}
+# Event type classifications for emotional state — derived from
+# persona_service.LIFE_EVENT_POOL so this can't drift out of sync with it
+# or with news_service's classification of the same event types.
+from game_service.persona_service import (
+    POSITIVE_LIFE_EVENT_TYPES, NEGATIVE_LIFE_EVENT_TYPES,
+)
 
 # Emotional bleed thresholds
 SEVERE_EVENT_THRESHOLD = 7

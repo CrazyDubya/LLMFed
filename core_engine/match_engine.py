@@ -892,6 +892,12 @@ class MatchSimulator:
                       defender: MatchParticipantState,
                       participants: List[MatchParticipantState]) -> MatchResult:
         """Build the final MatchResult."""
+        # Computed once and reused everywhere below (for the LLM narrative
+        # prompt and as the base for the stored rating) — _calculate_rating
+        # adds random noise per call, so calling it twice let the narrative
+        # and the persisted match_rating disagree by up to 0.6 stars.
+        base_rating = self._calculate_rating(participants)
+
         # Generate narrative summary
         highlights = [s for s in self.spots if s.damage >= HIGHLIGHT_DAMAGE_THRESHOLD or s.is_near_fall or s.is_finisher]
         narrative_parts = [s.description for s in highlights[-5:]]  # Last 5 highlights
@@ -907,7 +913,7 @@ class MatchSimulator:
                     loser_name=defender.name,
                     finish_type=finish_spot.finish_type or "pinfall",
                     finish_description=finish_spot.description,
-                    rating=self._calculate_rating(participants),
+                    rating=base_rating,
                     key_spots=narrative_parts,
                     stipulation=self.stipulation or "",
                     is_title_match=self.is_title_match,
@@ -932,7 +938,7 @@ class MatchSimulator:
                 })
 
         # Botches hurt match rating
-        rating = self._calculate_rating(participants)
+        rating = base_rating
         if botch_count > 0:
             botch_penalty = botch_count * BOTCH_RATING_PENALTY_PER
             for be in botch_events:

@@ -88,12 +88,16 @@ CHEMISTRY_MAX = 1.0
 DEFAULT_MATCH_RATING = 3.0
 MATCH_RATING_SCALE = 5.0
 
-# Locker room standing progression (downgrade order)
+# Locker room standing progression (downgrade order). "toxic" maps to
+# itself — it's the bottom rung (see GameWrestlerDB.locker_room_standing),
+# and .get()'s fallback default must never be used for it, or a repeat
+# botch would incorrectly rehabilitate a toxic wrestler back to neutral.
 STANDING_DOWNGRADE = {
     "leader": "neutral",
     "respected": "neutral",
     "neutral": "disliked",
     "disliked": "disliked",
+    "toxic": "toxic",
 }
 
 
