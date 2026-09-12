@@ -8,6 +8,7 @@ storyline progression, economy, and world events.
 import logging
 import os
 import random
+import zlib
 from datetime import datetime, timedelta
 from typing import List, Optional
 from sqlalchemy.orm import Session
@@ -227,6 +228,16 @@ class WorldTicker:
                 action.status = "failed"
                 action.result = {"error": str(e)}
                 logger.warning(f"Player action {action.id} failed: {e}")
+                # NOTE: some action handlers (stable_service, manager_service)
+                # commit internally mid-operation, so a savepoint around this
+                # whole call can't safely roll back a partial failure without
+                # also breaking those handlers' own commits (tried and
+                # reverted — see PR history). A partial-write leak here is a
+                # real but narrower gap than it looks: it only affects
+                # handlers that stage without committing (e.g. the world.
+                # world_config write in _action_open_challenge) and would
+                # need those handlers' self-commit inconsistency resolved
+                # first to fix safely.
 
     # ------------------------------------------------------------------
     # Phase 2: NPC AI decisions
@@ -252,8 +263,11 @@ class WorldTicker:
             if ppv:
                 self._npc_book_ppv_show(fed, ppv)
             else:
-                # Regular weekly show on the fed's designated day
-                show_day = hash(fed.name) % 7
+                # Regular weekly show on the fed's designated day. Uses a
+                # stable hash (not the builtin hash(), which is randomized
+                # per-process for strings) and the immutable id rather than
+                # the name, so a fed's show day survives a restart.
+                show_day = zlib.crc32(fed.id.encode()) % 7
                 if day_of_week == show_day:
                     self._npc_book_weekly_show(fed)
 
