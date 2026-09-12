@@ -344,24 +344,19 @@ class PlayerActionHandler:
             ContractDB.wrestler_id != wrestler_id,
         ).all()
 
-        candidates = []
-        for c in roster_contracts:
-            opp = self.db.query(GameWrestlerDB).filter(
-                GameWrestlerDB.id == c.wrestler_id,
-                GameWrestlerDB.is_injured == False,
-            ).first()
-            if opp and abs(opp.popularity - wrestler.popularity) <= 15:
-                candidates.append(opp)
+        roster_wrestlers = self.db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.id.in_([c.wrestler_id for c in roster_contracts]),
+            GameWrestlerDB.is_injured == False,
+        ).all()
+
+        candidates = [
+            opp for opp in roster_wrestlers
+            if abs(opp.popularity - wrestler.popularity) <= 15
+        ]
 
         if not candidates:
             # Fallback: anyone on the roster who isn't injured
-            for c in roster_contracts:
-                opp = self.db.query(GameWrestlerDB).filter(
-                    GameWrestlerDB.id == c.wrestler_id,
-                    GameWrestlerDB.is_injured == False,
-                ).first()
-                if opp:
-                    candidates.append(opp)
+            candidates = list(roster_wrestlers)
 
         if not candidates:
             return {"message": "No suitable opponents available for an open challenge"}

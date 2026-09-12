@@ -242,10 +242,16 @@ PUSH_TIERS = ["main_event", "upper_midcard", "midcard", "lower_card", "jobber"]
 
 def _sort_roster_by_style(db: Session, wrestlers: list, booking_style: str) -> list:
     """Sort wrestlers for card placement based on federation booking style."""
+    stats_by_id = {
+        s.wrestler_id: s for s in db.query(WrestlerStatsDB).filter(
+            WrestlerStatsDB.wrestler_id.in_([w.id for w in wrestlers]),
+        ).all()
+    }
+
     if booking_style == "workrate":
         # Prioritize technical skill and psychology
         def score(w):
-            stats = db.query(WrestlerStatsDB).filter(WrestlerStatsDB.wrestler_id == w.id).first()
+            stats = stats_by_id.get(w.id)
             if not stats:
                 return 50
             return stats.technical + stats.psychology + stats.selling
@@ -253,14 +259,14 @@ def _sort_roster_by_style(db: Session, wrestlers: list, booking_style: str) -> l
     elif booking_style == "entertainment":
         # Prioritize charisma and popularity
         def score(w):
-            stats = db.query(WrestlerStatsDB).filter(WrestlerStatsDB.wrestler_id == w.id).first()
+            stats = stats_by_id.get(w.id)
             charisma = stats.charisma if stats else 50
             return charisma + w.popularity
         return sorted(wrestlers, key=score, reverse=True)
     elif booking_style == "hardcore":
         # Prioritize brawlers and toughness
         def score(w):
-            stats = db.query(WrestlerStatsDB).filter(WrestlerStatsDB.wrestler_id == w.id).first()
+            stats = stats_by_id.get(w.id)
             if not stats:
                 return 50
             return stats.brawling + stats.toughness + stats.power

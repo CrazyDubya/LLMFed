@@ -235,18 +235,23 @@ def top_performers(
         GameWrestlerDB.world_id == world_id
     ).all()
 
+    all_parts = (
+        db.query(MatchParticipantDB, MatchDB)
+        .join(MatchDB, MatchParticipantDB.match_id == MatchDB.id)
+        .filter(
+            MatchParticipantDB.wrestler_id.in_([w.id for w in wrestlers]),
+            MatchDB.world_id == world_id,
+            MatchDB.winner_id.isnot(None),
+        )
+        .all()
+    )
+    parts_by_wrestler: Dict[str, list] = {}
+    for p, m in all_parts:
+        parts_by_wrestler.setdefault(p.wrestler_id, []).append((p, m))
+
     leaderboard = []
     for w in wrestlers:
-        parts = (
-            db.query(MatchParticipantDB, MatchDB)
-            .join(MatchDB, MatchParticipantDB.match_id == MatchDB.id)
-            .filter(
-                MatchParticipantDB.wrestler_id == w.id,
-                MatchDB.world_id == world_id,
-                MatchDB.winner_id.isnot(None),
-            )
-            .all()
-        )
+        parts = parts_by_wrestler.get(w.id, [])
         total = len(parts)
         if total == 0:
             continue

@@ -42,7 +42,7 @@ from models.game_models import (
     WorldNewsDB, WrestlerHistoryDB, ChampionshipDB,
     WrestlerRelationshipDB, TagTeamDB, TalentOfferDB,
 )
-from game_service.player_action_handler import PlayerActionHandler, get_active_contract
+from game_service.player_action_handler import PlayerActionHandler
 from game_service import inter_federation_service
 from game_service.ticker_query_helpers import (
     get_active_wrestlers, get_npc_federations, get_active_federations,
@@ -389,11 +389,15 @@ class WorldTicker:
             WrestlerPushDB.federation_id == fed.id,
         ).all()
 
+        wrestlers_by_id = {
+            w.id: w for w in self.db.query(GameWrestlerDB).filter(
+                GameWrestlerDB.id.in_([push.wrestler_id for push in pushes]),
+            ).all()
+        }
+
         for push in pushes:
             push.weeks_at_tier = (push.weeks_at_tier or 0) + 1
-            wrestler = self.db.query(GameWrestlerDB).filter(
-                GameWrestlerDB.id == push.wrestler_id,
-            ).first()
+            wrestler = wrestlers_by_id.get(push.wrestler_id)
             if not wrestler:
                 continue
 
@@ -680,6 +684,13 @@ class WorldTicker:
             if not w.is_injured
         ]
 
+        contracts_by_wrestler = {
+            c.wrestler_id: c for c in self.db.query(ContractDB).filter(
+                ContractDB.wrestler_id.in_([w.id for w in wrestlers]),
+                ContractDB.status == "active",
+            ).all()
+        }
+
         for w in wrestlers:
             morale_change = 0
 
@@ -698,7 +709,7 @@ class WorldTicker:
                     morale_change -= 3  # Feeling buried
 
             # Salary relative to popularity
-            contract = get_active_contract(self.db, w.id)
+            contract = contracts_by_wrestler.get(w.id)
             if contract and w.popularity > 60 and contract.salary_weekly < 1500:
                 morale_change -= 2  # Underpaid
 

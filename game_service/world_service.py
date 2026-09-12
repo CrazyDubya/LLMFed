@@ -386,17 +386,18 @@ def create_world(db: Session, name: str, description: str = None,
 
     db.flush()  # Ensure all contracts are persisted
 
+    wrestlers_by_id = {w.id: w for w in all_wrestlers}
+
     for fed in federations:
         # Get the fed's roster
         fed_contracts = db.query(ContractDB).filter(
             ContractDB.federation_id == fed.id,
             ContractDB.status == "active",
         ).all()
-        fed_roster = []
-        for c in fed_contracts:
-            w = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == c.wrestler_id).first()
-            if w:
-                fed_roster.append(w)
+        fed_roster = [
+            wrestlers_by_id[c.wrestler_id] for c in fed_contracts
+            if c.wrestler_id in wrestlers_by_id
+        ]
 
         if fed_roster:
             # Generate booking vision (push tiers, title pipeline, planned feuds)
