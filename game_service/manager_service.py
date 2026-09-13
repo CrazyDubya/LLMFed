@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 
 from models.game_models import (
     ManagerDB, ManagerClientDB, GameWrestlerDB, GameNarrativeLogDB,
-    StorylineDB, StorylineParticipantDB,
 )
 
 logger = logging.getLogger(__name__)

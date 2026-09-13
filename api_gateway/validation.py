@@ -5,14 +5,13 @@ Provides validation functions and decorators for request data.
 """
 
 import re
-from typing import Optional, List
+from typing import Optional
 from pydantic import BaseModel, field_validator, Field
 from fastapi import HTTPException, status
 
 
 class ValidationError(Exception):
     """Custom validation error."""
-    pass
 
 
 def validate_agent_name(name: str) -> str:

@@ -17,12 +17,11 @@ Each PPV has:
 import random
 import logging
 from datetime import datetime, timedelta
-from typing import List, Optional, Dict
+from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from models.game_models import (
     PPVEventDB, BookingVisionDB, GameFederationDB,
-    ShowDB, StorylineDB, ChampionshipDB,
     WrestlerPushDB,
 )
 
@@ -103,11 +102,15 @@ def generate_ppv_calendar(
     name_idx = 0
 
     for i in range(num_ppvs):
-        # Calculate date
-        ppv_date = start + timedelta(days=spacing * i + random.randint(-7, 7))
+        # Crown jewel is the last or second-to-last PPV
+        if i == num_ppvs - 1:
+            # Pinned to the last-quarter month picked above, not the
+            # even spacing used for the rest of the calendar.
+            ppv_date = datetime(start.year, crown_jewel_month, random.randint(1, 28))
+        else:
+            ppv_date = start + timedelta(days=spacing * i + random.randint(-7, 7))
         date_str = ppv_date.strftime("%Y-%m-%d")
 
-        # Crown jewel is the last or second-to-last PPV
         if i == num_ppvs - 1:
             name = crown_jewel_name
             is_crown_jewel = True
@@ -333,7 +336,6 @@ def rollover_ppv_calendar(
 ):
     """Generate next year's PPV calendar. Called when current year's events are done."""
     # Check if next year's PPVs already exist
-    next_year = datetime.strptime(new_year_start, "%Y-%m-%d").year
     existing = db.query(PPVEventDB).filter(
         PPVEventDB.federation_id == federation.id,
         PPVEventDB.scheduled_date >= new_year_start,

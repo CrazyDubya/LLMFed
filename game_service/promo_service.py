@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 
 from models.game_models import (
     PromoDB, GameWrestlerDB, WrestlerStatsDB,
-    WrestlerBackstoryDB,
     LifeEventDB,
 )
 from game_service.ticker_query_helpers import get_wrestler_federation, get_active_gimmick
@@ -582,7 +581,7 @@ def _generate_worked_shoot_promo(wrestler, gimmick, target_id, db):
     if life_events:
         event = random.choice(life_events)
         if event.is_public:
-            parts.append(f"Everyone knows what I've been dealing with. And instead of support, what do I get? More matches, more promos, more demands.")
+            parts.append("Everyone knows what I've been dealing with. And instead of support, what do I get? More matches, more promos, more demands.")
     else:
         parts.append("I've given everything to this company. EVERYTHING. And what do I have to show for it?")
 
@@ -733,7 +732,7 @@ def generate_faction_promo(
 
     The speaker (usually the mouthpiece) delivers using stable identity.
     """
-    from models.game_models import StableDB, StableMemberDB
+    from models.game_models import StableDB
 
     stable = db.query(StableDB).filter_by(id=stable_id).first()
     speaker = db.query(GameWrestlerDB).filter_by(id=speaker_wrestler_id).first()

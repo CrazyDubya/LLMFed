@@ -49,7 +49,6 @@ def test_decode_invalid_token():
 def test_decode_expired_token():
     """Test decoding an expired JWT token."""
     from fastapi import HTTPException
-    import time
     
     # Create token that expires immediately
     token = create_access_token(

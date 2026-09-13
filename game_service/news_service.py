@@ -11,8 +11,7 @@ from sqlalchemy.orm import Session
 
 from models.game_models import (
     WorldNewsDB, ShowDB, GameFederationDB, GameWrestlerDB,
-    GameNarrativeLogDB, ContractDB, ChampionshipDB,
-    SocialMediaPostDB, LifeEventDB, GimmickHistoryDB,
+    GameNarrativeLogDB, SocialMediaPostDB, LifeEventDB,
 )
 from game_service.persona_service import POSITIVE_LIFE_EVENT_TYPES
 

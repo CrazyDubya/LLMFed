@@ -9,15 +9,13 @@ stable/manager/storyline management, match requests, etc.).
 import logging
 import random
 from datetime import datetime
-from typing import Callable, List
+from typing import Callable
 
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    WorldDB, PlayerActionDB, GameFederationDB,
-    GameWrestlerDB, WrestlerStatsDB, ContractDB, ShowDB,
-    StorylineDB, StorylineParticipantDB,
-    TalentOfferDB,
+    WorldDB, PlayerActionDB, GameWrestlerDB,
+    WrestlerStatsDB, ContractDB, ShowDB, StorylineDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -543,7 +541,6 @@ class PlayerActionHandler:
         heat_boost = data.get("heat_boost", 0)
 
         if new_status and new_status in ("brewing", "active", "climax", "resolved"):
-            old_status = storyline.status
             storyline.status = new_status
             if new_status == "resolved":
                 storyline.end_date = self.world.current_game_date

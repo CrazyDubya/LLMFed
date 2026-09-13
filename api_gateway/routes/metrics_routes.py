@@ -52,7 +52,7 @@ def get_metrics() -> Dict[str, Any]:
 
     # LLM cache stats (if async wrapper is in use)
     try:
-        from llm_abstraction.cache import LLMResponseCache
+        pass
         # The cache stats are best accessed through AsyncLLM instances,
         # but we expose a basic cache summary if the singleton exists.
         metrics["llm_cache_note"] = "Use AsyncLLM.cache_stats() for per-instance cache metrics"

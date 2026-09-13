@@ -6,8 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    WorldDB, GameWrestlerDB, WrestlerStatsDB, MatchDB, MatchParticipantDB,
-    MatchEventDB, GameFederationDB, ShowDB, ShowSegmentDB, ChampionshipDB,
+    GameWrestlerDB, MatchDB, MatchParticipantDB, MatchEventDB, GameFederationDB,
 )
 from core_engine.match_engine import (
     MatchSimulator, MatchParticipantState, MatchResult, simulate_match_from_db,

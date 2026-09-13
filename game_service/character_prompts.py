@@ -7,7 +7,7 @@ focused on control flow while making prompt iteration easy.
 """
 
 import logging
-from typing import Optional, Dict, Any, List
+from typing import List
 
 from sqlalchemy.orm import Session
 

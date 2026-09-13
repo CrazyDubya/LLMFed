@@ -4,7 +4,7 @@ Federation models: federations, PPV events, booking visions, wrestler pushes, ta
 
 from sqlalchemy import (
     Column, String, Integer, Float, DateTime, JSON, ForeignKey, Text, Boolean,
-    UniqueConstraint, Index,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone

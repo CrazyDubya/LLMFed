@@ -2,7 +2,7 @@ import pytest
 import uuid
 from agent_service.database import SessionLocal, init_db
 from agent_service.crud import create_federation, get_federation_by_id, get_federations
-from models.entities import FederationCreateData, FederationUpdateData
+from models.entities import FederationCreateData
 
 
 @pytest.fixture(scope="module")

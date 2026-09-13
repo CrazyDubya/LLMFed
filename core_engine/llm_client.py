@@ -14,12 +14,11 @@ Error behaviour:
 
 import logging
 import json
-import os
 
 from core_engine.dispatcher import LLMDispatcher
 from llm_abstraction.provider import (
     LLMMessage, get_llm,
-    LLMPermanentError, LLMTransientError,
+    LLMPermanentError,
 )
 
 logger = logging.getLogger(__name__)

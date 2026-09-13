@@ -103,7 +103,6 @@ class AutoScheduler:
         """Advance every non-paused world by one game day and broadcast."""
         # Import here to avoid circular imports at module level
         from api_gateway.websocket_hub import manager as ws_manager
-        from game_service.world_ticker import WorldTicker
 
         # Run DB work in a thread so we don't block the event loop
         loop = asyncio.get_running_loop()

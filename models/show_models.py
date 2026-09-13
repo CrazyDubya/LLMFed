@@ -5,7 +5,7 @@ match events, promos, and narrative/news logs.
 
 from sqlalchemy import (
     Column, String, Integer, Float, DateTime, JSON, ForeignKey, Text, Boolean,
-    UniqueConstraint, Index,
+    Index,
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone

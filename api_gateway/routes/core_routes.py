@@ -7,7 +7,6 @@ endpoints that were previously defined inline in the FastAPI app module.
 
 import logging
 import os
-import traceback
 from typing import List
 
 from dataclasses import asdict

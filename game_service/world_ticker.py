@@ -10,7 +10,7 @@ import os
 import random
 import zlib
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List
 from sqlalchemy.orm import Session
 
 # LLM integration gate — set LLMFED_USE_LLM=1 to enable LLM-generated narrative
@@ -35,12 +35,11 @@ def _llm_generate(prompt: str, fallback: str, system_msg: str = None) -> str:
     return fallback
 
 from models.game_models import (
-    WorldDB, WorldStateDB, PlayerActionDB, GameFederationDB,
-    GameWrestlerDB, WrestlerStatsDB, ContractDB, ShowDB,
-    MatchDB, MatchParticipantDB,
-    StorylineDB, StorylineParticipantDB, GameNarrativeLogDB,
-    WorldNewsDB, WrestlerHistoryDB, ChampionshipDB,
-    WrestlerRelationshipDB, TagTeamDB, TalentOfferDB,
+    WorldDB, PlayerActionDB, GameFederationDB, GameWrestlerDB,
+    WrestlerStatsDB, ContractDB, ShowDB, MatchDB,
+    MatchParticipantDB, StorylineDB,
+    GameNarrativeLogDB, WorldNewsDB, WrestlerRelationshipDB,
+    TagTeamDB,
 )
 from game_service.player_action_handler import PlayerActionHandler
 from game_service import inter_federation_service
@@ -350,7 +349,7 @@ class WorldTicker:
 
     def _npc_vision_check(self, fed: GameFederationDB, game_date: str):
         """Weekly strategic check — plan PPV cards and adapt to hot/cold acts."""
-        from models.game_models import BookingVisionDB, PPVEventDB
+        from models.game_models import BookingVisionDB
         from game_service.ppv_calendar_service import (
             get_next_ppv, is_build_window, is_go_home_week,
             plan_ppv_card_from_vision, ink_ppv_match,
@@ -1209,7 +1208,6 @@ class WorldTicker:
 
     def _generate_year_end_summary(self, game_date: str):
         """Generate year-end awards and summary news. Fires on Dec 31."""
-        news_svc = _get_news_service()
         year = game_date[:4]
 
         # Find all completed shows this year

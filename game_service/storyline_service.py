@@ -12,9 +12,8 @@ from sqlalchemy.orm import Session
 
 from models.game_models import (
     StorylineDB, StorylineParticipantDB, GameWrestlerDB, GameFederationDB,
-    ContractDB, MatchDB, MatchParticipantDB, ChampionshipDB,
-    GameNarrativeLogDB, LifeEventDB, WrestlerRelationshipDB,
-    WrestlerBackstoryDB,
+    ContractDB, MatchDB, MatchParticipantDB, GameNarrativeLogDB,
+    LifeEventDB, WrestlerRelationshipDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -322,7 +321,7 @@ def check_match_storyline_triggers(db: Session, match: MatchDB, game_date: str):
         # Seasonal heat multiplier: storylines get a boost during PPV build windows
         try:
             from game_service.ppv_calendar_service import get_next_ppv, is_build_window
-            from models.game_models import ShowDB, ShowSegmentDB
+            from models.game_models import ShowDB
             seg = match.segment
             if seg:
                 show = db.query(ShowDB).filter(ShowDB.id == seg.show_id).first()

@@ -8,7 +8,6 @@ import pytest
 from api_gateway.validation import (
     validate_agent_name,
     validate_user_id,
-    validate_federation_name,
     validate_temperature,
     validate_max_tokens,
     sanitize_string,

@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 from models.game_models import (
     GameWrestlerDB, SocialMediaPostDB,
     WrestlerBackstoryDB, StorylineDB, StorylineParticipantDB,
-    WrestlerRelationshipDB, WorldNewsDB,
 )
 from game_service.ticker_query_helpers import get_wrestler_federation, get_active_gimmick
 

@@ -12,8 +12,6 @@ from dataclasses import dataclass, field
 import logging
 import os
 import time
-import hashlib
-import json
 
 logger = logging.getLogger(__name__)
 
@@ -260,7 +258,6 @@ class LLMProviderBase(ABC):
         **kwargs,
     ) -> LLMResponse:
         """Generate a completion from the LLM."""
-        pass
 
     def generate_stream(
         self,
@@ -279,7 +276,6 @@ class LLMProviderBase(ABC):
     @abstractmethod
     def validate_config(self) -> bool:
         """Validate that the provider is properly configured."""
-        pass
 
 
 # ---------------------------------------------------------------------------

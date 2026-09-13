@@ -5,8 +5,6 @@ an in-memory SQLite database.
 """
 import os
 import uuid
-import pytest
-from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 # Allow the TestClient's "testserver" host through TrustedHostMiddleware

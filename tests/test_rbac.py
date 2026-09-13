@@ -13,7 +13,6 @@ try:
         decode_token,
         generate_api_key,
         validate_production_config,
-        TokenData,
         ROLE_HIERARCHY,
         get_password_hash,
         verify_password,

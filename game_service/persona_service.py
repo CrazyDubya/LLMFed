@@ -10,10 +10,8 @@ import logging
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    GameWrestlerDB, WrestlerStatsDB, WrestlerBackstoryDB,
-    GimmickHistoryDB, LifeEventDB, WrestlerRelationshipDB,
-    ContractDB, GameFederationDB, StorylineParticipantDB, StorylineDB,
-    GameNarrativeLogDB,
+    GameWrestlerDB, WrestlerBackstoryDB, GimmickHistoryDB,
+    LifeEventDB, WrestlerRelationshipDB,
 )
 from game_service.ticker_query_helpers import get_active_gimmick
 
@@ -207,7 +205,6 @@ def generate_backstory(db: Session, wrestler: GameWrestlerDB) -> WrestlerBacksto
 def _pick_archetype(wrestler):
     """Pick an archetype based on existing wrestler attributes."""
     alignment = wrestler.alignment or "face"
-    personality = wrestler.personality_traits or {}
 
     # Weighted selection based on alignment
     if alignment == "heel":

@@ -16,7 +16,7 @@ Fan Archetypes:
 import logging
 import random
 from dataclasses import dataclass, field
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from enum import Enum
 
 logger = logging.getLogger(__name__)

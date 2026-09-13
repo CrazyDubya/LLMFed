@@ -13,7 +13,7 @@ from models.db_models import Base
 from models.game_models import (
     WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
     MatchDB, MatchParticipantDB, ShowDB, ShowSegmentDB,
-    ChampionshipDB, WrestlerRelationshipDB, ContractDB, PromoDB,
+    ChampionshipDB, WrestlerRelationshipDB, PromoDB,
 )
 
 

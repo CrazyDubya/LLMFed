@@ -4,7 +4,6 @@ Allows creating, listing, comparing, and restoring world-state snapshots
 for "what-if" branching, undo, and replay features.
 """
 
-import base64
 import logging
 from typing import List, Optional
 

@@ -1,4 +1,3 @@
-import pytest
 from core_engine.engine import TickScheduler
 
 def test_next_tick_increments():

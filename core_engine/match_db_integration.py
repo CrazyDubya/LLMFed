@@ -8,7 +8,7 @@ main entry point used by world_ticker) and ``_generate_post_match_angle``.
 
 import random
 import logging
-from typing import List, Optional, Dict, Any
+from typing import Optional, Dict, Any
 
 from sqlalchemy.orm import Session
 
@@ -24,8 +24,6 @@ from core_engine.match_constants import (
     CONDITIONING_MODIFIER_BASE, CONDITIONING_MODIFIER_RANGE,
     FACTION_BEATDOWN_CHANCE, FACTION_SAVE_CHANCE,
     HIGHLIGHT_DAMAGE_THRESHOLD,
-    BOTCH_RATING_PENALTY_PER, DANGEROUS_BOTCH_EXTRA_PENALTY,
-    RATING_MIN,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,7 +66,6 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None):
     # Late imports to avoid circular dependency at module load time
     from core_engine.match_engine import (
         MatchSimulator, MatchParticipantState, ManagerContext, MatchResult,
-        POST_MATCH_ATTACK, POST_MATCH_SAVE,
     )
 
     participants_db = db.query(MatchParticipantDB).filter(

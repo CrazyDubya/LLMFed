@@ -1,4 +1,3 @@
-import os
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -6,11 +5,7 @@ import pytest
 from core_engine.llm_client import LLMClient
 from llm_abstraction.provider import (
     LLMAbstraction,
-    LLMResponse,
-    OpenAIProvider,
-    reset_llm,
 )
-from unittest.mock import patch
 
 
 def make_handler(response_body, status=200):
@@ -100,6 +95,7 @@ def test_send_prompt_non_json_integration(mock_ollama_server):
             self.send_header('Content-Length', '10')
             self.end_headers()
             self.wfile.write(b"not a json")
+
         def log_message(self, format, *args): return
 
     server = HTTPServer(('localhost', 0), BadHandler)

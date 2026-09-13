@@ -445,7 +445,6 @@ class MatchSimulator:
         is_botch, botch_severity, damage = self._check_botch(
             category, base_damage, attack_stat, attacker.stamina, damage)
 
-
         # Check for reversal
         was_reversed = False
         reversal_move = None

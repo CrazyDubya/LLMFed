@@ -8,7 +8,7 @@ promo evaluation, card psychology, viewership, and news generation.
 import logging
 import os
 import random
-from typing import Callable, List, Optional
+from typing import Callable, List
 
 from sqlalchemy.orm import Session
 

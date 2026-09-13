@@ -1,4 +1,3 @@
-import pytest
 from core_engine.heat import (
     calculate_match_heat,
     calculate_segment_heat,

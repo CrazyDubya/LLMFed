@@ -1,7 +1,5 @@
-import pytest
 
 from core_engine.engine import engine_instance, AppliedAction
-from core_engine.dispatcher import StubAction
 
 
 def test_set_hints_stores_hints():

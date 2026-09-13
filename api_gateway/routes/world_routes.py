@@ -232,7 +232,7 @@ def api_get_narrative(
         GameNarrativeLogDB.world_id == world_id,
         GameNarrativeLogDB.importance >= min_importance,
     ).order_by(GameNarrativeLogDB.created_at.desc()).limit(limit).all()
-    return [NarrativeLogResponse.model_validate(l) for l in logs]
+    return [NarrativeLogResponse.model_validate(log) for log in logs]
 
 
 @router.get("/worlds/{world_id}/news", response_model=List[WorldNewsResponse])

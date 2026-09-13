@@ -6,8 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    ContractDB, PlayerActionDB, PlayerDB, UserDB, ShowDB,
+    GameWrestlerDB, WrestlerStatsDB, PlayerActionDB, UserDB,
     GameNarrativeLogDB,
 )
 from game_service.world_service import create_world, create_player

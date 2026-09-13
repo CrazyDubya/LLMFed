@@ -9,8 +9,7 @@ from models.game_models import (
     UserDB, PlayerDB, WorldDB, WorldStateDB,
     GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
     ContractDB, ShowDB, MatchDB, MatchParticipantDB,
-    ChampionshipDB, StorylineDB, StorylineParticipantDB,
-    PlayerActionDB, GameNarrativeLogDB, WorldNewsDB,
+    StorylineDB, StorylineParticipantDB, PlayerActionDB,
 )
 
 

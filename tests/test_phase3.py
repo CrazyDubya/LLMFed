@@ -12,11 +12,10 @@ from sqlalchemy.orm import sessionmaker
 from models.db_models import Base
 from models.game_models import (
     WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    MatchDB, MatchParticipantDB, MatchEventDB,
-    ChampionshipDB, ChampionshipHistoryDB, WrestlerHistoryDB,
-    WrestlerRelationshipDB, TagTeamDB, TalentOfferDB,
-    ContractDB, ShowDB, ShowSegmentDB,
-    GameNarrativeLogDB, WorldNewsDB,
+    MatchDB, MatchParticipantDB, ChampionshipDB,
+    WrestlerHistoryDB, WrestlerRelationshipDB, TagTeamDB,
+    TalentOfferDB, ShowDB, GameNarrativeLogDB,
+    WorldNewsDB,
 )
 
 
@@ -306,7 +305,7 @@ class TestMoraleAlignment:
 
 class TestCardPsychology:
     def test_good_opener_bonus(self):
-        from game_service.world_ticker import WorldTicker
+        pass
         # Direct test of the calculation method
         # We'll test the standalone function logic
         ratings = [3.5, 2.5, 3.0, 4.0]
@@ -352,7 +351,7 @@ class TestNewsGeneration:
 
     def test_dirt_sheet_generated(self, db_session):
         _create_world(db_session)
-        fed = _create_fed(db_session, budget=10000)  # Low budget
+        _create_fed(db_session, budget=10000)  # Low budget
 
         from game_service.news_service import generate_weekly_dirt_sheet
         generate_weekly_dirt_sheet(db_session, "world1", "2026-01-15")
@@ -544,10 +543,6 @@ class TestTagMatchSimulation:
         assert result.duration_ticks > 0
         assert len(result.spots) > 5
 
-        # Verify that tag-specific spots were generated
-        spot_types = [s.move_type for s in result.spots]
-        spot_names = [s.move_name for s in result.spots]
-        has_tag = "tag" in spot_types or "Tag" in spot_names or "Hot Tag" in spot_names
         # Tag spots are probabilistic; at minimum verify the match completed
         assert result.finish_type in ("pinfall", "submission", "time_limit_draw")
 

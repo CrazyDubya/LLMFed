@@ -18,10 +18,8 @@ from models.db_models import Base
 from models.game_models import (
     WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
     ContractDB, ChampionshipDB, ChampionshipHistoryDB,
-    MatchDB, MatchParticipantDB, ShowDB, ShowSegmentDB,
-    WrestlerPushDB, BookingVisionDB,
-    WrestlerGoalDB, MentorshipDB, CareerHighlightDB, HallOfFameDB,
-    GameNarrativeLogDB, WrestlerHistoryDB,
+    MatchDB, MatchParticipantDB, WrestlerPushDB, WrestlerGoalDB,
+    MentorshipDB, CareerHighlightDB,
 )
 
 

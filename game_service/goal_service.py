@@ -8,9 +8,9 @@ import logging
 from sqlalchemy.orm import Session, aliased
 
 from models.game_models import (
-    GameWrestlerDB, WrestlerStatsDB, ChampionshipDB,
-    MatchParticipantDB, MatchDB, ShowDB, ShowSegmentDB,
-    WrestlerPushDB, WrestlerGoalDB, WrestlerHistoryDB,
+    GameWrestlerDB, ChampionshipDB, MatchParticipantDB,
+    MatchDB, ShowDB, ShowSegmentDB, WrestlerPushDB,
+    WrestlerGoalDB, WrestlerHistoryDB,
 )
 from game_service.lifecycle_constants import (
     GOAL_COMPLETE_MORALE_BONUS, GOAL_COMPLETE_SATISFACTION_BONUS,

@@ -9,7 +9,7 @@ import logging
 from typing import Dict, Any, List, Optional
 from collections import defaultdict
 
-from sqlalchemy import func, case, desc
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -83,8 +83,8 @@ def federation_health(
     federation_id: str,
 ) -> Dict[str, Any]:
     """Get federation health metrics: roster size, show quality, finances."""
-    from models.game_models import GameFederationDB, GameWrestlerDB, ContractDB
-    from models.show_models import ShowDB, MatchDB
+    from models.game_models import GameFederationDB, ContractDB
+    from models.show_models import ShowDB
 
     fed = db.query(GameFederationDB).filter(
         GameFederationDB.id == federation_id
