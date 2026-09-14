@@ -36,7 +36,7 @@ export function useWorldSocket(worldId: string | null, options: UseWorldSocketOp
   const [lastEvent, setLastEvent] = useState<WorldEvent | null>(null);
   const [eventLog, setEventLog] = useState<WorldEvent[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const retryCount = useRef(0);
   const optionsRef = useRef(options);
   optionsRef.current = options;
