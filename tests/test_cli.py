@@ -2,15 +2,20 @@
 
 import os
 
+# Typer's rich-based --help renderer force-enables terminal colors whenever
+# GITHUB_ACTIONS is set (true on every GitHub Actions runner), regardless of
+# whether stdout is a real TTY. With color on, its option-name highlighter
+# wraps each hyphen-separated segment of an option in its own ANSI escape
+# span (e.g. "--narrative-retention" becomes several separately-colored
+# pieces), which breaks a plain substring check for the option name even
+# though nothing wrapped or changed visually. `_TYPER_FORCE_DISABLE_TERMINAL`
+# is Typer's own documented escape hatch for exactly this. It's read once at
+# import time by typer.rich_utils, so it must be set before typer (and
+# anything importing it, like cli.main) is first imported.
+os.environ["_TYPER_FORCE_DISABLE_TERMINAL"] = "1"
+
 from typer.testing import CliRunner
 from cli.main import app
-
-# Rich (Typer's help renderer) wraps option names to fit the detected
-# terminal width. Without a real TTY it falls back to whatever COLUMNS
-# reports, which is narrow enough on some CI runners to wrap a long name
-# like "narrative-retention" across two lines and break a plain substring
-# check. Force a wide terminal so --help output is stable everywhere.
-os.environ["COLUMNS"] = "200"
 
 runner = CliRunner()
 
