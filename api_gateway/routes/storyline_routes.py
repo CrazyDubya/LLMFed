@@ -3,9 +3,9 @@
 import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
-from agent_service.database import get_db
+from agent_service.database import get_db_sync as get_db
 from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
     StorylineCreate, StorylineAdvance, StorylineResponse,
@@ -33,7 +33,7 @@ async def api_list_storylines(
     world_id: str,
     status: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List storylines in a world."""
     query = db.query(StorylineDB).filter(StorylineDB.world_id == world_id)
@@ -66,7 +66,7 @@ async def api_create_storyline(
     world_id: str,
     data: StorylineCreate,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Promoter creates a storyline between wrestlers."""
     from game_service.storyline_service import create_storyline as sl_create
@@ -109,7 +109,7 @@ async def api_advance_storyline(
     storyline_id: str,
     data: StorylineAdvance,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Advance a storyline's status or boost its heat."""
     storyline = db.query(StorylineDB).filter_by(id=storyline_id).first()

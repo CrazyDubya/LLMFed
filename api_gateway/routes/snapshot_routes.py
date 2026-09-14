@@ -9,9 +9,9 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
-from agent_service.database import get_db
+from agent_service.database import get_db_sync as get_db
 from game_service.snapshot_service import (
     create_snapshot,
     restore_snapshot,
@@ -65,7 +65,7 @@ class SnapshotDiff(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("", response_model=SnapshotMeta, status_code=201)
-async def api_create_snapshot(body: SnapshotCreate, db: AsyncSession = Depends(get_db)):
+async def api_create_snapshot(body: SnapshotCreate, db: Session = Depends(get_db)):
     """Create a snapshot of the current world state."""
     try:
         result = create_snapshot(
@@ -118,7 +118,7 @@ async def api_list_snapshots(world_id: Optional[str] = Query(None)):
 
 
 @router.post("/restore")
-async def api_restore_snapshot(body: SnapshotRestore, db: AsyncSession = Depends(get_db)):
+async def api_restore_snapshot(body: SnapshotRestore, db: Session = Depends(get_db)):
     """Restore a world from a previously saved snapshot."""
     snap = _snapshots.get(body.snapshot_id)
     if snap is None:

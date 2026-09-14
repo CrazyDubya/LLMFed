@@ -2,7 +2,7 @@ import os
 import logging
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +46,6 @@ sync_engine = create_engine(
 )
 SessionLocal = sessionmaker(bind=sync_engine, autoflush=False)
 
-Base = declarative_base()
-
 
 async def get_db():
     """Async dependency to yield a database session."""
@@ -58,8 +56,32 @@ async def get_db():
             await session.close()
 
 
+def get_db_sync():
+    """Sync dependency to yield a database session.
+
+    The wrestling-game routes (game_service.* — show/booking/storyline/
+    stable/wrestler/world/federation/analytics/snapshot/auth) are all
+    written and tested against a plain sync Session (db.query(...),
+    db.commit(), db.flush()). AsyncSession has no .query() at all, and
+    calling its .commit()/.flush()/.refresh() without awaiting them
+    (as these routes historically did) silently no-ops — the call
+    returns an unawaited coroutine, nothing is raised, and nothing is
+    actually written. Routes backed by game_service must depend on this
+    instead of the async get_db() above, which only the legacy async
+    agent/federation engine (core_routes.py, agent_service.crud) uses.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 async def init_db():
     """Initialize the database tables asynchronously."""
+    import models  # noqa: F401 — import registers every model on db_models.Base
+    from models.db_models import Base
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         logger.info("Database initialized successfully.")
@@ -67,5 +89,8 @@ async def init_db():
 
 def init_db_sync():
     """Initialize the database tables synchronously (CLI/script use)."""
+    import models  # noqa: F401 — import registers every model on db_models.Base
+    from models.db_models import Base
+
     Base.metadata.create_all(bind=sync_engine)
     logger.info("Database initialized successfully (sync).")
