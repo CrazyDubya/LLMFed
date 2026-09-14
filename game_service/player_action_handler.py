@@ -9,15 +9,13 @@ stable/manager/storyline management, match requests, etc.).
 import logging
 import random
 from datetime import datetime
-from typing import Callable, List
+from typing import Callable
 
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    WorldDB, PlayerActionDB, GameFederationDB,
-    GameWrestlerDB, WrestlerStatsDB, ContractDB, ShowDB,
-    StorylineDB, StorylineParticipantDB,
-    TalentOfferDB,
+    WorldDB, PlayerActionDB, GameWrestlerDB,
+    WrestlerStatsDB, ContractDB, ShowDB, StorylineDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -348,7 +346,7 @@ class PlayerActionHandler:
         for c in roster_contracts:
             opp = self.db.query(GameWrestlerDB).filter(
                 GameWrestlerDB.id == c.wrestler_id,
-                GameWrestlerDB.is_injured == False,
+                GameWrestlerDB.is_injured.is_(False),
             ).first()
             if opp and abs(opp.popularity - wrestler.popularity) <= 15:
                 candidates.append(opp)
@@ -358,7 +356,7 @@ class PlayerActionHandler:
             for c in roster_contracts:
                 opp = self.db.query(GameWrestlerDB).filter(
                     GameWrestlerDB.id == c.wrestler_id,
-                    GameWrestlerDB.is_injured == False,
+                    GameWrestlerDB.is_injured.is_(False),
                 ).first()
                 if opp:
                     candidates.append(opp)
@@ -437,7 +435,8 @@ class PlayerActionHandler:
             game_date=self.world.current_game_date,
         )
         wrestler = self.db.query(GameWrestlerDB).filter_by(id=wrestler_id).first()
-        return {"member_id": member.id, "role": member.role, "wrestler_name": wrestler.name if wrestler else wrestler_id}
+        return {"member_id": member.id, "role": member.role,
+                "wrestler_name": wrestler.name if wrestler else wrestler_id}
 
     def _action_leave_stable(self, data: dict) -> dict:
         """Remove a wrestler from a stable."""
@@ -548,7 +547,7 @@ class PlayerActionHandler:
         heat_boost = data.get("heat_boost", 0)
 
         if new_status and new_status in ("brewing", "active", "climax", "resolved"):
-            old_status = storyline.status
+            storyline.status
             storyline.status = new_status
             if new_status == "resolved":
                 storyline.end_date = self.world.current_game_date

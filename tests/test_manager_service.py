@@ -8,8 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    ManagerDB, ManagerClientDB, GameNarrativeLogDB,
+    WorldDB, GameFederationDB, GameWrestlerDB,
 )
 from game_service.manager_service import (
     create_manager, assign_manager, remove_manager,

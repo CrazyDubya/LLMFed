@@ -1,4 +1,6 @@
 """Alembic environment configuration for LLMFed."""
+from models.db_models import Base
+from config import DATABASE_URL
 import sys
 from pathlib import Path
 from logging.config import fileConfig
@@ -9,8 +11,6 @@ from alembic import context
 # Ensure project root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config import DATABASE_URL
-from models.db_models import Base
 # Import game models so their tables are registered on Base.metadata
 import models.game_models  # noqa: F401
 

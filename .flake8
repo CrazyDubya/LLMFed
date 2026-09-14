@@ -11,4 +11,4 @@ per-file-ignores =
     core_engine/rulebook.py: F821
     models/entities.py: F401
     scripts/demo_multi.py: F811
-exclude = .git,__pycache__,venv,.venv,build,dist
+exclude = .git,__pycache__,venv,.venv,build,dist,node_modules

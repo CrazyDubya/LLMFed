@@ -90,10 +90,15 @@ async def api_create_storyline(
         )
         db.commit()
         resp = StorylineResponse.model_validate(storyline)
-        resp.participants = [
-            {"wrestler_id": wid, "wrestler_name": (db.query(GameWrestlerDB).filter_by(id=wid).first() or type('', (), {'name': 'Unknown'})).name, "role": role}
-            for wid, role in zip(data.wrestler_ids, ["protagonist", "antagonist"] + ["ally"] * max(0, len(data.wrestler_ids) - 2))
-        ]
+        resp.participants = [{"wrestler_id": wid,
+                              "wrestler_name": (db.query(GameWrestlerDB).filter_by(id=wid).first() or type('',
+                                                                                                           (),
+                                                                                                           {'name': 'Unknown'})).name,
+                              "role": role} for wid,
+                             role in zip(data.wrestler_ids,
+                                         ["protagonist",
+                                          "antagonist"] + ["ally"] * max(0,
+                                                                         len(data.wrestler_ids) - 2))]
         return resp
     except ValueError as e:
         _handle_value_error(e)
@@ -125,8 +130,6 @@ async def api_advance_storyline(
     resp = StorylineResponse.model_validate(storyline)
 
     parts = db.query(StorylineParticipantDB).filter_by(storyline_id=storyline_id).all()
-    resp.participants = [
-        {"wrestler_id": p.wrestler_id, "wrestler_name": (db.query(GameWrestlerDB).filter_by(id=p.wrestler_id).first() or type('', (), {'name': 'Unknown'})).name, "role": p.role}
-        for p in parts
-    ]
+    resp.participants = [{"wrestler_id": p.wrestler_id, "wrestler_name": (db.query(GameWrestlerDB).filter_by(
+        id=p.wrestler_id).first() or type('', (), {'name': 'Unknown'})).name, "role": p.role} for p in parts]
     return resp

@@ -203,7 +203,7 @@ def _handle_title_result(db: Session, match: MatchDB,
             old_reign = db.query(ChampionshipHistoryDB).filter(
                 ChampionshipHistoryDB.championship_id == champ.id,
                 ChampionshipHistoryDB.wrestler_id == old_holder_id,
-                ChampionshipHistoryDB.reign_end == None,
+                ChampionshipHistoryDB.reign_end is None,
             ).first()
             if old_reign:
                 old_reign.reign_end = game_date
@@ -393,7 +393,7 @@ def _update_tag_team_records(db: Session, match: MatchDB, participants: list):
     # Find tag teams involved
     all_ids = [p.wrestler_id for p in participants]
     teams = db.query(TagTeamDB).filter(
-        TagTeamDB.is_active == True,
+        TagTeamDB.is_active,
         TagTeamDB.wrestler1_id.in_(all_ids),
         TagTeamDB.wrestler2_id.in_(all_ids),
     ).all()
@@ -441,7 +441,7 @@ def _update_alignment_momentum(db: Session, match: MatchDB,
 def _execute_alignment_turn(db: Session, wrestler: GameWrestlerDB,
                             new_alignment: str, game_date: str, world_id: str):
     """Execute an alignment turn — shared logic for face/heel transitions."""
-    old_alignment = wrestler.alignment
+    wrestler.alignment
     wrestler.alignment = new_alignment
     wrestler.alignment_momentum = 0
     wrestler.popularity = min(100, wrestler.popularity + TURN_POPULARITY_BONUS)
@@ -494,7 +494,7 @@ def get_chemistry_bonus(db: Session, world_id: str,
 
 
 def _post_match_lifecycle(db: Session, match: MatchDB,
-                         participants: list, game_date: str):
+                          participants: list, game_date: str):
     """Post-match lifecycle hooks: career highlights and specialization growth."""
     try:
         from game_service.wrestler_lifecycle_service import (
@@ -520,20 +520,20 @@ def compute_win_loss(db: Session, wrestler_id: str) -> dict:
     wins = db.query(MatchParticipantDB).filter(
         MatchParticipantDB.wrestler_id == wrestler_id,
         MatchParticipantDB.role == "competitor",
-        MatchParticipantDB.is_winner == True,
+        MatchParticipantDB.is_winner,
     ).count()
 
     total = db.query(MatchParticipantDB).join(MatchDB).filter(
         MatchParticipantDB.wrestler_id == wrestler_id,
         MatchParticipantDB.role == "competitor",
-        MatchDB.is_completed == True,
+        MatchDB.is_completed,
     ).count()
 
     draws = db.query(MatchParticipantDB).join(MatchDB).filter(
         MatchParticipantDB.wrestler_id == wrestler_id,
         MatchParticipantDB.role == "competitor",
-        MatchDB.is_completed == True,
-        MatchDB.winner_id == None,
+        MatchDB.is_completed,
+        MatchDB.winner_id is None,
     ).count()
 
     losses = total - wins - draws
@@ -618,14 +618,18 @@ def _process_botch_consequences(db: Session, match: MatchDB, game_date: str):
                 victim.injury_return_date = advance_game_date(game_date, weeks_out * 7)
                 victim.condition = max(0, victim.condition - random.randint(*BOTCH_CONDITION_LOSS_RANGE))
 
-                db.add(GameNarrativeLogDB(
-                    world_id=match.world_id,
-                    game_date=game_date, tick=0,
-                    event_type="botch_injury",
-                    description=f"{victim.name} injured by botched {move_name} from {attacker.name}! Out {weeks_out} weeks.",
-                    involved_entities=[victim_id, attacker_id],
-                    importance=8,
-                ))
+                db.add(
+                    GameNarrativeLogDB(
+                        world_id=match.world_id,
+                        game_date=game_date,
+                        tick=0,
+                        event_type="botch_injury",
+                        description=f"{victim.name} injured by botched {move_name} from {attacker.name}! Out {weeks_out} weeks.",
+                        involved_entities=[
+                            victim_id,
+                            attacker_id],
+                        importance=8,
+                    ))
                 logger.info("BOTCH INJURY: %s hurt by %s's %s, out %d weeks",
                             victim.name, attacker.name, move_name, weeks_out)
 

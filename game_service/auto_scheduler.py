@@ -103,7 +103,6 @@ class AutoScheduler:
         """Advance every non-paused world by one game day and broadcast."""
         # Import here to avoid circular imports at module level
         from api_gateway.websocket_hub import manager as ws_manager
-        from game_service.world_ticker import WorldTicker
 
         # Run DB work in a thread so we don't block the event loop
         loop = asyncio.get_running_loop()
@@ -138,7 +137,7 @@ class AutoScheduler:
         db: Session = SessionLocal()
         results: Dict[str, dict] = {}
         try:
-            worlds = db.query(WorldDB).filter(WorldDB.is_active == True).all()
+            worlds = db.query(WorldDB).filter(WorldDB.is_active).all()
             for world in worlds:
                 if world.id in self._paused_worlds:
                     continue

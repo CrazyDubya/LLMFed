@@ -7,7 +7,7 @@ match context.
 """
 
 import random
-from typing import List, Optional
+from typing import Optional
 
 from core_engine.match_constants import (
     VARIETY_BONUS_PER_TYPE, VARIETY_BONUS_CAP,

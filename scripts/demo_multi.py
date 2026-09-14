@@ -1,3 +1,8 @@
+from core_engine.engine import engine_instance
+from models.entities import AgentCreateData
+from agent_service.crud import get_agents, create_agent
+from agent_service.database import SessionLocal
+from core_engine.llm_client import LLMClient
 import logging
 from dataclasses import asdict
 import uuid
@@ -8,11 +13,6 @@ from dataclasses import asdict
 os.environ["OPENAI_MODEL"] = "long-gemma:latest"
 os.environ["OPENAI_API_BASE"] = "http://127.0.0.1:11434/v1"
 
-from core_engine.llm_client import LLMClient
-from agent_service.database import SessionLocal
-from agent_service.crud import get_agents, create_agent
-from models.entities import AgentCreateData
-from core_engine.engine import engine_instance
 
 # Re-initialize llm_client with new API base
 engine_instance.llm_client = LLMClient()

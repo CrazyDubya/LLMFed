@@ -8,7 +8,6 @@ data validation for the wrestling federation simulator.
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-import uuid
 
 
 class AgentConfig(BaseModel):

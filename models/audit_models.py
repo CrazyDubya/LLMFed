@@ -5,7 +5,7 @@ Each row captures who changed what, when, and the old/new values so that
 game-state changes can be reviewed, debugged, or replayed.
 """
 
-from sqlalchemy import Column, String, Integer, Float, DateTime, JSON, Text, Index
+from sqlalchemy import Column, String, DateTime, JSON, Text, Index
 from datetime import datetime, timezone
 import uuid
 

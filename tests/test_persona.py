@@ -7,8 +7,7 @@ social media posts, persona-aware promos, kayfabe collision detection.
 
 import pytest
 import random
-from unittest.mock import MagicMock, patch
-from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
 # We test with in-memory SQLite
 from sqlalchemy import create_engine
@@ -17,10 +16,8 @@ from sqlalchemy.orm import sessionmaker
 from models.db_models import Base
 from models.game_models import (
     GameWrestlerDB, WrestlerStatsDB, WrestlerBackstoryDB,
-    GimmickHistoryDB, LifeEventDB, SocialMediaPostDB,
-    WrestlerRelationshipDB, GameFederationDB, ContractDB,
-    WorldDB, StorylineDB, StorylineParticipantDB, PromoDB,
-    WorldNewsDB,
+    GimmickHistoryDB, LifeEventDB, WrestlerRelationshipDB,
+    GameFederationDB, WorldDB,
 )
 
 
@@ -490,14 +487,14 @@ class TestMigration:
 
         gimmick = db_session.query(GimmickHistoryDB).filter(
             GimmickHistoryDB.wrestler_id == wrestler.id,
-            GimmickHistoryDB.is_active == True,
+            GimmickHistoryDB.is_active,
         ).first()
         assert gimmick is not None
 
     def test_migrate_is_idempotent(self, db_session, wrestler, world):
         from game_service.persona_service import migrate_existing_wrestlers
 
-        count1 = migrate_existing_wrestlers(db_session, world.id)
+        migrate_existing_wrestlers(db_session, world.id)
         count2 = migrate_existing_wrestlers(db_session, world.id)
         assert count2 == 0  # Already migrated
 

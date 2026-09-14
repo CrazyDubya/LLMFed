@@ -7,7 +7,7 @@ focused on control flow while making prompt iteration easy.
 """
 
 import logging
-from typing import Optional, Dict, Any, List
+from typing import List
 
 from sqlalchemy.orm import Session
 
@@ -159,7 +159,7 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
 
     gimmick = db.query(GimmickHistoryDB).filter(
         GimmickHistoryDB.wrestler_id == wrestler_id,
-        GimmickHistoryDB.is_active == True,
+        GimmickHistoryDB.is_active,
     ).first()
 
     backstory = db.query(WrestlerBackstoryDB).filter(

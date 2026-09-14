@@ -11,8 +11,7 @@ from sqlalchemy.orm import Session
 
 from models.game_models import (
     WorldNewsDB, ShowDB, GameFederationDB, GameWrestlerDB,
-    GameNarrativeLogDB, ContractDB, ChampionshipDB,
-    SocialMediaPostDB, LifeEventDB, GimmickHistoryDB,
+    GameNarrativeLogDB, SocialMediaPostDB, LifeEventDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -122,7 +121,7 @@ def generate_weekly_dirt_sheet(db: Session, world_id: str, game_date: str):
 
     feds = db.query(GameFederationDB).filter(
         GameFederationDB.world_id == world_id,
-        GameFederationDB.is_active == True,
+        GameFederationDB.is_active,
     ).all()
 
     dirt_items = []
@@ -163,7 +162,7 @@ def generate_weekly_dirt_sheet(db: Session, world_id: str, game_date: str):
         unhappy = db.query(GameWrestlerDB).filter(
             GameWrestlerDB.id.in_(wrestler_ids),
             GameWrestlerDB.morale < 30,
-            GameWrestlerDB.is_active == True,
+            GameWrestlerDB.is_active,
         ).all() if wrestler_ids else []
 
         if len(unhappy) >= 2:
@@ -195,7 +194,7 @@ def generate_social_media_news(db: Session, world_id: str, game_date: str):
     viral_posts = db.query(SocialMediaPostDB).filter(
         SocialMediaPostDB.world_id == world_id,
         SocialMediaPostDB.game_date == game_date,
-        SocialMediaPostDB.is_viral == True,
+        SocialMediaPostDB.is_viral,
     ).all()
 
     for post in viral_posts:
@@ -238,7 +237,7 @@ def generate_life_event_news(db: Session, world_id: str, game_date: str):
     public_events = db.query(LifeEventDB).filter(
         LifeEventDB.world_id == world_id,
         LifeEventDB.game_date == game_date,
-        LifeEventDB.is_public == True,
+        LifeEventDB.is_public,
     ).all()
 
     for event in public_events:
@@ -271,7 +270,7 @@ def generate_life_event_news(db: Session, world_id: str, game_date: str):
 
 
 def generate_gimmick_change_news(db: Session, world_id: str, wrestler: GameWrestlerDB,
-                                  old_gimmick: str, new_gimmick: str, game_date: str):
+                                 old_gimmick: str, new_gimmick: str, game_date: str):
     """Generate news about a wrestler's gimmick change/repackaging."""
     db.add(WorldNewsDB(
         world_id=world_id,

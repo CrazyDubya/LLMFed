@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class APIError(Exception):
     """Base class for API errors."""
-    
+
     def __init__(
         self,
         message: str,
@@ -34,7 +34,7 @@ class APIError(Exception):
 
 class ResourceNotFoundError(APIError):
     """Raised when a requested resource is not found."""
-    
+
     def __init__(self, resource_type: str, resource_id: str):
         super().__init__(
             message=f"{resource_type} not found",
@@ -45,7 +45,7 @@ class ResourceNotFoundError(APIError):
 
 class ResourceAlreadyExistsError(APIError):
     """Raised when trying to create a resource that already exists."""
-    
+
     def __init__(self, resource_type: str, identifier: str):
         super().__init__(
             message=f"{resource_type} already exists",
@@ -56,7 +56,7 @@ class ResourceAlreadyExistsError(APIError):
 
 class UnauthorizedError(APIError):
     """Raised when authentication fails."""
-    
+
     def __init__(self, message: str = "Authentication required"):
         super().__init__(
             message=message,
@@ -66,7 +66,7 @@ class UnauthorizedError(APIError):
 
 class ForbiddenError(APIError):
     """Raised when user doesn't have permission."""
-    
+
     def __init__(self, message: str = "Permission denied"):
         super().__init__(
             message=message,
@@ -76,7 +76,7 @@ class ForbiddenError(APIError):
 
 class ServiceUnavailableError(APIError):
     """Raised when a required service is unavailable."""
-    
+
     def __init__(self, service: str, details: str = None):
         super().__init__(
             message=f"Service unavailable: {service}",
@@ -93,13 +93,13 @@ def create_error_response(
 ) -> JSONResponse:
     """
     Create a standardized error response.
-    
+
     Args:
         message: Error message
         status_code: HTTP status code
         details: Additional error details
         error_code: Internal error code for tracking
-        
+
     Returns:
         JSONResponse with error details
     """
@@ -108,13 +108,13 @@ def create_error_response(
         "message": message,
         "status_code": status_code
     }
-    
+
     if details:
         response_data["details"] = details
-    
+
     if error_code:
         response_data["error_code"] = error_code
-    
+
     return JSONResponse(
         status_code=status_code,
         content=response_data
@@ -131,7 +131,7 @@ async def api_error_handler(request: Request, exc: APIError) -> JSONResponse:
             "path": request.url.path
         }
     )
-    
+
     return create_error_response(
         message=exc.message,
         status_code=exc.status_code,
@@ -148,7 +148,7 @@ async def validation_error_handler(
         f"Validation error on {request.url.path}",
         extra={"errors": str(exc)}
     )
-    
+
     if isinstance(exc, RequestValidationError):
         errors = exc.errors()
         details = {
@@ -168,7 +168,7 @@ async def validation_error_handler(
     else:
         details = {"message": str(exc)}
         message = "Validation error"
-    
+
     return create_error_response(
         message=message,
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -183,7 +183,7 @@ async def database_error_handler(request: Request, exc: SQLAlchemyError) -> JSON
         f"Database error on {request.url.path}: {str(exc)}",
         exc_info=True
     )
-    
+
     if isinstance(exc, IntegrityError):
         # Handle constraint violations
         message = "Database constraint violation"
@@ -194,7 +194,7 @@ async def database_error_handler(request: Request, exc: SQLAlchemyError) -> JSON
         message = "Database operation failed"
         details = {"error": "An error occurred while accessing the database"}
         status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-    
+
     return create_error_response(
         message=message,
         status_code=status_code,
@@ -211,7 +211,7 @@ async def http_exception_handler(
     logger.warning(
         f"HTTP {exc.status_code} on {request.url.path}: {exc.detail}"
     )
-    
+
     return create_error_response(
         message=str(exc.detail),
         status_code=exc.status_code,
@@ -225,11 +225,11 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
         f"Unhandled exception on {request.url.path}: {str(exc)}",
         exc_info=True
     )
-    
+
     # In production, don't expose internal error details
     import os
     debug_mode = os.getenv("DEBUG_MODE", "false").lower() == "true"
-    
+
     if debug_mode:
         import re
         exc_msg = str(exc)
@@ -247,7 +247,7 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
         }
     else:
         details = None
-    
+
     return create_error_response(
         message="An internal server error occurred",
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -259,7 +259,7 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
 def register_error_handlers(app):
     """
     Register all error handlers with the FastAPI application.
-    
+
     Args:
         app: FastAPI application instance
     """
@@ -269,5 +269,5 @@ def register_error_handlers(app):
     app.add_exception_handler(SQLAlchemyError, database_error_handler)
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(Exception, generic_exception_handler)
-    
+
     logger.info("Error handlers registered")

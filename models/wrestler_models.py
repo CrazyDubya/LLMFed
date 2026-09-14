@@ -97,7 +97,7 @@ class GameWrestlerDB(Base):
     contracts = relationship("ContractDB", back_populates="wrestler")
     match_participations = relationship("MatchParticipantDB", back_populates="wrestler")
     promos = relationship("PromoDB", back_populates="wrestler",
-                         foreign_keys="PromoDB.wrestler_id")
+                          foreign_keys="PromoDB.wrestler_id")
     storyline_roles = relationship("StorylineParticipantDB", back_populates="wrestler")
     title_reigns = relationship("ChampionshipHistoryDB", back_populates="wrestler")
     history_entries = relationship("WrestlerHistoryDB", back_populates="wrestler")

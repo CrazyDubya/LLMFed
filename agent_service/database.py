@@ -31,6 +31,7 @@ AsyncSessionLocal = async_sessionmaker(
 
 Base = declarative_base()
 
+
 async def get_db():
     """Async dependency to yield a database session."""
     async with AsyncSessionLocal() as session:
@@ -38,6 +39,7 @@ async def get_db():
             yield session
         finally:
             await session.close()
+
 
 async def init_db():
     """Initialize the database tables asynchronously."""

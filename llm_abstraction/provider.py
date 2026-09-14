@@ -1,28 +1,32 @@
+import threading
+from core_engine.exceptions import LLMError, LLMNetworkError
 import json
 import logging
 import os
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterator, List, Optional, Union
+from typing import Any, Dict, Iterator, List, Optional
 import httpx
 from core_engine.dispatcher import LLMDispatcher
 
 logger = logging.getLogger(__name__)
 
 # Re-use custom exceptions
-from core_engine.exceptions import LLMError, LLMNetworkError, LLMFormatError, GameLogicError
+
 
 @dataclass
 class LLMMessage:
     role: str
     content: str
 
+
 @dataclass
 class StreamChunk:
     text: str
     is_final: bool = False
     usage: Optional[Dict[str, int]] = None
+
 
 @dataclass
 class LLMResponse:
@@ -34,9 +38,18 @@ class LLMResponse:
     cost_usd: float = 0.0
     latency_ms: float = 0.0
 
-class LLMPermanentError(LLMError): pass
-class LLMTransientError(LLMError): pass
-class BudgetExceededError(LLMError): pass
+
+class LLMPermanentError(LLMError):
+    pass
+
+
+class LLMTransientError(LLMError):
+    pass
+
+
+class BudgetExceededError(LLMError):
+    pass
+
 
 def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
     # simple estimate
@@ -47,6 +60,7 @@ def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> flo
     }
     rate_p, rate_c = rates.get(model, (0.001 / 1000, 0.002 / 1000))
     return (prompt_tokens * rate_p) + (completion_tokens * rate_c)
+
 
 class LLMProviderBase(ABC):
     def __init__(self, model: str, **kwargs):
@@ -67,6 +81,7 @@ class LLMProviderBase(ABC):
 
     def generate_stream(self, messages: List[LLMMessage], **kwargs) -> Iterator[StreamChunk]:
         raise NotImplementedError()
+
 
 class OpenAIProvider(LLMProviderBase):
     def validate_config(self) -> bool:
@@ -109,6 +124,7 @@ class OpenAIProvider(LLMProviderBase):
         except Exception as e:
             raise LLMNetworkError(f"OpenAI network error: {e}")
 
+
 class OllamaProvider(LLMProviderBase):
     def validate_config(self) -> bool:
         return True
@@ -118,7 +134,7 @@ class OllamaProvider(LLMProviderBase):
         # Ensure it points to the chat completions endpoint if standard ollama
         url = base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
         if "11434/v1" in base_url and not base_url.endswith("/chat/completions"):
-             url = "http://127.0.0.1:11434/v1/chat/completions"
+            url = "http://127.0.0.1:11434/v1/chat/completions"
 
         t0 = time.monotonic()
         payload = {
@@ -146,10 +162,12 @@ class OllamaProvider(LLMProviderBase):
         except Exception as e:
             raise LLMNetworkError(f"Ollama network error: {e}")
 
+
 _PROVIDER_REGISTRY: Dict[str, type] = {
     "openai": OpenAIProvider,
     "ollama": OllamaProvider,
 }
+
 
 @dataclass
 class TokenBudget:
@@ -173,7 +191,7 @@ class TokenBudget:
 
     def check_budget(self) -> None:
         if self.hard_limit_usd > 0 and self.lifetime_cost_usd >= self.hard_limit_usd:
-            raise BudgetExceededError(f"LLM budget hard limit reached")
+            raise BudgetExceededError("LLM budget hard limit reached")
         if self.soft_limit_usd > 0 and self.lifetime_cost_usd >= self.soft_limit_usd and not self._soft_warned:
             self._soft_warned = True
 
@@ -189,6 +207,7 @@ class TokenBudget:
             self.total_completion_tokens += completion
             self.lifetime_prompt_tokens += prompt
             self.lifetime_completion_tokens += completion
+
 
 class LLMAbstraction:
     """
@@ -218,7 +237,7 @@ class LLMAbstraction:
                     provider = self._create_provider(provider_name)
                     if provider.validate_config():
                         return provider
-                except Exception as e:
+                except Exception:
                     pass
             raise RuntimeError("No LLM provider could be initialized")
 
@@ -275,11 +294,12 @@ class LLMAbstraction:
             "meta": fallback.meta,
         }
 
+
 # Keeping these for backwards compatibility until everything is refactored, but they should be avoided
 # in favor of Dependency Injection
-import threading
 _default_llm: Optional[LLMAbstraction] = None
 _default_llm_lock = threading.Lock()
+
 
 def get_llm() -> LLMAbstraction:
     global _default_llm
@@ -288,6 +308,7 @@ def get_llm() -> LLMAbstraction:
             if _default_llm is None:
                 _default_llm = LLMAbstraction(provider="auto")
     return _default_llm
+
 
 def reset_llm() -> None:
     global _default_llm

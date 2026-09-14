@@ -5,11 +5,25 @@ Each tick processes player actions, AI decisions, scheduled shows,
 storyline progression, economy, and world events.
 """
 
+from models.game_models import (
+    WorldDB, PlayerActionDB, GameFederationDB, GameWrestlerDB,
+    WrestlerStatsDB, ContractDB, ShowDB, MatchDB,
+    MatchParticipantDB, StorylineDB,
+    GameNarrativeLogDB, WorldNewsDB, WrestlerRelationshipDB,
+    TagTeamDB,
+)
+from game_service.show_simulation_service import simulate_show
+from game_service.tag_team_data import generate_tag_team_name
+from game_service.ticker_query_helpers import (
+    get_active_wrestlers, get_npc_federations, get_active_federations,
+)
+from game_service import inter_federation_service
+from game_service.player_action_handler import PlayerActionHandler, get_active_contract
 import logging
 import os
 import random
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List
 from sqlalchemy.orm import Session
 
 # LLM integration gate — set LLMFED_USE_LLM=1 to enable LLM-generated narrative
@@ -33,21 +47,6 @@ def _llm_generate(prompt: str, fallback: str, system_msg: str = None) -> str:
         logging.getLogger(__name__).debug("LLM generation failed, using fallback: %s", e)
     return fallback
 
-from models.game_models import (
-    WorldDB, WorldStateDB, PlayerActionDB, GameFederationDB,
-    GameWrestlerDB, WrestlerStatsDB, ContractDB, ShowDB,
-    MatchDB, MatchParticipantDB,
-    StorylineDB, StorylineParticipantDB, GameNarrativeLogDB,
-    WorldNewsDB, WrestlerHistoryDB, ChampionshipDB,
-    WrestlerRelationshipDB, TagTeamDB, TalentOfferDB,
-)
-from game_service.player_action_handler import PlayerActionHandler, get_active_contract
-from game_service import inter_federation_service
-from game_service.ticker_query_helpers import (
-    get_active_wrestlers, get_npc_federations, get_active_federations,
-)
-from game_service.tag_team_data import generate_tag_team_name
-from game_service.show_simulation_service import simulate_show
 
 logger = logging.getLogger(__name__)
 
@@ -267,7 +266,7 @@ class WorldTicker:
         return self.db.query(PPVEventDB).filter(
             PPVEventDB.federation_id == fed.id,
             PPVEventDB.scheduled_date == game_date,
-            PPVEventDB.is_completed == False,
+            PPVEventDB.is_completed.is_(False),
         ).first()
 
     def _npc_book_ppv_show(self, fed: GameFederationDB, ppv):
@@ -336,7 +335,7 @@ class WorldTicker:
 
     def _npc_vision_check(self, fed: GameFederationDB, game_date: str):
         """Weekly strategic check — plan PPV cards and adapt to hot/cold acts."""
-        from models.game_models import BookingVisionDB, PPVEventDB
+        from models.game_models import BookingVisionDB
         from game_service.ppv_calendar_service import (
             get_next_ppv, is_build_window, plan_ppv_card_from_vision,
         )
@@ -392,7 +391,7 @@ class WorldTicker:
         shows = self.db.query(ShowDB).filter(
             ShowDB.world_id == self.world.id,
             ShowDB.game_date == game_date,
-            ShowDB.is_completed == False,
+            ShowDB.is_completed.is_(False),
         ).all()
 
         for show in shows:
@@ -529,7 +528,7 @@ class WorldTicker:
 
         wrestlers = self.db.query(GameWrestlerDB).filter(
             GameWrestlerDB.world_id == self.world.id,
-            GameWrestlerDB.is_active == True,
+            GameWrestlerDB.is_active,
             GameWrestlerDB.age >= 34,
         ).all()
 
@@ -556,7 +555,7 @@ class WorldTicker:
         expiring = self.db.query(ContractDB).filter(
             ContractDB.world_id == self.world.id,
             ContractDB.status == "active",
-            ContractDB.end_date != None,
+            ContractDB.end_date is not None,
             ContractDB.end_date <= game_date,
         ).all()
 
@@ -691,7 +690,7 @@ class WorldTicker:
         # Check existing teams
         existing_teams = self.db.query(TagTeamDB).filter(
             TagTeamDB.world_id == self.world.id,
-            TagTeamDB.is_active == True,
+            TagTeamDB.is_active,
         ).all()
         teamed_ids = set()
         for t in existing_teams:
@@ -744,7 +743,7 @@ class WorldTicker:
         """Dissolve tag teams where members have diverged."""
         teams = self.db.query(TagTeamDB).filter(
             TagTeamDB.world_id == self.world.id,
-            TagTeamDB.is_active == True,
+            TagTeamDB.is_active,
         ).all()
 
         for team in teams:
@@ -1041,8 +1040,8 @@ class WorldTicker:
             wrestler_ids = self._get_fed_roster_ids(fed)
             wrestlers = self.db.query(GameWrestlerDB).filter(
                 GameWrestlerDB.id.in_(wrestler_ids),
-                GameWrestlerDB.is_active == True,
-                GameWrestlerDB.is_injured == False,
+                GameWrestlerDB.is_active,
+                GameWrestlerDB.is_injured.is_(False),
             ).order_by(GameWrestlerDB.popularity.desc()).limit(8).all()
 
             if len(wrestlers) < 4:
@@ -1086,14 +1085,14 @@ class WorldTicker:
 
     def _generate_year_end_summary(self, game_date: str):
         """Generate year-end awards and summary news. Fires on Dec 31."""
-        news_svc = _get_news_service()
+        _get_news_service()
         year = game_date[:4]
 
         # Find all completed shows this year
         year_start = f"{year}-01-01"
         shows = self.db.query(ShowDB).filter(
             ShowDB.world_id == self.world.id,
-            ShowDB.is_completed == True,
+            ShowDB.is_completed,
             ShowDB.game_date >= year_start,
             ShowDB.game_date <= game_date,
         ).all()
@@ -1104,15 +1103,15 @@ class WorldTicker:
         # Most popular wrestler (current popularity)
         wrestlers = self.db.query(GameWrestlerDB).filter(
             GameWrestlerDB.world_id == self.world.id,
-            GameWrestlerDB.is_active == True,
+            GameWrestlerDB.is_active,
         ).order_by(GameWrestlerDB.popularity.desc()).all()
         wrestler_of_year = wrestlers[0] if wrestlers else None
 
         # Best match of the year
         best_match = self.db.query(MatchDB).filter(
             MatchDB.world_id == self.world.id,
-            MatchDB.is_completed == True,
-            MatchDB.match_rating != None,
+            MatchDB.is_completed,
+            MatchDB.match_rating is not None,
             MatchDB.game_date >= year_start,
         ).order_by(MatchDB.match_rating.desc()).first()
 
@@ -1125,8 +1124,8 @@ class WorldTicker:
             )
             .join(MatchDB)
             .filter(
-                MatchParticipantDB.is_winner == True,
-                MatchDB.is_completed == True,
+                MatchParticipantDB.is_winner,
+                MatchDB.is_completed,
                 MatchDB.game_date >= year_start,
                 MatchDB.game_date <= game_date,
             )
@@ -1146,7 +1145,7 @@ class WorldTicker:
         # Federation of the year (highest momentum)
         feds = self.db.query(GameFederationDB).filter(
             GameFederationDB.world_id == self.world.id,
-            GameFederationDB.is_active == True,
+            GameFederationDB.is_active,
         ).order_by(GameFederationDB.momentum.desc()).all()
         fed_of_year = feds[0] if feds else None
 
@@ -1165,7 +1164,8 @@ class WorldTicker:
         if most_wins_wrestler:
             awards.append(f"Most Dominant: {most_wins_wrestler.name} ({most_wins_count} wins)")
         if fed_of_year:
-            awards.append(f"Federation of the Year: {fed_of_year.short_name or fed_of_year.name} (Momentum: {fed_of_year.momentum})")
+            awards.append(
+                f"Federation of the Year: {fed_of_year.short_name or fed_of_year.name} (Momentum: {fed_of_year.momentum})")
 
         summary = f"YEAR IN REVIEW {year}\n" + "\n".join(f"  - {a}" for a in awards)
 

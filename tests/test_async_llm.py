@@ -1,8 +1,7 @@
 """Tests for async LLM support."""
 
-import asyncio
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from llm_abstraction.provider import (
     LLMAbstraction,

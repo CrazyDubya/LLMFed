@@ -19,10 +19,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from models.game_models import (
-    BookingVisionDB, WrestlerPushDB, PPVEventDB,
-    GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    ContractDB, ChampionshipDB, StorylineDB, StorylineParticipantDB,
-    WrestlerRelationshipDB,
+    BookingVisionDB, WrestlerPushDB, GameFederationDB,
+    GameWrestlerDB, WrestlerStatsDB, ChampionshipDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -102,7 +100,7 @@ def generate_federation_vision(
     main_eventers = push_tiers.get("main_event", [])
     crown_jewel = {
         "theme": "The biggest show of the year",
-        "main_event_dream": f"Championship match between the top two stars",
+        "main_event_dream": "Championship match between the top two stars",
         "ideal_wrestlers": main_eventers[:4] if main_eventers else [],
     }
 
@@ -253,7 +251,7 @@ def _build_title_pipelines(
     """Build title pipelines — who challenges next for each belt."""
     championships = db.query(ChampionshipDB).filter(
         ChampionshipDB.federation_id == federation.id,
-        ChampionshipDB.is_active == True,
+        ChampionshipDB.is_active,
     ).all()
 
     pipelines = {}
@@ -386,7 +384,7 @@ def adapt_vision_for_injury(
             pipeline["next_challengers"] = [
                 c for c in pipeline["next_challengers"] if c != wrestler_id
             ]
-            changes.append(f"Removed from title challenger pipeline (injury)")
+            changes.append("Removed from title challenger pipeline (injury)")
 
     vision.title_pipelines = pipelines
     flag_modified(vision, "title_pipelines")
@@ -397,10 +395,10 @@ def adapt_vision_for_injury(
         if wrestler_id in sl.get("wrestler_ids", []):
             if weeks_out >= 6:
                 sl["status"] = "cancelled"
-                changes.append(f"Planned storyline cancelled (injury)")
+                changes.append("Planned storyline cancelled (injury)")
             else:
                 sl["status"] = "delayed"
-                changes.append(f"Planned storyline delayed (injury)")
+                changes.append("Planned storyline delayed (injury)")
 
     vision.planned_storylines = planned
     flag_modified(vision, "planned_storylines")

@@ -13,7 +13,6 @@ try:
         decode_token,
         generate_api_key,
         validate_production_config,
-        TokenData,
         ROLE_HIERARCHY,
         get_password_hash,
         verify_password,
@@ -74,14 +73,14 @@ class TestRoleHierarchy:
 class TestProductionValidation:
     def test_default_key_in_prod_raises(self):
         with patch.dict(os.environ, {"ENV": "production"}), \
-             patch("api_gateway.security._IS_PRODUCTION", True), \
-             patch("api_gateway.security.SECRET_KEY", "dev-secret-key-change-in-production"):
+                patch("api_gateway.security._IS_PRODUCTION", True), \
+                patch("api_gateway.security.SECRET_KEY", "dev-secret-key-change-in-production"):
             with pytest.raises(RuntimeError, match="FATAL"):
                 validate_production_config()
 
     def test_custom_key_in_prod_ok(self):
         with patch("api_gateway.security._IS_PRODUCTION", True), \
-             patch("api_gateway.security.SECRET_KEY", "a-real-strong-key-here"):
+                patch("api_gateway.security.SECRET_KEY", "a-real-strong-key-here"):
             # Should not raise
             validate_production_config()
 

@@ -1,4 +1,3 @@
-from sqlalchemy.ext.asyncio import AsyncSession
 """
 Observability routes — metrics, LLM health, and match config.
 
@@ -13,6 +12,8 @@ import time
 from typing import Any, Dict
 
 from fastapi import APIRouter
+
+from llm_abstraction import get_llm
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["monitoring"])
@@ -53,7 +54,7 @@ async def get_metrics() -> Dict[str, Any]:
 
     # LLM cache stats (if async wrapper is in use)
     try:
-        from llm_abstraction.cache import LLMResponseCache
+        pass
         # The cache stats are best accessed through AsyncLLM instances,
         # but we expose a basic cache summary if the singleton exists.
         metrics["llm_cache_note"] = "Use AsyncLLM.cache_stats() for per-instance cache metrics"

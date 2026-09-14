@@ -62,7 +62,7 @@ async def api_get_wrestler(
         # Get active storylines
         storyline_parts = db.query(StorylineParticipantDB).filter(
             StorylineParticipantDB.wrestler_id == wrestler_id,
-            StorylineParticipantDB.left_date == None,
+            StorylineParticipantDB.left_date is None,
         ).all()
 
         # Compute win/loss record

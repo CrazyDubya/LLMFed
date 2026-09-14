@@ -4,7 +4,7 @@ Federation models: federations, PPV events, booking visions, wrestler pushes, ta
 
 from sqlalchemy import (
     Column, String, Integer, Float, DateTime, JSON, ForeignKey, Text, Boolean,
-    UniqueConstraint, Index,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
@@ -117,7 +117,8 @@ class PPVEventDB(Base):
 
     # Penciled-in main event (may change)
     planned_main_event = Column(JSON, default=dict)  # {wrestler_ids: [], title_id: str, storyline_id: str}
-    planned_matches = Column(JSON, default=list)  # [{wrestler_ids, title_id, match_type, storyline_id, status: "penciled"|"ink"}]
+    # [{wrestler_ids, title_id, match_type, storyline_id, status: "penciled"|"ink"}]
+    planned_matches = Column(JSON, default=list)
 
     created_at = Column(DateTime, default=_utc_now)
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
@@ -195,7 +196,8 @@ class WrestlerPushDB(Base):
     federation_id = Column(String, ForeignKey("game_federations.id"), nullable=False, index=True)
     wrestler_id = Column(String, ForeignKey("game_wrestlers.id"), nullable=False, index=True)
 
-    push_tier = Column(String(20), default="midcard")  # main_event, upper_midcard, midcard, lower_card, jobber, developmental
+    # main_event, upper_midcard, midcard, lower_card, jobber, developmental
+    push_tier = Column(String(20), default="midcard")
     direction = Column(String(20), default="established")  # rising, established, transitional, cooling_off
     confidence = Column(Integer, default=50)  # 0-100, how confident the booker is in this push
     protected = Column(Boolean, default=False)  # Protected wrestlers don't job clean

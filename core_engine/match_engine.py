@@ -64,7 +64,7 @@ logger = logging.getLogger(__name__)
 # Static data — moved to match_data.py for cleanliness, re-exported here
 # ---------------------------------------------------------------------------
 
-from core_engine.match_data import (  # noqa: E402
+from core_engine.match_data import (  # noqa: E402,F401
     MOVES, SIGNATURE_MOVE_POOLS, ARCHETYPE_FINISHERS,
     CAGE_SPOTS, LADDER_SPOTS, TABLE_SPOTS, HELL_IN_A_CELL_SPOTS,
     IRON_MAN_FALL_DESCRIPTIONS,
@@ -427,7 +427,8 @@ class MatchSimulator:
         attack_stat = attacker.stats.get(category, STAT_BASELINE)
         defense_stat = defender.stats.get("toughness", STAT_BASELINE)
         stamina_factor = attacker.stamina / 100
-        damage = int(base_damage * (attack_stat / STAT_BASELINE) * stamina_factor * (1 - defense_stat / DEFENSE_DIVISOR))
+        damage = int(base_damage * (attack_stat / STAT_BASELINE) *
+                     stamina_factor * (1 - defense_stat / DEFENSE_DIVISOR))
         damage = max(BASE_DAMAGE_MIN, damage)
 
         # Hometown advantage: small damage boost
@@ -437,7 +438,6 @@ class MatchSimulator:
         # --- BOTCH CHECK: moves can go wrong ---
         is_botch, botch_severity, damage = self._check_botch(
             category, base_damage, attack_stat, attacker.stamina, damage)
-
 
         # Check for reversal
         was_reversed = False
@@ -541,10 +541,14 @@ class MatchSimulator:
             desc, base_dmg, stype = random.choice(LADDER_SPOTS)
             if stype == "climb":
                 if attacker.momentum > LADDER_CLIMB_MOMENTUM_THRESHOLD:
-                    return self._build_special_stip_spot(attacker, defender,
-                        "Ladder Climb", "aerial",
+                    return self._build_special_stip_spot(
+                        attacker,
+                        defender,
+                        "Ladder Climb",
+                        "aerial",
                         f"{attacker.name} is climbing the ladder! Fingers inches from the prize!",
-                        "This could be it!", 6)
+                        "This could be it!",
+                        6)
                 return None
             return self._build_stipulation_hit(attacker, defender, desc, base_dmg, "power",
                                                "Ladder Spot", stype, 5, ["OH MY GOD!"], (3, 7))
@@ -553,9 +557,9 @@ class MatchSimulator:
             desc, base_dmg, stype = random.choice(TABLE_SPOTS)
             if stype == "setup":
                 return self._build_special_stip_spot(attacker, defender,
-                    "Table Setup", "power",
-                    f"{attacker.name} {desc}!",
-                    "The crowd knows what's coming!", 3)
+                                                     "Table Setup", "power",
+                                                     f"{attacker.name} {desc}!",
+                                                     "The crowd knows what's coming!", 3)
             return self._build_stipulation_hit(attacker, defender, desc, base_dmg, "power",
                                                "Table Spot", stype, 8, ["THROUGH THE TABLE!"], (5, 8))
 
@@ -563,16 +567,16 @@ class MatchSimulator:
             desc, base_dmg, stype = random.choice(HELL_IN_A_CELL_SPOTS)
             if stype == "climb":
                 return self._build_special_stip_spot(attacker, defender,
-                    "Cell Climb", "aerial",
-                    f"{attacker.name} {desc}! This is getting dangerous!",
-                    "Don't do it! DON'T DO IT!", 7)
+                                                     "Cell Climb", "aerial",
+                                                     f"{attacker.name} {desc}! This is getting dangerous!",
+                                                     "Don't do it! DON'T DO IT!", 7)
             return self._build_stipulation_hit(attacker, defender, desc, base_dmg, "brawling",
                                                "Cell Spot", stype, 5, ["GOOD GOD ALMIGHTY!"], (4, 8))
 
         return None
 
     def _build_special_stip_spot(self, attacker, defender, move_name, move_type,
-                                  description, crowd_reaction, heat_change):
+                                 description, crowd_reaction, heat_change):
         """Build a zero-damage stipulation spot (escapes, climbs, setups)."""
         return MatchSpot(
             tick=self.tick, attacker_id=attacker.wrestler_id,
@@ -583,7 +587,7 @@ class MatchSimulator:
         )
 
     def _build_stipulation_hit(self, attacker, defender, desc, base_dmg, stat_key,
-                                move_name, move_type, min_damage, reactions, heat_range):
+                               move_name, move_type, min_damage, reactions, heat_range):
         """Build a damage-dealing stipulation spot with stat scaling."""
         damage = int(base_dmg * self._stat_multiplier(attacker, stat_key))
         reaction = random.choice(reactions) if isinstance(reactions, list) else reactions
@@ -598,7 +602,7 @@ class MatchSimulator:
         )
 
     def _check_botch(self, category: str, base_damage: int, attack_stat: int,
-                      stamina: float, damage: int) -> tuple:
+                     stamina: float, damage: int) -> tuple:
         """Check if a move is botched. Returns (is_botch, severity, modified_damage)."""
         move_difficulty = base_damage / 15.0
         if category == "aerial":
@@ -893,7 +897,8 @@ class MatchSimulator:
                       participants: List[MatchParticipantState]) -> MatchResult:
         """Build the final MatchResult."""
         # Generate narrative summary
-        highlights = [s for s in self.spots if s.damage >= HIGHLIGHT_DAMAGE_THRESHOLD or s.is_near_fall or s.is_finisher]
+        highlights = [s for s in self.spots if s.damage >=
+                      HIGHLIGHT_DAMAGE_THRESHOLD or s.is_near_fall or s.is_finisher]
         narrative_parts = [s.description for s in highlights[-5:]]  # Last 5 highlights
         narrative = " ".join(narrative_parts)
 
@@ -963,7 +968,7 @@ class MatchSimulator:
 # Re-exported here for backward compatibility.
 # ---------------------------------------------------------------------------
 
-from core_engine.match_db_integration import (  # noqa: E402
+from core_engine.match_db_integration import (  # noqa: E402,F401
     _build_stat_modifiers,
     simulate_match_from_db,
     _generate_post_match_angle,

@@ -69,44 +69,44 @@ WEIGHT_CLASSES = ["lightweight", "cruiserweight", "middleweight", "heavyweight",
 VENUES = {
     "Northeast": {
         "club": ["The Hammerstein Ballroom", "The ECW Arena", "The Manhattan Center",
-                  "Webster Hall", "The Palladium"],
+                 "Webster Hall", "The Palladium"],
         "arena": ["Madison Square Garden Theater", "Boardwalk Hall", "The Prudential Center",
-                   "Nassau Coliseum", "Barclays Center", "TD Garden"],
+                  "Nassau Coliseum", "Barclays Center", "TD Garden"],
         "stadium": ["MetLife Stadium", "Yankee Stadium", "Gillette Stadium"],
     },
     "Southeast": {
         "club": ["Center Stage Theater", "The Impact Zone", "The Sportatorium",
-                  "The Cajun Dome Club", "The Warehouse"],
+                 "The Cajun Dome Club", "The Warehouse"],
         "arena": ["The Omni", "Greensboro Coliseum", "The Civic Center",
-                   "Amway Center", "Bridgestone Arena", "FedExForum"],
+                  "Amway Center", "Bridgestone Arena", "FedExForum"],
         "stadium": ["The Georgia Dome", "Raymond James Stadium", "Bank of America Stadium"],
     },
     "Midwest": {
         "club": ["The Odeum", "Davis Arena", "The Rave",
-                  "Harley Race Arena", "The Coliseum Club"],
+                 "Harley Race Arena", "The Coliseum Club"],
         "arena": ["Allstate Arena", "Rupp Arena", "The Kiel Center",
-                   "Joe Louis Arena", "The Bradley Center", "Bankers Life Fieldhouse"],
+                  "Joe Louis Arena", "The Bradley Center", "Bankers Life Fieldhouse"],
         "stadium": ["Soldier Field", "Ford Field", "Lucas Oil Stadium"],
     },
     "Southwest": {
         "club": ["The Bomb Factory", "The Aztec Theater", "The Pavilion",
-                  "South Side Ballroom", "The Pit"],
+                 "South Side Ballroom", "The Pit"],
         "arena": ["The Alamodome Theater", "American Airlines Center", "Dickies Arena",
-                   "The Toyota Center", "Desert Diamond Arena", "Moody Center"],
+                  "The Toyota Center", "Desert Diamond Arena", "Moody Center"],
         "stadium": ["AT&T Stadium", "NRG Stadium", "The Alamodome"],
     },
     "West Coast": {
         "club": ["The Grand Olympic Auditorium", "The Shrine Expo", "The Cow Palace Club",
-                  "The Hollywood Palladium", "The Showbox"],
+                 "The Hollywood Palladium", "The Showbox"],
         "arena": ["The Staples Center", "Oracle Arena", "The Forum",
-                   "T-Mobile Arena", "Moda Center", "Climate Pledge Arena"],
+                  "T-Mobile Arena", "Moda Center", "Climate Pledge Arena"],
         "stadium": ["SoFi Stadium", "Levi's Stadium", "Allegiant Stadium"],
     },
     "International": {
         "club": ["The Budokan Hall", "York Hall", "Korakuen Hall",
-                  "Arena Mexico", "Wembley Arena Club"],
+                 "Arena Mexico", "Wembley Arena Club"],
         "arena": ["Tokyo Dome City Hall", "Manchester Arena", "The O2 Arena",
-                   "Osaka-Jo Hall", "Ryogoku Kokugikan", "Wembley Arena"],
+                  "Osaka-Jo Hall", "Ryogoku Kokugikan", "Wembley Arena"],
         "stadium": ["Tokyo Dome", "Wembley Stadium", "Melbourne Cricket Ground"],
     },
 }
@@ -417,7 +417,7 @@ def create_player(db: Session, user_id: str, world_id: str, player_type: str,
 
     # Check player limit
     existing_count = db.query(PlayerDB).filter(
-        PlayerDB.world_id == world_id, PlayerDB.is_active == True
+        PlayerDB.world_id == world_id, PlayerDB.is_active
     ).count()
     if existing_count >= world.max_players:
         raise ValueError("World is full")
@@ -595,7 +595,7 @@ def get_free_agents(db: Session, world_id: str) -> list:
     ).scalar_subquery()
     return db.query(GameWrestlerDB).filter(
         GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active == True,
+        GameWrestlerDB.is_active,
         ~GameWrestlerDB.id.in_(contracted_ids),
     ).all()
 
@@ -604,7 +604,7 @@ def get_world_federations(db: Session, world_id: str) -> list:
     """Get all federations in a world."""
     return db.query(GameFederationDB).filter(
         GameFederationDB.world_id == world_id,
-        GameFederationDB.is_active == True,
+        GameFederationDB.is_active,
     ).all()
 
 
@@ -612,7 +612,7 @@ def get_world_wrestlers(db: Session, world_id: str, limit: int = 100) -> list:
     """Get wrestlers in a world."""
     return db.query(GameWrestlerDB).filter(
         GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active == True,
+        GameWrestlerDB.is_active,
     ).limit(limit).all()
 
 

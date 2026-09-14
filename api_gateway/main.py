@@ -5,6 +5,24 @@ Route handlers live in ``api_gateway/routes/`` and ``api_gateway/game_routes.py`
 This module wires them together with middleware, error handling, and CORS.
 """
 
+from api_gateway.websocket_hub import websocket_endpoint, start_reaper
+from api_gateway.routes.metrics_routes import router as metrics_router
+from api_gateway.routes.core_routes import router as core_router
+from api_gateway.game_routes import router as game_router
+from api_gateway.logging_config import setup_logging, logging_middleware
+from api_gateway.error_handlers import register_error_handlers
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Request
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry import trace
+from redis import asyncio as aioredis
+from fastapi_cache.backends.redis import RedisBackend
+from fastapi_cache import FastAPICache
 import os
 import sys
 import logging
@@ -19,13 +37,6 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 
-from fastapi_cache import FastAPICache
-from fastapi_cache.backends.redis import RedisBackend
-from redis import asyncio as aioredis
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-
 # Setup OpenTelemetry
 provider = TracerProvider()
 processor = BatchSpanProcessor(ConsoleSpanExporter())
@@ -33,19 +44,6 @@ provider.add_span_processor(processor)
 trace.set_tracer_provider(provider)
 tracer = trace.get_tracer(__name__)
 
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
-
-from api_gateway.error_handlers import register_error_handlers
-from api_gateway.logging_config import setup_logging, logging_middleware
-from api_gateway.game_routes import router as game_router
-from api_gateway.routes.core_routes import router as core_router
-from api_gateway.routes.metrics_routes import router as metrics_router
-from api_gateway.websocket_hub import websocket_endpoint, start_reaper
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -145,6 +143,8 @@ register_error_handlers(app)
 # ---------------------------------------------------------------------------
 # Startup / shutdown
 # ---------------------------------------------------------------------------
+
+
 @app.on_event("startup")
 async def _on_startup():
     start_reaper()
@@ -156,7 +156,6 @@ async def _on_startup():
         FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
     except Exception as e:
         logger.warning(f"Failed to connect to redis, caching disabled: {e}")
-
 
 
 # ---------------------------------------------------------------------------

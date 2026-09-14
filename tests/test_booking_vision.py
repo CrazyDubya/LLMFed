@@ -13,8 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from models.db_models import Base
 from models.game_models import (
     WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    ContractDB, ChampionshipDB, BookingVisionDB, WrestlerPushDB,
-    PPVEventDB, WrestlerRelationshipDB,
+    ContractDB, ChampionshipDB, WrestlerPushDB, PPVEventDB,
 )
 
 

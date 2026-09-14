@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agent_service.database import get_db
 from api_gateway.security import (
     get_current_user,
-    require_role,
     TokenData,
     create_token_pair,
     decode_token,
