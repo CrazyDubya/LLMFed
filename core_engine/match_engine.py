@@ -902,6 +902,11 @@ class MatchSimulator:
         narrative_parts = [s.description for s in highlights[-5:]]  # Last 5 highlights
         narrative = " ".join(narrative_parts)
 
+        # Calculate once and reuse — calculate_rating() includes a random
+        # noise term, so calling it twice would give the LLM narrative a
+        # different star rating than the one actually recorded on the match.
+        rating = self._calculate_rating(participants)
+
         # LLM-as-journalist: generate a vivid match narrative
         import os
         if os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes"):
@@ -912,7 +917,7 @@ class MatchSimulator:
                     loser_name=defender.name,
                     finish_type=finish_spot.finish_type or "pinfall",
                     finish_description=finish_spot.description,
-                    rating=self._calculate_rating(participants),
+                    rating=rating,
                     key_spots=narrative_parts,
                     stipulation=self.stipulation or "",
                     is_title_match=self.is_title_match,
@@ -937,7 +942,6 @@ class MatchSimulator:
                 })
 
         # Botches hurt match rating
-        rating = self._calculate_rating(participants)
         if botch_count > 0:
             botch_penalty = botch_count * BOTCH_RATING_PENALTY_PER
             for be in botch_events:
