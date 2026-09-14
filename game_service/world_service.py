@@ -261,7 +261,7 @@ def _generate_npc_wrestler(world_id: str) -> tuple:
         },
         career_goals=_generate_career_goals(age),
         # Group 1: Aging
-        birth_date=f"{2026 - age}-{random.randint(1,12):02d}-{random.randint(1,28):02d}",
+        birth_date=f"{2026 - age}-{random.randint(1, 12):02d}-{random.randint(1, 28):02d}",
         peak_age=peak_age,
         # Group 6: Physical Identity
         height_cm=phys["height_cm"],
