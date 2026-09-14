@@ -5,6 +5,7 @@ does one thing; the inner loop is decomposed into private helpers so each
 fits on a screen (Rule 1) and can be tested in isolation.
 """
 from __future__ import annotations
+import asyncio
 import threading
 
 import uuid
@@ -172,6 +173,13 @@ class Engine:
         self.dispatcher = LLMDispatcher()
         self.llm_client = get_llm()
         self.promoter_hints: Dict[str, Any] = {}
+        # Serializes run_ticks: the engine is a shared, process-wide
+        # singleton (see get_engine/engine_instance below), and its
+        # scheduler/game state/promoter hints are mutated in place across
+        # the many `await` points inside a tick. Two overlapping callers
+        # (e.g. concurrent /engine/advance requests) would otherwise
+        # interleave and hand out non-contiguous or duplicate tick numbers.
+        self._tick_lock = asyncio.Lock()
 
     def set_hints(self, hints: Dict[str, Any]) -> None:
         """Store promoter hints for use in prompt building."""
@@ -191,6 +199,10 @@ class Engine:
         if n > MAX_TICKS_PER_CALL:
             raise ValueError(f"n must be <= {MAX_TICKS_PER_CALL}, got {n}")
 
+        async with self._tick_lock:
+            return await self._run_ticks_locked(n)
+
+    async def _run_ticks_locked(self, n: int) -> List[TickResult]:
         results: List[TickResult] = []
         async with AsyncSessionLocal() as db:
             try:
