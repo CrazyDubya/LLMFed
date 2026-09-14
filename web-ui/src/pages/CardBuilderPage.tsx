@@ -19,11 +19,13 @@ interface Segment {
   match_id: string | null;
   description: string | null;
   is_completed: boolean;
+  participants?: Array<{ wrestler_id?: string }>;
+  match_participants?: Array<{ wrestler_id?: string }>;
 }
 
 export default function CardBuilderPage() {
   const { showId } = useParams<{ showId: string }>();
-  const { worldId, federationId } = useGame();
+  const { federationId } = useGame();
   const navigate = useNavigate();
 
   const [show, setShow] = useState<any>(null);
