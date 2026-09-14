@@ -28,8 +28,9 @@ from core_engine.rulebook import RuleBook
 from core_engine.prompt_builder import PromptBuilder
 
 from models.db_models import EngineRequestDB, NarrativeLogDB
-from agent_service.database import SessionLocal, init_db
+from agent_service.database import AsyncSessionLocal
 from agent_service.crud import get_agents
+from sqlalchemy import select
 from llm_abstraction import get_llm
 
 logger = logging.getLogger(__name__)
@@ -170,7 +171,6 @@ class Engine:
         self.scheduler = TickScheduler()
         self.dispatcher = LLMDispatcher()
         self.llm_client = get_llm()
-        init_db()
         self.promoter_hints: Dict[str, Any] = {}
 
     def set_hints(self, hints: Dict[str, Any]) -> None:
@@ -192,39 +192,36 @@ class Engine:
             raise ValueError(f"n must be <= {MAX_TICKS_PER_CALL}, got {n}")
 
         results: List[TickResult] = []
-        db = SessionLocal()
-        try:
-            for _ in range(n):
-                tick_results = self._process_one_tick(db)
-                if tick_results is None:
-                    # Finisher ended the match
-                    break
-                results.extend(tick_results)
-            return results
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
+        async with AsyncSessionLocal() as db:
+            try:
+                for _ in range(n):
+                    tick_results = await self._process_one_tick(db)
+                    if tick_results is None:
+                        # Finisher ended the match
+                        break
+                    results.extend(tick_results)
+                return results
+            except Exception:
+                await db.rollback()
+                raise
 
-    def get_pending_requests(self) -> list:
+    async def get_pending_requests(self) -> list:
         """Get pending requests from database."""
-        db = SessionLocal()
-        try:
-            return db.query(EngineRequestDB).filter(
-                EngineRequestDB.status == "pending"
-            ).all()
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
+        async with AsyncSessionLocal() as db:
+            try:
+                result = await db.execute(
+                    select(EngineRequestDB).filter(EngineRequestDB.status == "pending")
+                )
+                return list(result.scalars().all())
+            except Exception:
+                await db.rollback()
+                raise
 
     # ------------------------------------------------------------------
     # Private: one tick
     # ------------------------------------------------------------------
 
-    def _process_one_tick(self, db) -> Optional[List[TickResult]]:
+    async def _process_one_tick(self, db) -> Optional[List[TickResult]]:
         """Process a single tick across all roles.
 
         All DB writes within a tick are staged (``db.add``) and committed
@@ -236,7 +233,7 @@ class Engine:
         self.state.current_tick = tick_index
         tick_id = str(uuid.uuid4())
 
-        agents = get_agents(db)
+        agents = await get_agents(db)
         if not agents:
             agents = [_DefaultAgent()]
 
@@ -244,23 +241,23 @@ class Engine:
         for role in self.ROLE_ORDER:
             role_agents = [a for a in agents if getattr(a, "role", "participant") == role]
             for agent_db in role_agents:
-                result = self._process_agent(db, agent_db, role, tick_id, tick_index)
+                result = await self._process_agent(db, agent_db, role, tick_id, tick_index)
                 if result is None:
                     # Finisher — commit staged writes then signal match over
-                    db.commit()
+                    await db.commit()
                     return None
                 results.append(result)
 
         # Single commit for the entire tick — keeps engine_request and
         # narrative_log rows atomically consistent.
-        db.commit()
+        await db.commit()
         return results
 
     # ------------------------------------------------------------------
     # Private: one agent in one role
     # ------------------------------------------------------------------
 
-    def _process_agent(self, db, agent_db, role: str, tick_id: str, tick_index: int) -> Optional[TickResult]:
+    async def _process_agent(self, db, agent_db, role: str, tick_id: str, tick_index: int) -> Optional[TickResult]:
         """Process a single agent for a single role in a tick.
 
         Returns TickResult, or None if a finisher ended the match.
@@ -270,9 +267,9 @@ class Engine:
         request_id = str(uuid.uuid4())
 
         # Call LLM — permanent errors (auth/config) propagate;
-        # transient errors are handled inside send_prompt via fallback.
-        prompt_payload = PromptBuilder.build_prompt(context, self.promoter_hints)
-        action_data = self.llm_client.send_prompt(prompt_payload)
+        # transient errors are handled inside generate_action_async via fallback.
+        prompt_payload = PromptBuilder.build_prompt_dict(context, self.promoter_hints)
+        action_data = await self.llm_client.generate_action_async(prompt_payload)
 
         # Persist engine request
         self._persist_engine_request(db, request_id, agent_id, tick_index, context)

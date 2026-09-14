@@ -11,10 +11,10 @@ from fastapi.testclient import TestClient
 os.environ["ALLOWED_HOSTS"] = "localhost,127.0.0.1,testserver"
 
 from api_gateway.main import app  # noqa: E402
-from agent_service.database import init_db  # noqa: E402
 
-# Initialise the test database once
-init_db()
+# Table creation for the agent-service tables happens once per session via
+# the autouse fixture in tests/conftest.py (init_db() is async and can't be
+# called synchronously here at import/collection time).
 
 client = TestClient(app, raise_server_exceptions=False)
 

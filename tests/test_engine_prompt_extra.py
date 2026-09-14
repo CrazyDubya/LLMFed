@@ -1,7 +1,9 @@
+import pytest
 from core_engine.engine import engine_instance
 
 
-def test_engine_prompt_includes_state_and_actions(monkeypatch):
+@pytest.mark.asyncio
+async def test_engine_prompt_includes_state_and_actions(monkeypatch):
     # Stub agent list
     class DummyAgentDB:
         def __init__(self):
@@ -12,18 +14,23 @@ def test_engine_prompt_includes_state_and_actions(monkeypatch):
             self.role = "participant"
     dummy_db = DummyAgentDB()
     # Monkeypatch get_agents
-    monkeypatch.setattr('core_engine.engine.get_agents', lambda db: [dummy_db])
+
+    async def fake_get_agents(db):
+        return [dummy_db]
+
+    monkeypatch.setattr('core_engine.engine.get_agents', fake_get_agents)
 
     captured = {}
 
-    def fake_send_prompt(prompt):
+    async def fake_generate_action_async(prompt):
         captured.update(prompt)
         return {"action_id": "noop", "description": "Stub", "meta": {}}
-    monkeypatch.setattr(engine_instance.llm_client, 'send_prompt', fake_send_prompt)
+
+    monkeypatch.setattr(engine_instance.llm_client, 'generate_action_async', fake_generate_action_async)
 
     # Run one tick
     engine_instance.set_hints({})
-    results = engine_instance.run_ticks(1)
+    results = await engine_instance.run_ticks(1)
     # Ensure prompt had state and available_actions
     assert 'state' in captured
     state = captured['state']
