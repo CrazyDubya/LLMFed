@@ -9,8 +9,7 @@ Maintains:
 """
 
 from datetime import datetime
-from typing import Dict, List, Optional, Set
-import json
+from typing import List, Optional
 
 from .models import (
     SessionState,
@@ -302,7 +301,7 @@ class SessionManager:
     def to_summary(self) -> str:
         """Generate a summary of the session state for context."""
         lines = [
-            f"## Session State",
+            "## Session State",
             f"Phase: {self.state.phase.value}",
             f"Understanding: {self.state.understanding_level:.0%}",
             f"Files seen: {len(self.state.files_seen)}",
@@ -310,11 +309,11 @@ class SessionManager:
         ]
 
         if self.state.current_task:
-            lines.append(f"\n### Current Task")
+            lines.append("\n### Current Task")
             lines.append(self.state.current_task)
 
         if self.state.hypotheses:
-            lines.append(f"\n### Hypotheses")
+            lines.append("\n### Hypotheses")
             for hyp in self.state.hypotheses:
                 status_icon = {
                     HypothesisStatus.ACTIVE: "?",
@@ -324,7 +323,7 @@ class SessionManager:
                 lines.append(f"[{status_icon}] {hyp.description}")
 
         if self.state.conclusions:
-            lines.append(f"\n### Conclusions")
+            lines.append("\n### Conclusions")
             for conc in self.state.conclusions[-5:]:  # Last 5
                 lines.append(f"- {conc.description}")
 

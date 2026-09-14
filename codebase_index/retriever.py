@@ -10,10 +10,9 @@ Handles:
 
 import re
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 from .models import (
-    Entity,
     Query,
     QueryType,
     Phase,
@@ -59,7 +58,7 @@ class Retriever:
         if readme_path.exists():
             try:
                 return readme_path.read_text()
-            except:
+            except OSError:
                 pass
         return None
 
@@ -240,7 +239,7 @@ class Retriever:
 
     def _retrieve_gestalt(self, query: Query, budget: int) -> RetrievalResult:
         """Retrieve gestalt/overview for initial understanding."""
-        content = self.materializer.format_gestalt(
+        self.materializer.format_gestalt(
             readme_content=self.readme_content,
             core_files=self.core_files,
         )

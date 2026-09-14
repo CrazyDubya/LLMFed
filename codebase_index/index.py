@@ -15,8 +15,6 @@ from .structural import StructuralIndex
 from .relational import RelationalIndex
 from .session import SessionManager
 from .retriever import Retriever
-from .materializer import Materializer
-from .models import Phase
 
 
 class CodebaseIndex:

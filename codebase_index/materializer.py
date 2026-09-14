@@ -7,7 +7,7 @@ based on token budget, session state, and relevance.
 
 from typing import List, Optional
 
-from .models import Entity, ResultItem, RetrievalResult, SessionState
+from .models import Entity, ResultItem
 from .structural import StructuralIndex
 from .session import SessionManager
 

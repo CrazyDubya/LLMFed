@@ -11,7 +11,6 @@ Provides:
 import ast
 import textwrap
 from collections import defaultdict
-from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 from .models import Entity, EntityKind

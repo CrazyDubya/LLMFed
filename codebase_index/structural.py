@@ -8,10 +8,9 @@ Provides:
 """
 
 import ast
-import os
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .models import Entity, EntityKind, FileInfo
 
@@ -61,7 +60,7 @@ class StructuralIndex:
             with open(file_path, "r", encoding="utf-8") as f:
                 source = f.read()
             tree = ast.parse(source)
-        except (SyntaxError, UnicodeDecodeError) as e:
+        except (SyntaxError, UnicodeDecodeError):
             return
 
         rel_path = str(file_path.relative_to(self.root_path))
@@ -249,7 +248,7 @@ class StructuralIndex:
             try:
                 with open(file_info.path, "r", encoding="utf-8") as f:
                     lines = f.readlines()
-            except:
+            except OSError:
                 continue
 
             matching_lines = []
