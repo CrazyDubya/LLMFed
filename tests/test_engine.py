@@ -1,4 +1,5 @@
 
+import pytest
 from core_engine.engine import engine_instance, AppliedAction
 
 
@@ -8,24 +9,29 @@ def test_set_hints_stores_hints():
     assert engine_instance.promoter_hints == hints
 
 
-def test_run_ticks_returns_results_and_uses_hints(monkeypatch):
+@pytest.mark.asyncio
+async def test_run_ticks_returns_results_and_uses_hints(monkeypatch):
     from types import SimpleNamespace
     from core_engine import engine as engine_mod
 
     # Mock get_agents to return one agent per role so we get one TickResult per role
-    def fake_get_agents(db):
+    async def fake_get_agents(db):
         return [
             SimpleNamespace(agent_id=f"agent_{r}", role=r, gimmick_description="")
             for r in engine_instance.ROLE_ORDER
         ]
 
     fake_response = {"action_id": "x", "description": "fake", "meta": {}}
-    monkeypatch.setattr(engine_instance.llm_client, 'send_prompt', lambda prompt: fake_response)
+
+    async def fake_generate_action_async(prompt):
+        return fake_response
+
+    monkeypatch.setattr(engine_instance.llm_client, 'generate_action_async', fake_generate_action_async)
     monkeypatch.setattr(engine_mod, 'get_agents', fake_get_agents)
 
     hints = {"tip": "increase drama"}
     engine_instance.set_hints(hints)
-    results = engine_instance.run_ticks(1)
+    results = await engine_instance.run_ticks(1)
 
     assert isinstance(results, list)
     # Default agent is a participant, so expect at least 1 result

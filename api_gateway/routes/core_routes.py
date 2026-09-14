@@ -137,7 +137,7 @@ async def get_federation_endpoint(federation_id: str, db: AsyncSession = Depends
     response_model=List[Agent],
     tags=["federations"],
 )
-def list_agents_in_federation_endpoint(federation_id: str, db: AsyncSession = Depends(get_db)):
+async def list_agents_in_federation_endpoint(federation_id: str, db: AsyncSession = Depends(get_db)):
     """Retrieves all agents belonging to a specific federation."""
     db_federation = await crud.get_federation_by_id(db=db, federation_id=federation_id)
     if db_federation is None:
@@ -245,7 +245,10 @@ async def advance_engine(
 @router.get("/engine/requests", summary="List Engine Requests", tags=["engine"])
 async def list_engine_requests(limit: int = 10, db: AsyncSession = Depends(get_db)):
     """Show persisted engine requests."""
-    requests = await db.execute(select(EngineRequestDB)).order_by(EngineRequestDB.due_tick.desc()).limit(limit).scalars().all()
+    result = await db.execute(
+        select(EngineRequestDB).order_by(EngineRequestDB.due_tick.desc()).limit(limit)
+    )
+    requests = result.scalars().all()
     return [
         {
             "request_id": r.request_id,
@@ -261,7 +264,10 @@ async def list_engine_requests(limit: int = 10, db: AsyncSession = Depends(get_d
 @router.get("/engine/narrative", summary="List Narrative Logs", tags=["engine"])
 async def list_narrative_logs(limit: int = Query(100, ge=1, le=1000), db: AsyncSession = Depends(get_db)):
     """Retrieve recent narrative log entries."""
-    logs = await db.execute(select(NarrativeLogDB)).order_by(NarrativeLogDB.created_at.desc()).limit(limit).scalars().all()
+    result = await db.execute(
+        select(NarrativeLogDB).order_by(NarrativeLogDB.created_at.desc()).limit(limit)
+    )
+    logs = result.scalars().all()
     return [
         {
             "id": log.id,
@@ -292,7 +298,7 @@ async def engine_debug(request: Request):
         "tables": inspector.get_table_names(),
         "engine_state": {
             "current_tick": eng.state.current_tick,
-            "pending_requests": len(eng.get_pending_requests()),
+            "pending_requests": len(await eng.get_pending_requests()),
         },
     }
 

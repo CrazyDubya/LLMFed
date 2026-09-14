@@ -1,3 +1,4 @@
+import asyncio
 import threading
 from core_engine.exceptions import LLMError, LLMNetworkError
 import json
@@ -49,6 +50,30 @@ class LLMTransientError(LLMError):
 
 class BudgetExceededError(LLMError):
     pass
+
+
+async def _async_retry_with_backoff(coro_fn, max_retries: int = 2, base_delay: float = 0.5):
+    """Retry an async, no-arg callable with exponential backoff.
+
+    Only transient/network errors are retried — the same distinction the
+    providers themselves already make (LLMPermanentError for auth/config,
+    LLMTransientError for retryable HTTP errors, LLMNetworkError as the
+    catch-all wrapper for everything else raised while calling out).
+    Programming errors (TypeError, BudgetExceededError, ...) propagate
+    immediately rather than being retried, which would just delay a
+    deterministic failure and risk duplicate billable requests.
+    Retries up to ``max_retries`` times with delay ``base_delay * 2**attempt``
+    between attempts, using ``asyncio.sleep`` so the event loop isn't blocked.
+    """
+    attempt = 0
+    while True:
+        try:
+            return await coro_fn()
+        except (LLMTransientError, LLMNetworkError):
+            if attempt >= max_retries:
+                raise
+            await asyncio.sleep(base_delay * (2 ** attempt))
+            attempt += 1
 
 
 def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
