@@ -1,7 +1,16 @@
 """Tests for the CLI management tool."""
 
+import os
+
 from typer.testing import CliRunner
 from cli.main import app
+
+# Rich (Typer's help renderer) wraps option names to fit the detected
+# terminal width. Without a real TTY it falls back to whatever COLUMNS
+# reports, which is narrow enough on some CI runners to wrap a long name
+# like "narrative-retention" across two lines and break a plain substring
+# check. Force a wide terminal so --help output is stable everywhere.
+os.environ["COLUMNS"] = "200"
 
 runner = CliRunner()
 
