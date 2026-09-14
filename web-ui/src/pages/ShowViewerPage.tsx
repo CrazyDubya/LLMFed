@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { getErrorMessage } from '../utils/errors';
 
 interface Segment {
   id: string;
@@ -54,11 +55,6 @@ export default function ShowViewerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (!showId) return;
-    loadShowData();
-  }, [showId]);
-
   const loadShowData = async () => {
     try {
       setLoading(true);
@@ -76,12 +72,17 @@ export default function ShowViewerPage() {
         }
       }
       setMatchResults(results);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!showId) return;
+    loadShowData();
+  }, [showId]);
 
   const togglePlayByPlay = async (matchId: string, mode: 'highlights' | 'full') => {
     const current = expandedMatches[matchId];
