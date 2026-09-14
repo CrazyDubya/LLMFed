@@ -2,6 +2,42 @@
  * API client for LLMFed game backend.
  */
 
+export interface User {
+  id: string;
+  username: string;
+  email: string;
+  display_name?: string;
+}
+
+export interface World {
+  id: string;
+  name: string;
+  description?: string | null;
+  is_multiplayer: boolean;
+  max_players: number;
+  current_game_date: string;
+  current_tick: number;
+  is_active: boolean;
+}
+
+export interface Player {
+  id: string;
+  player_type: 'promoter' | 'wrestler';
+  federation_id?: string;
+  wrestler_id?: string;
+}
+
+export interface PlayerCreateData {
+  world_id: string;
+  player_type: 'promoter' | 'wrestler';
+  federation_name?: string;
+  federation_description?: string;
+  wrestler_name?: string;
+  wrestler_gimmick?: string;
+  wrestler_alignment?: string;
+  wrestler_style?: string;
+}
+
 const API_BASE = '/game';
 
 function getToken(): string | null {
@@ -32,30 +68,30 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 // Auth
 export const api = {
   register: (data: { email: string; username: string; password: string; display_name?: string }) =>
-    request<{ access_token: string; user: any }>('/auth/register', {
+    request<{ access_token: string; user: User }>('/auth/register', {
       method: 'POST', body: JSON.stringify(data),
     }),
 
   login: (data: { username: string; password: string }) =>
-    request<{ access_token: string; user: any }>('/auth/login', {
+    request<{ access_token: string; user: User }>('/auth/login', {
       method: 'POST', body: JSON.stringify(data),
     }),
 
-  getMe: () => request<any>('/auth/me'),
+  getMe: () => request<User>('/auth/me'),
 
   // Worlds
   createWorld: (data: { name: string; description?: string; is_multiplayer?: boolean }) =>
-    request<any>('/worlds', { method: 'POST', body: JSON.stringify(data) }),
+    request<World>('/worlds', { method: 'POST', body: JSON.stringify(data) }),
 
   getWorld: (worldId: string) =>
-    request<any>(`/worlds/${worldId}`),
+    request<World>(`/worlds/${worldId}`),
 
   getMyPlayer: (worldId: string) =>
-    request<any>(`/worlds/${worldId}/my-player`),
+    request<Player>(`/worlds/${worldId}/my-player`),
 
   // Players
-  createPlayer: (data: any) =>
-    request<any>('/players', { method: 'POST', body: JSON.stringify(data) }),
+  createPlayer: (data: PlayerCreateData) =>
+    request<Player>('/players', { method: 'POST', body: JSON.stringify(data) }),
 
   // Federations
   listFederations: (worldId: string) =>

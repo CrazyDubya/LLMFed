@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '../api/client';
+import { api, type World } from '../api/client';
+import { getErrorMessage } from '../utils/errors';
 
 interface Wrestler {
   id: string; name: string; popularity: number; alignment: string;
@@ -13,7 +14,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
   const [shows, setShows] = useState<any[]>([]);
   const [championships, setChampionships] = useState<any[]>([]);
   const [narrative, setNarrative] = useState<any[]>([]);
-  const [worldData, setWorldData] = useState<any>(null);
+  const [worldData, setWorldData] = useState<World | null>(null);
   const [storylines, setStorylines] = useState<any[]>([]);
   const [stables, setStables] = useState<any[]>([]);
   const [managerBonds, setManagerBonds] = useState<any[]>([]);
@@ -48,8 +49,8 @@ export function usePromoterData(worldId: string | null, federationId: string | n
       setStables(stbs);
       setManagerBonds(bonds);
       setManagers(mgrs);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(getErrorMessage(err));
     }
   }, [worldId, federationId]);
 
@@ -61,8 +62,8 @@ export function usePromoterData(worldId: string | null, federationId: string | n
     try {
       await api.advanceWorld(worldId, days);
       await loadData();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(getErrorMessage(err));
     } finally {
       setAdvancing(false);
     }
@@ -77,8 +78,8 @@ export function usePromoterData(worldId: string | null, federationId: string | n
         salary_weekly: 2000,
       });
       await advanceDay(1);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(getErrorMessage(err));
     }
   }, [worldId, federationId, advanceDay]);
 

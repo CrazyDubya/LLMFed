@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useGame } from '../context/GameContext';
-import { api } from '../api/client';
+import { api, type PlayerCreateData } from '../api/client';
+import { getErrorMessage } from '../utils/errors';
 
 export default function GameSetupPage() {
   const { user, logout } = useAuth();
@@ -29,7 +30,7 @@ export default function GameSetupPage() {
       setWorld(world.id);
 
       // Create player
-      const playerData: any = {
+      const playerData: PlayerCreateData = {
         world_id: world.id,
         player_type: playerType,
       };
@@ -48,8 +49,8 @@ export default function GameSetupPage() {
       setPlayer(player);
 
       navigate(playerType === 'promoter' ? '/promoter' : '/wrestler');
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }

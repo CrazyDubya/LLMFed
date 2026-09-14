@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useGame } from '../context/GameContext';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../api/client';
+import { api, type World } from '../api/client';
+import { getErrorMessage } from '../utils/errors';
 import { useWorldSocket } from '../hooks/useWorldSocket';
 import LiveFeed from '../components/LiveFeed';
 import SchedulerControls from '../components/SchedulerControls';
@@ -12,7 +13,7 @@ export default function WrestlerDashboard() {
 
   const [wrestler, setWrestler] = useState<any>(null);
   const [stats, setStats] = useState<any>(null);
-  const [worldData, setWorldData] = useState<any>(null);
+  const [worldData, setWorldData] = useState<World | null>(null);
   const [narrative, setNarrative] = useState<any[]>([]);
   const [federations, setFederations] = useState<any[]>([]);
   const [stableInfo, setStableInfo] = useState<any>(null);
@@ -40,8 +41,8 @@ export default function WrestlerDashboard() {
       setFederations(feds);
       setStableInfo(stbl);
       setManagerInfo(mgr);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(getErrorMessage(err));
     }
   };
 
@@ -60,8 +61,8 @@ export default function WrestlerDashboard() {
     try {
       await api.advanceWorld(worldId, days);
       await loadData();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(getErrorMessage(err));
     } finally {
       setAdvancing(false);
     }
@@ -75,8 +76,8 @@ export default function WrestlerDashboard() {
         stat: trainingStat,
       });
       await advanceDay(1);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(getErrorMessage(err));
     }
   };
 
