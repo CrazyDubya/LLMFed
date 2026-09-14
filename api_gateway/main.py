@@ -153,6 +153,9 @@ register_error_handlers(app)
 
 @app.on_event("startup")
 async def _on_startup():
+    from agent_service.database import init_db
+    await init_db()
+
     start_reaper()
 
     # Setup Redis Cache

@@ -3,9 +3,9 @@
 import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
-from agent_service.database import get_db
+from agent_service.database import get_db_sync as get_db
 from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
     WorldCreate, WorldResponse,
@@ -41,7 +41,7 @@ def _handle_value_error(e: ValueError):
 async def api_create_world(
     data: WorldCreate,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Create a new game world."""
     world = create_world(
@@ -55,7 +55,7 @@ async def api_create_world(
 async def api_get_world(
     world_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get world details."""
     try:
@@ -69,7 +69,7 @@ async def api_get_world(
 async def api_get_my_player(
     world_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get the current user's player in a world."""
     try:
@@ -87,7 +87,7 @@ async def api_get_my_player(
 async def api_create_player(
     data: PlayerCreate,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Create a player in a world (choose promoter or wrestler)."""
     try:
@@ -114,7 +114,7 @@ async def api_submit_action(
     world_id: str,
     data: PlayerActionSubmit,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Submit a player action to the world's action queue."""
     try:
@@ -140,7 +140,7 @@ async def api_list_actions(
     status: Optional[str] = None,
     limit: int = 50,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List player actions in a world."""
     try:
@@ -166,7 +166,7 @@ async def api_advance_world(
     world_id: str,
     days: int = 1,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Advance the world by N game days."""
     if days < 1 or days > 30:
@@ -225,7 +225,7 @@ async def api_get_narrative(
     limit: int = 50,
     min_importance: int = 1,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get recent narrative events for a world."""
     logs = db.query(GameNarrativeLogDB).filter(
@@ -240,7 +240,7 @@ async def api_get_news(
     world_id: str,
     limit: int = 20,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get world news articles."""
     news = db.query(WorldNewsDB).filter(
@@ -258,7 +258,7 @@ async def api_generate_promo(
     world_id: str,
     data: PromoRequest,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Generate or submit a promo for a wrestler."""
     world = get_world(db, world_id)

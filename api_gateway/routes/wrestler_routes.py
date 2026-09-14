@@ -3,9 +3,9 @@
 import logging
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
-from agent_service.database import get_db
+from agent_service.database import get_db_sync as get_db
 from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
     WrestlerResponse, WrestlerStatsResponse, WrestlerDetailResponse,
@@ -32,7 +32,7 @@ async def api_list_wrestlers(
     world_id: str,
     limit: int = 100,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List wrestlers in a world."""
     wrestlers = get_world_wrestlers(db, world_id, limit=limit)
@@ -43,7 +43,7 @@ async def api_list_wrestlers(
 async def api_get_wrestler(
     wrestler_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get wrestler details with stats."""
     try:
@@ -85,7 +85,7 @@ async def api_get_wrestler(
 async def api_get_wrestler_manager(
     wrestler_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get a wrestler's active manager."""
     result = manager_service.get_wrestler_manager(db, wrestler_id)
@@ -108,7 +108,7 @@ async def api_get_wrestler_manager(
 async def api_get_wrestler_stable(
     wrestler_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get the stable a wrestler belongs to, if any."""
     result = stable_service.get_wrestler_stable(db, wrestler_id)

@@ -3,9 +3,9 @@
 import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
-from agent_service.database import get_db
+from agent_service.database import get_db_sync as get_db
 from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
     ManagerCreate, ManagerResponse, ManagerClientCreate, ManagerClientResponse,
@@ -35,7 +35,7 @@ async def api_list_managers(
     world_id: str,
     federation_id: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List all managers in a world."""
     managers = manager_service.list_managers(db, world_id, federation_id)
@@ -48,7 +48,7 @@ async def api_create_manager(
     data: ManagerCreate,
     federation_id: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Create a new manager character."""
     try:
@@ -68,7 +68,7 @@ async def api_create_manager(
 async def api_list_manager_bonds(
     world_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List all manager-client bonds in a world."""
     bonds = manager_service.list_manager_bonds(db, world_id)
@@ -87,7 +87,7 @@ async def api_assign_manager(
     world_id: str,
     data: ManagerClientCreate,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Assign a manager to a wrestler client."""
     try:
@@ -109,7 +109,7 @@ async def api_assign_manager(
 async def api_remove_manager_bond(
     bond_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """End a manager-client relationship."""
     if not manager_service.remove_manager(db, bond_id):
@@ -123,7 +123,7 @@ async def api_manager_promo(
     target_wrestler_id: Optional[str] = None,
     promo_type: str = "in_ring",
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Generate a promo where a manager speaks on behalf of their client."""
     result = manager_service.generate_manager_promo(
@@ -143,7 +143,7 @@ async def api_list_stables(
     world_id: str,
     federation_id: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List all active stables in a world."""
     stables = stable_service.list_stables(db, world_id, federation_id)
@@ -162,7 +162,7 @@ async def api_create_stable(
     world_id: str,
     data: StableCreate,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Create a new stable/faction."""
     try:
@@ -202,7 +202,7 @@ async def api_create_stable(
 async def api_get_stable(
     stable_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get a stable with its members."""
     data = stable_service.get_stable_with_members(db, stable_id)
@@ -220,7 +220,7 @@ async def api_add_stable_member(
     stable_id: str,
     data: StableAddMember,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Add a wrestler to a stable."""
     stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
@@ -239,7 +239,7 @@ async def api_remove_stable_member(
     stable_id: str,
     wrestler_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Remove a wrestler from a stable."""
     stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
@@ -258,7 +258,7 @@ async def api_update_stable(
     stable_id: str,
     data: StableUpdate,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Update a stable's details."""
     stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()

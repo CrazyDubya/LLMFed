@@ -3,9 +3,9 @@
 import logging
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
-from agent_service.database import get_db
+from agent_service.database import get_db_sync as get_db
 from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
     FederationResponse,
@@ -33,7 +33,7 @@ router = APIRouter(prefix="/game", tags=["game-federation"])
 async def api_list_federations(
     world_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List all federations in a world."""
     feds = get_world_federations(db, world_id)
@@ -44,7 +44,7 @@ async def api_list_federations(
 async def api_get_federation(
     federation_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get federation details."""
     try:
@@ -58,7 +58,7 @@ async def api_get_federation(
 async def api_get_roster(
     federation_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get a federation's roster."""
     wrestlers = get_roster(db, federation_id)
@@ -69,7 +69,7 @@ async def api_get_roster(
 async def api_list_free_agents(
     world_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List free agent wrestlers in a world."""
     wrestlers = get_free_agents(db, world_id)
@@ -85,7 +85,7 @@ async def api_list_shows(
     federation_id: str,
     limit: int = 20,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List shows for a federation."""
     shows = db.query(ShowDB).filter(
@@ -102,7 +102,7 @@ async def api_list_shows(
 async def api_list_championships(
     federation_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """List championships for a federation."""
     champs = db.query(ChampionshipDB).filter(
