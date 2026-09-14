@@ -6,13 +6,12 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    StorylineDB, StorylineParticipantDB, GameWrestlerDB,
-    GameFederationDB, MatchDB, MatchParticipantDB, ShowDB, ShowSegmentDB,
+    StorylineParticipantDB, GameWrestlerDB, GameFederationDB,
 )
 from game_service.world_service import create_world
 from game_service.storyline_service import (
     create_storyline, progress_storyline, resolve_storyline,
-    auto_generate_storylines, check_match_storyline_triggers,
+    auto_generate_storylines,
 )
 
 

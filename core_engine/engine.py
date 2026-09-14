@@ -5,6 +5,7 @@ does one thing; the inner loop is decomposed into private helpers so each
 fits on a screen (Rule 1) and can be tested in isolation.
 """
 from __future__ import annotations
+import threading
 
 import uuid
 import logging
@@ -29,6 +30,7 @@ from core_engine.prompt_builder import PromptBuilder
 from models.db_models import EngineRequestDB, NarrativeLogDB
 from agent_service.database import SessionLocal, init_db
 from agent_service.crud import get_agents
+from llm_abstraction import get_llm
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,7 @@ MAX_TICKS_PER_CALL = 1000
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class AppliedAction:
@@ -403,7 +406,6 @@ class Engine:
 # ---------------------------------------------------------------------------
 # Singleton accessor (thread-safe, lazy — avoids import-time side effects)
 # ---------------------------------------------------------------------------
-import threading
 
 _engine_instance: Optional[Engine] = None
 _engine_lock = threading.Lock()

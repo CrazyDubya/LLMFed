@@ -8,9 +8,9 @@ import logging
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    GameWrestlerDB, WrestlerStatsDB, ChampionshipDB,
-    MatchParticipantDB, MatchDB, ShowDB, ShowSegmentDB,
-    WrestlerPushDB, WrestlerGoalDB, WrestlerHistoryDB,
+    GameWrestlerDB, ChampionshipDB, MatchParticipantDB,
+    MatchDB, ShowDB, ShowSegmentDB, WrestlerPushDB,
+    WrestlerGoalDB, WrestlerHistoryDB,
 )
 from game_service.lifecycle_constants import (
     GOAL_COMPLETE_MORALE_BONUS, GOAL_COMPLETE_SATISFACTION_BONUS,
@@ -112,7 +112,7 @@ def _check_goal_completed(db: Session, wrestler: GameWrestlerDB, goal: WrestlerG
         ppv_main = db.query(MatchParticipantDB).join(MatchDB).join(ShowSegmentDB).join(ShowDB).filter(
             MatchParticipantDB.wrestler_id == wrestler.id,
             ShowDB.show_type == "ppv",
-            MatchDB.is_completed == True,
+            MatchDB.is_completed,
         ).first()
         return ppv_main is not None
 
@@ -127,7 +127,7 @@ def _check_goal_completed(db: Session, wrestler: GameWrestlerDB, goal: WrestlerG
         if goal.target_entity_id:
             win = db.query(MatchParticipantDB).join(MatchDB).filter(
                 MatchParticipantDB.wrestler_id == wrestler.id,
-                MatchParticipantDB.is_winner == True,
+                MatchParticipantDB.is_winner,
                 MatchDB.winner_id == wrestler.id,
             ).first()
             return win is not None
@@ -143,7 +143,8 @@ def _check_goal_completed(db: Session, wrestler: GameWrestlerDB, goal: WrestlerG
         return (wrestler.draw_rating or 0) >= GOAL_TOP_DRAW_RATING
 
     if gt in ("earn_respect", "prove_doubters_wrong"):
-        return (wrestler.popularity or 0) >= GOAL_EARN_RESPECT_POP and (wrestler.morale or 0) >= GOAL_EARN_RESPECT_MORALE
+        return (wrestler.popularity or 0) >= GOAL_EARN_RESPECT_POP and (
+            wrestler.morale or 0) >= GOAL_EARN_RESPECT_MORALE
 
     if gt == "make_it_to_main_event":
         push = db.query(WrestlerPushDB).filter(

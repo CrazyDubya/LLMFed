@@ -14,7 +14,7 @@ def get_active_wrestlers(db: Session, world_id: str):
     """Return all active wrestlers in the given world."""
     return db.query(GameWrestlerDB).filter(
         GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active == True,
+        GameWrestlerDB.is_active,
     ).all()
 
 
@@ -22,8 +22,8 @@ def get_npc_federations(db: Session, world_id: str):
     """Return all active NPC-controlled federations in the given world."""
     return db.query(GameFederationDB).filter(
         GameFederationDB.world_id == world_id,
-        GameFederationDB.is_npc == True,
-        GameFederationDB.is_active == True,
+        GameFederationDB.is_npc,
+        GameFederationDB.is_active,
     ).all()
 
 
@@ -31,5 +31,5 @@ def get_active_federations(db: Session, world_id: str):
     """Return all active federations (player + NPC) in the given world."""
     return db.query(GameFederationDB).filter(
         GameFederationDB.world_id == world_id,
-        GameFederationDB.is_active == True,
+        GameFederationDB.is_active,
     ).all()

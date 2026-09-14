@@ -12,9 +12,8 @@ from sqlalchemy.orm import Session
 
 from models.game_models import (
     StorylineDB, StorylineParticipantDB, GameWrestlerDB, GameFederationDB,
-    ContractDB, MatchDB, MatchParticipantDB, ChampionshipDB,
-    GameNarrativeLogDB, LifeEventDB, WrestlerRelationshipDB,
-    WrestlerBackstoryDB,
+    ContractDB, MatchDB, MatchParticipantDB, GameNarrativeLogDB,
+    LifeEventDB, WrestlerRelationshipDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -225,8 +224,8 @@ def auto_generate_storylines(db: Session, world_id: str, game_date: str):
     """
     npc_feds = db.query(GameFederationDB).filter(
         GameFederationDB.world_id == world_id,
-        GameFederationDB.is_npc == True,
-        GameFederationDB.is_active == True,
+        GameFederationDB.is_npc,
+        GameFederationDB.is_active,
     ).all()
 
     new_storylines = []
@@ -322,7 +321,7 @@ def check_match_storyline_triggers(db: Session, match: MatchDB, game_date: str):
         # Seasonal heat multiplier: storylines get a boost during PPV build windows
         try:
             from game_service.ppv_calendar_service import get_next_ppv, is_build_window
-            from models.game_models import ShowDB, ShowSegmentDB
+            from models.game_models import ShowDB
             seg = match.segment
             if seg:
                 show = db.query(ShowDB).filter(ShowDB.id == seg.show_id).first()
@@ -404,10 +403,10 @@ def check_life_event_storylines(db: Session, world_id: str, game_date: str):
     # Find public, storyline-potential life events not yet used
     events = db.query(LifeEventDB).filter(
         LifeEventDB.world_id == world_id,
-        LifeEventDB.is_public == True,
-        LifeEventDB.storyline_potential == True,
-        LifeEventDB.was_used_in_storyline == False,
-        LifeEventDB.is_active == True,
+        LifeEventDB.is_public,
+        LifeEventDB.storyline_potential,
+        LifeEventDB.was_used_in_storyline.is_(False),
+        LifeEventDB.is_active,
     ).all()
 
     for event in events:
@@ -476,7 +475,7 @@ def check_life_event_storylines(db: Session, world_id: str, game_date: str):
         event.was_used_in_storyline = True
         new_storylines.append(sl)
         logger.info("Created worked-shoot storyline '%s' from life event for %s",
-                     sl.name, wrestler.name)
+                    sl.name, wrestler.name)
 
     return new_storylines
 

@@ -4,15 +4,13 @@ and match result integration.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    StableDB, StableMemberDB, ContractDB,
-    StorylineDB, StorylineParticipantDB, GameNarrativeLogDB,
+    WorldDB, GameFederationDB, GameWrestlerDB, StableMemberDB,
+    ContractDB, StorylineDB,
 )
 from game_service.stable_service import (
     create_stable, add_member, remove_member, promote_member,

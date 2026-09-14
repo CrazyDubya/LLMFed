@@ -6,13 +6,12 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    ContractDB, ChampionshipDB, UserDB, PlayerDB,
+    GameFederationDB, GameWrestlerDB, WrestlerStatsDB, ContractDB,
+    ChampionshipDB, UserDB,
 )
 from game_service.world_service import (
-    create_world, create_player, get_world, get_roster,
-    get_free_agents, get_world_federations, get_world_wrestlers,
-    get_wrestler_with_stats,
+    create_world, create_player, get_roster, get_free_agents,
+    get_world_federations, get_wrestler_with_stats,
 )
 
 

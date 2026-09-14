@@ -65,7 +65,7 @@ def update_locker_room_dynamics(db: Session, federation: GameFederationDB, game_
 
     wrestlers = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.id.in_(wrestler_ids),
-        GameWrestlerDB.is_active == True,
+        GameWrestlerDB.is_active,
     ).all()
 
     leaders = []
@@ -92,7 +92,7 @@ def update_locker_room_dynamics(db: Session, federation: GameFederationDB, game_
 
     # Morale contagion
     if leaders:
-        avg_leader_morale = sum(l.morale or 50 for l in leaders) / len(leaders)
+        avg_leader_morale = sum(leader.morale or 50 for leader in leaders) / len(leaders)
         shift = int((avg_leader_morale - LEADER_MORALE_BASELINE) / LEADER_MORALE_DIVISOR)
         for w in wrestlers:
             if w not in leaders and shift != 0:

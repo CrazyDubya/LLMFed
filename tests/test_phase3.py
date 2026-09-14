@@ -12,11 +12,10 @@ from sqlalchemy.orm import sessionmaker
 from models.db_models import Base
 from models.game_models import (
     WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    MatchDB, MatchParticipantDB, MatchEventDB,
-    ChampionshipDB, ChampionshipHistoryDB, WrestlerHistoryDB,
-    WrestlerRelationshipDB, TagTeamDB, TalentOfferDB,
-    ContractDB, ShowDB, ShowSegmentDB,
-    GameNarrativeLogDB, WorldNewsDB,
+    MatchDB, MatchParticipantDB, ChampionshipDB,
+    WrestlerHistoryDB, WrestlerRelationshipDB, TagTeamDB,
+    TalentOfferDB, ShowDB, GameNarrativeLogDB,
+    WorldNewsDB,
 )
 
 
@@ -87,9 +86,9 @@ def _create_completed_match(db, world_id, w1_id, w2_id, winner_id, **kw):
     db.add(m)
     db.flush()
     db.add(MatchParticipantDB(match_id=m.id, wrestler_id=w1_id, role="competitor",
-                               is_winner=(w1_id == winner_id)))
+                              is_winner=(w1_id == winner_id)))
     db.add(MatchParticipantDB(match_id=m.id, wrestler_id=w2_id, role="competitor",
-                               is_winner=(w2_id == winner_id)))
+                              is_winner=(w2_id == winner_id)))
     db.flush()
     return m
 
@@ -306,7 +305,7 @@ class TestMoraleAlignment:
 
 class TestCardPsychology:
     def test_good_opener_bonus(self):
-        from game_service.world_ticker import WorldTicker
+        pass
         # Direct test of the calculation method
         # We'll test the standalone function logic
         ratings = [3.5, 2.5, 3.0, 4.0]
@@ -352,7 +351,7 @@ class TestNewsGeneration:
 
     def test_dirt_sheet_generated(self, db_session):
         _create_world(db_session)
-        fed = _create_fed(db_session, budget=10000)  # Low budget
+        _create_fed(db_session, budget=10000)  # Low budget
 
         from game_service.news_service import generate_weekly_dirt_sheet
         generate_weekly_dirt_sheet(db_session, "world1", "2026-01-15")
@@ -410,13 +409,13 @@ class TestTagTeams:
         db_session.add(match)
         db_session.flush()
         db_session.add(MatchParticipantDB(match_id=match.id, wrestler_id=w1.id,
-                                           role="competitor", is_winner=True))
+                                          role="competitor", is_winner=True))
         db_session.add(MatchParticipantDB(match_id=match.id, wrestler_id=w2.id,
-                                           role="competitor", is_winner=True))
+                                          role="competitor", is_winner=True))
         db_session.add(MatchParticipantDB(match_id=match.id, wrestler_id=w3.id,
-                                           role="competitor", is_winner=False))
+                                          role="competitor", is_winner=False))
         db_session.add(MatchParticipantDB(match_id=match.id, wrestler_id=w4.id,
-                                           role="competitor", is_winner=False))
+                                          role="competitor", is_winner=False))
         db_session.flush()
 
         from core_engine.match_aftermath import _update_tag_team_records
@@ -547,7 +546,7 @@ class TestTagMatchSimulation:
         # Verify that tag-specific spots were generated
         spot_types = [s.move_type for s in result.spots]
         spot_names = [s.move_name for s in result.spots]
-        has_tag = "tag" in spot_types or "Tag" in spot_names or "Hot Tag" in spot_names
+        "tag" in spot_types or "Tag" in spot_names or "Hot Tag" in spot_names
         # Tag spots are probabilistic; at minimum verify the match completed
         assert result.finish_type in ("pinfall", "submission", "time_limit_draw")
 

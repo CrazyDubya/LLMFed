@@ -3,7 +3,8 @@ from agent_service.database import SessionLocal, init_db
 from agent_service.crud import create_agent, get_agent_by_id, update_agent, delete_agent, get_agents, get_agents_by_federation_id
 from models.entities import AgentCreateData, AgentUpdateData
 
-@ pytest.fixture(scope="module")
+
+@pytest.fixture(scope="module")
 def db():
     init_db()
     db = SessionLocal()

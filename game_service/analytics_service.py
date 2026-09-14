@@ -9,7 +9,7 @@ import logging
 from typing import Dict, Any, List, Optional
 from collections import defaultdict
 
-from sqlalchemy import func, case, desc
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -83,8 +83,8 @@ def federation_health(
     federation_id: str,
 ) -> Dict[str, Any]:
     """Get federation health metrics: roster size, show quality, finances."""
-    from models.game_models import GameFederationDB, GameWrestlerDB, ContractDB
-    from models.show_models import ShowDB, MatchDB
+    from models.game_models import GameFederationDB, ContractDB
+    from models.show_models import ShowDB
 
     fed = db.query(GameFederationDB).filter(
         GameFederationDB.id == federation_id
@@ -101,7 +101,7 @@ def federation_health(
     # Show stats
     shows = db.query(ShowDB).filter(
         ShowDB.federation_id == federation_id,
-        ShowDB.is_completed == True,
+        ShowDB.is_completed,
     ).order_by(ShowDB.game_date.desc()).limit(20).all()
 
     show_ratings = [s.overall_rating for s in shows if s.overall_rating]
@@ -295,7 +295,7 @@ def world_summary(
             ContractDB.world_id == world_id, ContractDB.status == "active"
         ).scalar() or 0,
         "shows_completed": db.query(func.count(ShowDB.id)).filter(
-            ShowDB.world_id == world_id, ShowDB.is_completed == True
+            ShowDB.world_id == world_id, ShowDB.is_completed
         ).scalar() or 0,
         "total_matches": db.query(func.count(MatchDB.id)).filter(
             MatchDB.world_id == world_id

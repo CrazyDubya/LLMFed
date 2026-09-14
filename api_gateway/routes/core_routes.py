@@ -9,12 +9,11 @@ endpoints that were previously defined inline in the FastAPI app module.
 
 import logging
 import os
-import traceback
 from typing import List
 
 from dataclasses import asdict
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
-from api_gateway.dependencies import get_engine_dependency, get_llm_dependency
+from api_gateway.dependencies import get_engine_dependency
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -106,7 +105,11 @@ async def list_federations_endpoint(skip: int = 0, limit: int = 100, db: AsyncSe
     return await crud.get_federations(db=db, skip=skip, limit=limit)
 
 
-@router.post("/federations", summary="Create Federation", response_model=Federation, status_code=201, tags=["federations"])
+@router.post("/federations",
+             summary="Create Federation",
+             response_model=Federation,
+             status_code=201,
+             tags=["federations"])
 async def create_federation_endpoint(fed_data: FederationCreateData, db: AsyncSession = Depends(get_db)):
     """Creates a new Wrestling Federation."""
     try:
@@ -116,7 +119,10 @@ async def create_federation_endpoint(fed_data: FederationCreateData, db: AsyncSe
     return db_federation
 
 
-@router.get("/federations/{federation_id}", summary="Get Federation by ID", response_model=Federation, tags=["federations"])
+@router.get("/federations/{federation_id}",
+            summary="Get Federation by ID",
+            response_model=Federation,
+            tags=["federations"])
 async def get_federation_endpoint(federation_id: str, db: AsyncSession = Depends(get_db)):
     """Retrieves details for a specific federation by its ID."""
     db_federation = await crud.get_federation_by_id(db=db, federation_id=federation_id)
@@ -139,8 +145,12 @@ def list_agents_in_federation_endpoint(federation_id: str, db: AsyncSession = De
     return await crud.get_agents_by_federation_id(db=db, federation_id=federation_id)
 
 
-@router.patch("/federations/{federation_id}", summary="Update Federation", response_model=Federation, tags=["federations"])
-async def update_federation_endpoint(federation_id: str, update_data: FederationUpdateData, db: AsyncSession = Depends(get_db)):
+@router.patch("/federations/{federation_id}", summary="Update Federation",
+              response_model=Federation, tags=["federations"])
+async def update_federation_endpoint(
+        federation_id: str,
+        update_data: FederationUpdateData,
+        db: AsyncSession = Depends(get_db)):
     """Updates specific fields of an existing federation."""
     try:
         updated_federation = await crud.update_federation(db=db, federation_id=federation_id, update_data=update_data)
@@ -184,7 +194,8 @@ async def submit_agent_action(agent_id: str, action_response: AgentActionRespons
     if action_response.target_agent_id:
         db_target = await crud.get_agent_by_id(db=db, agent_id=action_response.target_agent_id)
         if not db_target:
-            raise HTTPException(status_code=404, detail=f"Target agent with ID '{action_response.target_agent_id}' not found.")
+            raise HTTPException(status_code=404,
+                                detail=f"Target agent with ID '{action_response.target_agent_id}' not found.")
 
     return {
         "message": "Action received and accepted for processing.",
@@ -214,7 +225,12 @@ async def subscribe_federation(federation_id: str, webhook_url: str = Query(...)
 # ---------------------------------------------------------------------------
 
 @router.post("/engine/advance", summary="Advance Simulation Ticks", tags=["engine"])
-async def advance_engine(n_ticks: int = Query(1, ge=1, description="Number of ticks to advance"), engine=Depends(get_engine_dependency)):
+async def advance_engine(
+        n_ticks: int = Query(
+            1,
+            ge=1,
+            description="Number of ticks to advance"),
+        engine=Depends(get_engine_dependency)):
     """Advance the core engine by n_ticks ticks."""
     try:
         results = await engine.run_ticks(n_ticks)
@@ -261,7 +277,7 @@ async def list_narrative_logs(limit: int = Query(100, ge=1, le=1000), db: AsyncS
 
 
 @router.get("/engine/debug", summary="Engine Debug Info", tags=["engine"])
-async def engine_debug():
+async def engine_debug(request: Request):
     """Return engine and database status. Only available in debug mode."""
     debug_enabled = os.getenv("DEBUG_MODE", "false").lower() == "true"
     if not debug_enabled:
@@ -270,7 +286,7 @@ async def engine_debug():
     from agent_service.database import engine as db_engine
     from sqlalchemy import inspect
 
-    eng = engine
+    eng = request.app.state.engine
     inspector = inspect(db_engine)
     return {
         "tables": inspector.get_table_names(),
@@ -282,9 +298,9 @@ async def engine_debug():
 
 
 @router.post("/prompter/hints", summary="Prompter Hints", tags=["engine"])
-async def prompter_hints(request: PrompterHintRequest):
+async def prompter_hints(request: PrompterHintRequest, http_request: Request):
     """Accepts promoter hints, stores them, and builds LLM prompt."""
-    eng = engine
+    eng = http_request.app.state.engine
     eng.set_hints(request.hints)
     prompt = PromptBuilder.build_prompt(request.context, request.hints)
     return prompt

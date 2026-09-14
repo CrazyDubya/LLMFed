@@ -1,6 +1,7 @@
 import pytest
 from core_engine.engine import engine_instance, AppliedAction
 
+
 def test_run_multiple_ticks(monkeypatch):
     # Stub agent list
     dummy = type('A', (), {'agent_id': 'agent1'})()

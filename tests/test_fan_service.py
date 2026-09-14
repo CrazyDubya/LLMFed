@@ -1,6 +1,5 @@
 """Tests for the fan service — dynamic audience simulation."""
 
-import pytest
 from game_service.fan_service import (
     FanArchetype,
     FanSegment,

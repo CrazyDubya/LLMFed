@@ -107,6 +107,6 @@ async def api_list_championships(
     """List championships for a federation."""
     champs = db.query(ChampionshipDB).filter(
         ChampionshipDB.federation_id == federation_id,
-        ChampionshipDB.is_active == True,
+        ChampionshipDB.is_active,
     ).all()
     return [ChampionshipResponse.model_validate(c) for c in champs]

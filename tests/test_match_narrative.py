@@ -1,6 +1,5 @@
 """Tests for match narrative engine — LLM commentary and chemistry system."""
 
-import pytest
 from unittest.mock import patch
 
 from core_engine.match_narrative import (

@@ -14,6 +14,7 @@ import uuid
 def _utc_now():
     return datetime.now(timezone.utc)
 
+
 Base = declarative_base()
 
 

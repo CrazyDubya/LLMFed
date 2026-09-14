@@ -3,9 +3,6 @@
 import pytest
 from game_service.tournament_service import (
     TournamentFormat,
-    TournamentBracket,
-    TournamentMatch,
-    TournamentParticipant,
     MatchStatus,
     create_tournament,
     record_match_result,

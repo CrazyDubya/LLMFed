@@ -1,4 +1,3 @@
-import re
 
 filepath = "api_gateway/routes/core_routes.py"
 with open(filepath, "r") as f:
@@ -11,7 +10,8 @@ content = content.replace("from sqlalchemy.future import select\n", "")
 content = "from sqlalchemy.future import select\n" + content
 
 content = content.replace(".all()", ".scalars().all()")
-content = content.replace("order_by(EngineRequestDB.due_tick.desc()).limit(limit)", "order_by(EngineRequestDB.due_tick.desc()).limit(limit)")
+content = content.replace("order_by(EngineRequestDB.due_tick.desc()).limit(limit)",
+                          "order_by(EngineRequestDB.due_tick.desc()).limit(limit)")
 
 with open(filepath, "w") as f:
     f.write(content)

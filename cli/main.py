@@ -15,7 +15,6 @@ Usage:
     llmfed stats                         Show database statistics
 """
 
-import logging
 import sys
 import os
 
@@ -291,7 +290,7 @@ def sim_status(world_id: str = typer.Argument(..., help="World ID")):
 @app.command("match")
 def match_replay(match_id: str = typer.Argument(..., help="Match ID")):
     """Replay a match spot-by-spot."""
-    from models.show_models import MatchDB, MatchParticipantDB, MatchEventDB
+    from models.show_models import MatchDB, MatchEventDB
     db = _get_db()
     try:
         match = db.query(MatchDB).filter(MatchDB.id == match_id).first()

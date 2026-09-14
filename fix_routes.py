@@ -10,8 +10,9 @@ for filename in os.listdir(routes_dir):
 
         # Add dependencies import if not present
         if "get_engine_dependency" not in content and "engine" in content:
-            content = content.replace("from fastapi import APIRouter, HTTPException, Depends, Query, Request",
-                                      "from fastapi import APIRouter, HTTPException, Depends, Query, Request\nfrom api_gateway.dependencies import get_engine_dependency, get_llm_dependency")
+            content = content.replace(
+                "from fastapi import APIRouter, HTTPException, Depends, Query, Request",
+                "from fastapi import APIRouter, HTTPException, Depends, Query, Request\nfrom api_gateway.dependencies import get_engine_dependency, get_llm_dependency")
 
         # Update endpoints to inject engine
         # This is a basic regex to add engine dependency to functions that use it but don't inject it

@@ -37,6 +37,7 @@ You MUST respond strictly in the following JSON schema:
 {{ response_schema | tojson(indent=2) }}
 """
 
+
 class PromptBuilder:
     """Builds prompts for LLM interactions using Jinja2 templates."""
 

@@ -6,13 +6,12 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    ShowDB, ShowSegmentDB, MatchDB, MatchParticipantDB,
-    GameFederationDB, GameWrestlerDB, ChampionshipDB,
+    MatchDB, MatchParticipantDB, GameFederationDB, GameWrestlerDB,
 )
 from game_service.world_service import create_world
 from game_service.show_service import (
     create_show, book_match, book_promo_segment, get_show_card,
-    reorder_card, npc_book_card,
+    npc_book_card,
 )
 
 

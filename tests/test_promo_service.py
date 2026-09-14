@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    PromoDB, GameWrestlerDB, WrestlerStatsDB, GameFederationDB,
+    GameWrestlerDB, WrestlerStatsDB,
 )
 from game_service.world_service import create_world
 from game_service.promo_service import generate_promo

@@ -12,9 +12,9 @@ Grouped by domain: momentum, probability, damage, rating, tag match, and finish.
 TAUNT_MOMENTUM_THRESHOLD = 60        # Minimum momentum to attempt a taunt
 SIGNATURE_MOMENTUM_THRESHOLD = 55    # Minimum momentum to use a signature move
 FINISHER_MOMENTUM_THRESHOLD = 75     # Momentum at which finisher becomes available
-FINISH_MOMENTUM_BONUS_THRESHOLD = 80 # Extra finish chance when momentum exceeds this
+FINISH_MOMENTUM_BONUS_THRESHOLD = 80  # Extra finish chance when momentum exceeds this
 CAGE_ESCAPE_MOMENTUM_THRESHOLD = 80  # Momentum needed to attempt cage escape
-LADDER_CLIMB_MOMENTUM_THRESHOLD = 70 # Momentum needed to attempt ladder climb
+LADDER_CLIMB_MOMENTUM_THRESHOLD = 70  # Momentum needed to attempt ladder climb
 
 # ---------------------------------------------------------------------------
 # Probability constants
@@ -52,7 +52,7 @@ SHOOT_FRUSTRATION_THRESHOLD = 60     # Frustration must exceed this for shoot ch
 SHOOT_MORALE_THRESHOLD = 30          # Morale must be below this for shoot chance
 SHOOT_TITLE_MULTIPLIER = 1.5         # Multiplier for title match shoot chance
 
-ELIMINATION_ENDURANCE_THRESHOLD = 15 # Endurance below which elimination can happen
+ELIMINATION_ENDURANCE_THRESHOLD = 15  # Endurance below which elimination can happen
 ELIMINATION_CHANCE = 0.35            # Chance of elimination when endurance is low
 
 FACTION_BEATDOWN_CHANCE = 0.25       # Chance of post-match heel faction beatdown

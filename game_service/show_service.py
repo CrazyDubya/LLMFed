@@ -42,13 +42,13 @@ FINISH_TYPES = ["pinfall", "submission", "count_out", "disqualification"]
 
 # Data-driven gimmick match configuration
 GIMMICK_MATCH_CONFIG = {
-    "Steel Cage":       {"match_type": "cage",            "finish": "pinfall"},
-    "Ladder":           {"match_type": "ladder",          "finish": "stipulation"},
-    "Tables":           {"match_type": "tables",          "finish": "stipulation"},
-    "Hell in a Cell":   {"match_type": "hell_in_a_cell",  "finish": "pinfall"},
-    "No DQ":            {"match_type": "singles",         "finish": "pinfall"},
-    "Last Man Standing": {"match_type": "singles",        "finish": "pinfall"},
-    "Iron Man":         {"match_type": "iron_man",        "finish": "pinfall"},
+    "Steel Cage": {"match_type": "cage", "finish": "pinfall"},
+    "Ladder": {"match_type": "ladder", "finish": "stipulation"},
+    "Tables": {"match_type": "tables", "finish": "stipulation"},
+    "Hell in a Cell": {"match_type": "hell_in_a_cell", "finish": "pinfall"},
+    "No DQ": {"match_type": "singles", "finish": "pinfall"},
+    "Last Man Standing": {"match_type": "singles", "finish": "pinfall"},
+    "Iron Man": {"match_type": "iron_man", "finish": "pinfall"},
 }
 
 
@@ -71,8 +71,8 @@ def _get_available_wrestlers(db: Session, wrestler_ids: list):
     """Get active, non-injured wrestlers from a list of IDs."""
     return db.query(GameWrestlerDB).filter(
         GameWrestlerDB.id.in_(wrestler_ids),
-        GameWrestlerDB.is_active == True,
-        GameWrestlerDB.is_injured == False,
+        GameWrestlerDB.is_active,
+        GameWrestlerDB.is_injured.is_(False),
     ).all()
 
 
@@ -295,7 +295,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
     # Championships for potential title matches
     championships = db.query(ChampionshipDB).filter(
         ChampionshipDB.federation_id == fed.id,
-        ChampionshipDB.is_active == True,
+        ChampionshipDB.is_active,
     ).all()
 
     # Load push tiers for vision-aware booking
@@ -338,8 +338,9 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
             w2 = next((w for w in wrestlers if w.id == w2_id), None)
             if w1 and w2 and not w1.is_injured and not w2.is_injured:
                 # Higher-heat storyline gets higher card position
-                is_main = (storyline_matches_booked == 0 and sl.heat >= 70)
-                planned_winner = w1 if _calculate_wrestler_score(w1, push_map, PUSH_TIERS) >= _calculate_wrestler_score(w2, push_map, PUSH_TIERS) else w2
+                planned_winner = w1 if _calculate_wrestler_score(
+                    w1, push_map, PUSH_TIERS) >= _calculate_wrestler_score(
+                    w2, push_map, PUSH_TIERS) else w2
                 # Climax storylines get gimmick finishes — more variety
                 finish = "pinfall"
                 stipulation = None
@@ -370,7 +371,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
     # Check for tag teams — book a tag match if available (30% chance)
     tag_teams = db.query(TagTeamDB).filter(
         TagTeamDB.world_id == show.world_id,
-        TagTeamDB.is_active == True,
+        TagTeamDB.is_active,
         TagTeamDB.wrestler1_id.in_(wrestler_ids),
         TagTeamDB.wrestler2_id.in_(wrestler_ids),
     ).all()
@@ -514,7 +515,9 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
         used.add(w2.id)
 
         # Determine winner (push-tier aware)
-        planned_winner = w1 if _calculate_wrestler_score(w1, push_map, PUSH_TIERS) >= _calculate_wrestler_score(w2, push_map, PUSH_TIERS) else w2
+        planned_winner = w1 if _calculate_wrestler_score(
+            w1, push_map, PUSH_TIERS) >= _calculate_wrestler_score(
+            w2, push_map, PUSH_TIERS) else w2
 
         # Title match for main event if champion is available
         is_title = False
@@ -595,7 +598,9 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
         used.update(available[:2])
 
         # Winner: higher push tier wins (PPV wins matter more)
-        planned_winner = w1 if _calculate_wrestler_score(w1, push_map, PUSH_TIERS) >= _calculate_wrestler_score(w2, push_map, PUSH_TIERS) else w2
+        planned_winner = w1 if _calculate_wrestler_score(
+            w1, push_map, PUSH_TIERS) >= _calculate_wrestler_score(
+            w2, push_map, PUSH_TIERS) else w2
 
         seg = book_match(
             db, show.id, show.world_id,
@@ -637,7 +642,9 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
                 planned_winner = holder  # Champion retains
         else:
             # Non-title main event
-            planned_winner = w1 if _calculate_wrestler_score(w1, push_map, PUSH_TIERS) >= _calculate_wrestler_score(w2, push_map, PUSH_TIERS) else w2
+            planned_winner = w1 if _calculate_wrestler_score(
+                w1, push_map, PUSH_TIERS) >= _calculate_wrestler_score(
+                w2, push_map, PUSH_TIERS) else w2
 
         seg = book_match(
             db, show.id, show.world_id,

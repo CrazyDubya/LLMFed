@@ -59,7 +59,7 @@ def update_federation_momentum(db: Session, world: WorldDB, events: List[str],
     """Daily federation momentum adjustment."""
     feds = db.query(GameFederationDB).filter(
         GameFederationDB.world_id == world.id,
-        GameFederationDB.is_active == True,
+        GameFederationDB.is_active,
     ).all()
 
     for fed in feds:
@@ -68,7 +68,7 @@ def update_federation_momentum(db: Session, world: WorldDB, events: List[str],
         # Recent show quality (check last show)
         last_show = db.query(ShowDB).filter(
             ShowDB.federation_id == fed.id,
-            ShowDB.is_completed == True,
+            ShowDB.is_completed,
             ShowDB.game_date == game_date,
         ).first()
 
@@ -109,7 +109,7 @@ def redistribute_market_share(db: Session, world: WorldDB, events: List[str],
     """Redistribute market share based on momentum and show quality."""
     feds = db.query(GameFederationDB).filter(
         GameFederationDB.world_id == world.id,
-        GameFederationDB.is_active == True,
+        GameFederationDB.is_active,
     ).all()
 
     if not feds:
@@ -132,8 +132,8 @@ def generate_talent_offers(db: Session, world: WorldDB, events: List[str],
     """NPC feds make talent offers to rivals' wrestlers."""
     npc_feds = db.query(GameFederationDB).filter(
         GameFederationDB.world_id == world.id,
-        GameFederationDB.is_npc == True,
-        GameFederationDB.is_active == True,
+        GameFederationDB.is_npc,
+        GameFederationDB.is_active,
         GameFederationDB.budget > 50000,
     ).all()
 
@@ -144,8 +144,8 @@ def generate_talent_offers(db: Session, world: WorldDB, events: List[str],
         # Find targets: popular wrestlers from other feds with low morale
         targets = db.query(GameWrestlerDB).join(ContractDB).filter(
             GameWrestlerDB.world_id == world.id,
-            GameWrestlerDB.is_active == True,
-            GameWrestlerDB.is_npc == True,
+            GameWrestlerDB.is_active,
+            GameWrestlerDB.is_npc,
             ContractDB.federation_id != fed.id,
             ContractDB.status == "active",
         ).filter(
@@ -262,7 +262,7 @@ def adjust_tv_deals(db: Session, world: WorldDB, events: List[str],
 
     feds = db.query(GameFederationDB).filter(
         GameFederationDB.world_id == world.id,
-        GameFederationDB.is_active == True,
+        GameFederationDB.is_active,
     ).all()
 
     for fed in feds:

@@ -13,8 +13,7 @@ from sqlalchemy.orm import Session
 
 from models.game_models import (
     PromoDB, GameWrestlerDB, WrestlerStatsDB,
-    GimmickHistoryDB, WrestlerBackstoryDB,
-    LifeEventDB,
+    GimmickHistoryDB, LifeEventDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +56,7 @@ def _get_target_wrestler(db, target_id):
 # ---------------------------------------------------------------------------
 # Legacy alignment-based templates (fallback)
 # ---------------------------------------------------------------------------
+
 
 FACE_OPENERS = [
     "Let me tell you something, brother!",
@@ -438,7 +438,7 @@ def _get_current_gimmick(db, wrestler_id):
     """Get the wrestler's current active gimmick, if any."""
     return db.query(GimmickHistoryDB).filter(
         GimmickHistoryDB.wrestler_id == wrestler_id,
-        GimmickHistoryDB.is_active == True,
+        GimmickHistoryDB.is_active,
     ).first()
 
 
@@ -446,7 +446,7 @@ def _get_active_life_events(db, wrestler_id):
     """Get active life events affecting the wrestler."""
     return db.query(LifeEventDB).filter(
         LifeEventDB.wrestler_id == wrestler_id,
-        LifeEventDB.is_active == True,
+        LifeEventDB.is_active,
     ).all()
 
 
@@ -572,7 +572,8 @@ def _generate_worked_shoot_promo(wrestler, gimmick, target_id, db):
     if life_events:
         event = random.choice(life_events)
         if event.is_public:
-            parts.append(f"Everyone knows what I've been dealing with. And instead of support, what do I get? More matches, more promos, more demands.")
+            parts.append(
+                "Everyone knows what I've been dealing with. And instead of support, what do I get? More matches, more promos, more demands.")
     else:
         parts.append("I've given everything to this company. EVERYTHING. And what do I have to show for it?")
 
@@ -723,7 +724,7 @@ def generate_faction_promo(
 
     The speaker (usually the mouthpiece) delivers using stable identity.
     """
-    from models.game_models import StableDB, StableMemberDB
+    from models.game_models import StableDB
 
     stable = db.query(StableDB).filter_by(id=stable_id).first()
     speaker = db.query(GameWrestlerDB).filter_by(id=speaker_wrestler_id).first()

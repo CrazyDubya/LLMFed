@@ -11,9 +11,11 @@ for filename in os.listdir(routes_dir):
         # Update Session to AsyncSession
         content = content.replace("Session =", "AsyncSession =")
         if "from sqlalchemy.orm import Session" in content:
-            content = content.replace("from sqlalchemy.orm import Session", "from sqlalchemy.ext.asyncio import AsyncSession")
+            content = content.replace(
+                "from sqlalchemy.orm import Session",
+                "from sqlalchemy.ext.asyncio import AsyncSession")
         elif "AsyncSession" not in content:
-             content = "from sqlalchemy.ext.asyncio import AsyncSession\n" + content
+            content = "from sqlalchemy.ext.asyncio import AsyncSession\n" + content
 
         # Make route definitions async
         content = re.sub(r'@router\.(get|post|put|patch|delete)\((.*?)\)\ndef ([a-zA-Z0-9_]+)',

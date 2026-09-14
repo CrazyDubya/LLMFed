@@ -10,16 +10,14 @@ fallback so the simulation runs identically without an LLM provider configured.
 import logging
 import os
 import random
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, List
 
 from sqlalchemy.orm import Session
 
 from game_service.character_prompts import (
-    ARCHETYPE_PERSONALITIES, ALIGNMENT_MODIFIERS,
     FALLBACK_DECISIONS, FALLBACK_REACTIONS,
     BOOKER_SYSTEM, MATCH_NARRATOR_SYSTEM,
-    build_character_system_prompt,
-    build_decide_prompt,
+    build_character_system_prompt, build_decide_prompt,
     build_speak_prompt,
     build_react_prompt,
     build_social_media_prompt,
@@ -68,7 +66,6 @@ def _llm_call(system_msg: str, user_msg: str, fallback: str,
     except Exception as e:
         logger.debug("LLM call failed, using fallback: %s", e)
     return fallback
-
 
 
 # -- Shared response-parsing helper ------------------------------------------
@@ -121,7 +118,7 @@ def character_decide(db: Session, wrestler_id: str,
 
     gimmick = db.query(GimmickHistoryDB).filter(
         GimmickHistoryDB.wrestler_id == wrestler_id,
-        GimmickHistoryDB.is_active == True,
+        GimmickHistoryDB.is_active,
     ).first()
     archetype = gimmick.archetype if gimmick else "anti_hero"
 
@@ -167,7 +164,7 @@ def character_speak(db: Session, wrestler_id: str,
 
     gimmick = db.query(GimmickHistoryDB).filter(
         GimmickHistoryDB.wrestler_id == wrestler_id,
-        GimmickHistoryDB.is_active == True,
+        GimmickHistoryDB.is_active,
     ).first()
     archetype = gimmick.archetype if gimmick else "anti_hero"
 
@@ -221,7 +218,7 @@ def character_social_media_post(db: Session, wrestler_id: str,
     Different from character_speak — this is a social post, shorter,
     more casual, platform-appropriate.
     """
-    from models.game_models import GameWrestlerDB, GimmickHistoryDB
+    from models.game_models import GameWrestlerDB
 
     wrestler = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.id == wrestler_id
@@ -238,7 +235,6 @@ def character_social_media_post(db: Session, wrestler_id: str,
                                             post_type, recent_event)
 
     return _llm_call(system_prompt, user_prompt, "", max_tokens=80)
-
 
 
 # -- Booker AI ----------------------------------------------------------------
@@ -344,7 +340,6 @@ def booker_decide_finish(db: Session, federation_id: str,
     return parsed
 
 
-
 # -- Match narrative ----------------------------------------------------------
 
 def generate_match_narrative(winner_name: str, loser_name: str,
@@ -372,7 +367,6 @@ def generate_match_narrative(winner_name: str, loser_name: str,
     return _llm_call(MATCH_NARRATOR_SYSTEM, user_prompt, fallback, max_tokens=120)
 
 
-
 # -- Character agency tick ----------------------------------------------------
 
 def tick_character_agency(db: Session, world_id: str, game_date: str) -> List[str]:
@@ -388,7 +382,7 @@ def tick_character_agency(db: Session, world_id: str, game_date: str) -> List[st
     """
     from models.game_models import (
         GameWrestlerDB, GameNarrativeLogDB, StorylineDB,
-        StorylineParticipantDB, ContractDB,
+        StorylineParticipantDB,
     )
 
     events = []
@@ -396,8 +390,8 @@ def tick_character_agency(db: Session, world_id: str, game_date: str) -> List[st
     # Only top wrestlers get character agency (limits LLM calls)
     wrestlers = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active == True,
-        GameWrestlerDB.is_injured == False,
+        GameWrestlerDB.is_active,
+        GameWrestlerDB.is_injured.is_(False),
         GameWrestlerDB.popularity >= 40,
     ).all()
 

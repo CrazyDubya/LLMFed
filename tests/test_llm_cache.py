@@ -1,8 +1,7 @@
 """Tests for LLM response cache."""
 
 import time
-import pytest
-from llm_abstraction.cache import LLMResponseCache, CacheEntry
+from llm_abstraction.cache import LLMResponseCache
 
 
 class TestLLMResponseCache:

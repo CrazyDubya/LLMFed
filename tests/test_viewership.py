@@ -13,7 +13,7 @@ from models.db_models import Base
 from models.game_models import (
     WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
     MatchDB, MatchParticipantDB, ShowDB, ShowSegmentDB,
-    ChampionshipDB, WrestlerRelationshipDB, ContractDB, PromoDB,
+    ChampionshipDB, WrestlerRelationshipDB, PromoDB,
 )
 
 
@@ -93,9 +93,9 @@ def _create_show_with_card(db, fed, w1, w2, show_type="weekly", **kw):
     db.add(match)
     db.flush()
     db.add(MatchParticipantDB(match_id=match.id, wrestler_id=w1.id,
-                               role="competitor", is_winner=True))
+                              role="competitor", is_winner=True))
     db.add(MatchParticipantDB(match_id=match.id, wrestler_id=w2.id,
-                               role="competitor", is_winner=False))
+                              role="competitor", is_winner=False))
     db.flush()
 
     seg = ShowSegmentDB(
@@ -298,9 +298,9 @@ class TestAttendance:
         w2 = _create_wrestler(db_session, name="W2", popularity=50)
 
         show_weekly, _ = _create_show_with_card(db_session, fed, w1, w2,
-                                                 show_type="weekly", capacity=5000)
+                                                show_type="weekly", capacity=5000)
         show_ppv, _ = _create_show_with_card(db_session, fed, w1, w2,
-                                              show_type="ppv", capacity=5000)
+                                             show_type="ppv", capacity=5000)
 
         import random
         from game_service.viewership_service import calculate_attendance

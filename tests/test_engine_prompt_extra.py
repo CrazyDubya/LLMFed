@@ -1,6 +1,5 @@
-import pytest
 from core_engine.engine import engine_instance
-import builtins
+
 
 def test_engine_prompt_includes_state_and_actions(monkeypatch):
     # Stub agent list
@@ -16,6 +15,7 @@ def test_engine_prompt_includes_state_and_actions(monkeypatch):
     monkeypatch.setattr('core_engine.engine.get_agents', lambda db: [dummy_db])
 
     captured = {}
+
     def fake_send_prompt(prompt):
         captured.update(prompt)
         return {"action_id": "noop", "description": "Stub", "meta": {}}
