@@ -22,8 +22,6 @@ async def create_federation(db: AsyncSession, fed_data: FederationCreateData) ->
         description=fed_data.description,
         tier=fed_data.tier,
         owner_user_id=fed_data.owner_user_id,
-        is_active=fed_data.is_active,
-        max_agents=fed_data.max_agents
     )
     db.add(db_fed)
     await db.commit()
@@ -76,9 +74,6 @@ async def create_agent(db: AsyncSession, agent_data: AgentCreateData) -> Agent:
         gimmick_description=agent_data.gimmick_description,
         federation_id=agent_data.federation_id,
         llm_config=agent_data.llm_config,
-        webhook_url=agent_data.webhook_url,
-        current_heat=agent_data.current_heat,
-        momentum=agent_data.momentum
     )
     db.add(db_agent)
     await db.commit()

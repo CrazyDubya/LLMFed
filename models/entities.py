@@ -83,7 +83,7 @@ class AgentCreateData(BaseModel):
     """Data required to create a new agent."""
     user_id: str = Field(description="ID of the user creating this agent")
     name: str = Field(description="Agent's wrestling name")
-    role: str = Field(default="participant", description="Agent's role in matches")
+    role: str = Field(default="participant", pattern="^(promoter|participant|referee|crowd|announcer|backstage)$", description="Agent's role in matches")
     gimmick_description: str = Field(description="Description of the agent's wrestling character")
     llm_config: Dict[str, Any] = Field(description="LLM configuration for this agent")
     federation_id: Optional[str] = Field(default=None, description="Federation this agent belongs to")
@@ -95,7 +95,7 @@ class AgentCreateData(BaseModel):
 class AgentUpdateData(BaseModel):
     """Data for updating an existing agent."""
     name: Optional[str] = Field(default=None, description="Updated agent name")
-    role: Optional[str] = Field(default=None, description="Updated agent role")
+    role: Optional[str] = Field(default=None, pattern="^(promoter|participant|referee|crowd|announcer|backstage)$", description="Updated agent role")
     gimmick_description: Optional[str] = Field(default=None, description="Updated gimmick description")
     llm_config: Optional[Dict[str, Any]] = Field(default=None, description="Updated LLM configuration")
     federation_id: Optional[str] = Field(default=None, description="Updated federation assignment")

@@ -1,5 +1,7 @@
 # LLMFed Multi-Perspective Analysis Report
 
+> **Historical snapshot (December 2024).** This report predates substantial implementation work and intentionally preserves its original findings. Use [STATUS.md](STATUS.md) for current priorities.
+
 **Generated:** December 2024
 **Analysis Method:** Comprehensive multi-perspective audit using linters, security scanners, code exploration, and documentation review.
 

@@ -1,5 +1,7 @@
 # LLMFed Reliability Refactoring Plan
 
+> **Working analysis, not a live checklist.** Re-validate every item against the current code before implementing it, then record accepted priorities in [docs/STATUS.md](docs/STATUS.md).
+
 ## Part 1: Analysis — Current Code vs. The 10 Rules
 
 ### What's Good About the Code As It Is

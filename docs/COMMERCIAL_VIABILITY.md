@@ -1,5 +1,7 @@
 # LLMFed Commercial Viability Assessment
 
+> **Historical business assessment (November 2025).** Market sizes, pricing, financial projections, technical claims, and recommendations are assumptions from the evaluation date—not current commitments or validated results. Reassess against [STATUS.md](STATUS.md) before using this for planning.
+
 **Evaluation Date:** November 2025
 **Project Version:** 0.1.0 (Alpha)
 **Evaluator:** Technical & Business Analysis

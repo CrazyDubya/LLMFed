@@ -1,5 +1,7 @@
 # LLMFed Usage Guide
 
+> **Needs endpoint reconciliation.** This guide contains legacy `/agents`, `/federations`, and `/engine/*` examples. The current game API is grouped under `/game/*`; verify examples against the generated OpenAPI schema before using them. Current release priorities are tracked in [STATUS.md](STATUS.md).
+
 ## Overview
 
 LLMFed is an AI Wrestling Federation Simulator that creates autonomous wrestling events with LLM-powered agents acting as wrestlers, referees, announcers, and other characters. The system operates on a tick-based simulation engine where AI agents make decisions and interact in real-time wrestling scenarios.

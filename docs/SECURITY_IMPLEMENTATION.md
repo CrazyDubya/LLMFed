@@ -1,5 +1,7 @@
 # Security Implementation - P0 Priority Items
 
+> **Implementation record.** This documents the security phase as originally delivered. Verify current route coverage and deployment configuration against [STATUS.md](STATUS.md) before calling the system production-ready.
+
 This document describes the P0 security enhancements implemented based on the comprehensive code review.
 
 ## Implemented Features

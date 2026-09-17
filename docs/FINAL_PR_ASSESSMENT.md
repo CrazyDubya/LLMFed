@@ -1,5 +1,7 @@
 # Final PR Assessment - Ready for Merge ✅
 
+> **Historical PR assessment (2026-01-21).** The completion claims, test totals, file lists, and production-readiness assessment are not maintained live. See [STATUS.md](STATUS.md) before relying on any claim.
+
 ## Executive Summary
 
 **Status**: ✅ **READY FOR MERGE**  

@@ -85,7 +85,7 @@ def test_security_headers_present():
     pytest.importorskip("slowapi")
     from api_gateway.main import app
 
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
     response = client.get("/")
 
     # Check for security headers
@@ -105,7 +105,7 @@ def test_cors_headers():
     pytest.importorskip("slowapi")
     from api_gateway.main import app
 
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
 
     # Test preflight request
     response = client.options(
@@ -133,7 +133,7 @@ def test_debug_endpoint_protection():
     from api_gateway.main import app
     import os
 
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
 
     # Ensure DEBUG_MODE is not set
     original_debug = os.environ.get("DEBUG_MODE")

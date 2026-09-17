@@ -1,4 +1,3 @@
-from fastapi_cache.decorator import cache
 from sqlalchemy.future import select
 """
 Core API routes extracted from main.py.
@@ -99,7 +98,6 @@ async def delete_agent_endpoint(agent_id: str, db: AsyncSession = Depends(get_db
 # ---------------------------------------------------------------------------
 
 @router.get("/federations", summary="List All Federations", response_model=List[Federation], tags=["federations"])
-@cache(expire=60)
 async def list_federations_endpoint(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):
     """Retrieves a list of all federations, with optional pagination."""
     return await crud.get_federations(db=db, skip=skip, limit=limit)
@@ -167,6 +165,13 @@ async def delete_federation_endpoint(federation_id: str, db: AsyncSession = Depe
     existing = await crud.get_federation_by_id(db=db, federation_id=federation_id)
     if not existing:
         raise HTTPException(status_code=404, detail=f"Federation with ID '{federation_id}' not found.")
+
+    agents = await crud.get_agents_by_federation_id(db=db, federation_id=federation_id)
+    if agents:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Federation {federation_id} cannot be deleted because it still contains agents.",
+        )
 
     deleted = await crud.delete_federation(db=db, federation_id=federation_id)
     if not deleted:
