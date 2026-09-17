@@ -1,5 +1,7 @@
 # Codebase Documentation: LLMFed API
 
+> **Reference snapshot.** Some paths and descriptions in this document reflect an older repository layout. Use the current tree and [STATUS.md](STATUS.md) when they disagree.
+
 This document provides an overview of the codebase structure, components, and functionalities of the LLMFed API project.
 
 ## Project Structure Overview

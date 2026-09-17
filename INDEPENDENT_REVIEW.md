@@ -1,5 +1,7 @@
 # Independent Codebase Review and Optimization Suggestions
 
+> **Historical review.** Recommendations here are exploratory and may overlap with completed work or current priorities. Use [docs/STATUS.md](docs/STATUS.md) as the current backlog.
+
 This document presents an independent review of the LLMFed codebase, providing suggestions for improvements, enhancements, and optimizations. This review considers both the existing documentation (`REFACTOR_PLAN.md`, `ENHANCEMENT_PROPOSAL.md`) and original findings from an exploration of the code structure and current implementation.
 
 ## 1. Architectural & Structural Improvements

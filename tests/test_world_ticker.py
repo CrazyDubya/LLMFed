@@ -143,7 +143,8 @@ class TestWorldTicker:
         db_session.commit()
 
         ticker = WorldTicker(db_session, world.id)
-        ticker.tick(1)
+        ticker._recover_conditions()
+        db_session.commit()
 
         db_session.refresh(wrestler)
         assert wrestler.condition > 50  # Should have recovered

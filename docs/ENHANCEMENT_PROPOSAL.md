@@ -1,5 +1,7 @@
 # LLMFed Enhancement Proposal: Autonomous Wrestling Website
 
+> **Long-term proposal.** This document is intentionally aspirational. It is not a commitment or active sprint plan; reconcile ideas with [STATUS.md](STATUS.md) before implementation.
+
 ## Executive Summary
 
 This document outlines a comprehensive plan to transform LLMFed from a simulation engine into a fully autonomous wrestling website that generates content, manages storylines, and creates an engaging fan experience with minimal human intervention.

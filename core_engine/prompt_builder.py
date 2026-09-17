@@ -54,8 +54,8 @@ class PromptBuilder:
     _jinja_env.filters['tojson'] = lambda obj, indent=None: json.dumps(obj, indent=indent)
 
     @classmethod
-    def build_prompt(cls, context: EventContext, hints: Dict[str, Any]) -> str:
-        """Constructs a rendered string prompt using Jinja2."""
+    def build_prompt(cls, context: EventContext, hints: Dict[str, Any]) -> Dict[str, Any]:
+        """Construct a structured prompt payload with its rendered text."""
         if context.role not in VALID_ROLES:
             raise ValueError(f"Unknown role '{context.role}', expected one of {VALID_ROLES}")
 
@@ -64,7 +64,7 @@ class PromptBuilder:
 
         template = cls._jinja_env.from_string(PROMPT_TEMPLATE)
 
-        return template.render(
+        rendered_prompt = template.render(
             role=context.role,
             event_id=context.event_id,
             event_type=context.event_type,
@@ -75,6 +75,19 @@ class PromptBuilder:
             hints=hints,
             response_schema=schema,
         )
+        return {
+            "preamble": f"You are acting as the {context.role}. Respond accordingly.",
+            "event_id": context.event_id,
+            "event_type": context.event_type,
+            "role": context.role,
+            "description": context.description,
+            "requesting_agent_id": context.requesting_agent_id,
+            "state": context.state,
+            "available_actions": [action.model_dump() for action in context.available_actions],
+            "hints": hints,
+            "response_schema": schema,
+            "rendered_prompt": rendered_prompt,
+        }
 
     @classmethod
     def build_prompt_dict(cls, context: EventContext, hints: Dict[str, Any]) -> Dict[str, Any]:
@@ -96,5 +109,5 @@ class PromptBuilder:
             "available_actions": [action.model_dump() for action in context.available_actions],
             "hints": hints,
             "response_schema": schema,
-            "rendered_prompt": cls.build_prompt(context, hints)
+            "rendered_prompt": cls.build_prompt(context, hints)["rendered_prompt"]
         }

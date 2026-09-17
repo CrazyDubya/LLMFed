@@ -32,8 +32,8 @@ class StreamChunk:
 @dataclass
 class LLMResponse:
     content: str
-    provider: str
     model: str
+    provider: str = "unknown"
     usage: Optional[Dict[str, int]] = None
     raw_response: Any = None
     cost_usd: float = 0.0
@@ -276,6 +276,52 @@ class LLMAbstraction:
         if cls is None:
             raise ValueError(f"Unknown provider: {provider_name}")
         return cls(self.model, **self.config)
+
+    def _messages_from_prompt(
+        self,
+        prompt: str,
+        system_message: Optional[str] = None,
+    ) -> List[LLMMessage]:
+        messages: List[LLMMessage] = []
+        if system_message:
+            messages.append(LLMMessage(role="system", content=system_message))
+        messages.append(LLMMessage(role="user", content=prompt))
+        return messages
+
+    def generate(
+        self,
+        prompt: str,
+        system_message: Optional[str] = None,
+        **kwargs,
+    ) -> LLMResponse:
+        """Synchronous compatibility facade used by the async wrapper."""
+        self.budget.check_budget()
+        response = self.provider.generate(
+            self._messages_from_prompt(prompt, system_message), **kwargs
+        )
+        self.budget.record(response)
+        return response
+
+    def generate_with_messages(
+        self,
+        messages: List[LLMMessage],
+        **kwargs,
+    ) -> LLMResponse:
+        """Generate from an existing conversation in a worker thread."""
+        self.budget.check_budget()
+        response = self.provider.generate(messages, **kwargs)
+        self.budget.record(response)
+        return response
+
+    def get_budget_summary(self) -> Dict[str, Any]:
+        return {
+            "request_count": self.budget.request_count,
+            "prompt_tokens": self.budget.total_prompt_tokens,
+            "completion_tokens": self.budget.total_completion_tokens,
+            "cost_usd": self.budget.total_cost_usd,
+            "lifetime_request_count": self.budget.lifetime_request_count,
+            "lifetime_cost_usd": self.budget.lifetime_cost_usd,
+        }
 
     async def generate_action_async(self, prompt: dict) -> dict:
         """

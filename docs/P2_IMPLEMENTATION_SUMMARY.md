@@ -1,5 +1,7 @@
 # P2 Implementation Summary
 
+> **Historical implementation record.** The counts and completion claims are not continuously updated. Use [STATUS.md](STATUS.md) for the active backlog.
+
 ## Overview
 
 All P2 priority items and residuals have been successfully implemented. Since original P2 items (API documentation and error handling) were completed in P1, this phase focused on additional enhancements and quality improvements.

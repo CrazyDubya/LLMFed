@@ -1,5 +1,7 @@
 # LLMFed Codebase Analysis
 
+> **Historical snapshot.** This analysis describes an earlier repository state and includes findings that may already be resolved. For current limitations and priorities, see [STATUS.md](STATUS.md).
+
 ## Executive Summary
 
 The LLMFed project is an ambitious AI Wrestling Federation Simulator that uses LLM agents to populate and manage wrestling federations. While the architectural foundation is solid and the design is well-thought-out, there are several critical issues that prevent the application from running and will cause problems if not addressed.

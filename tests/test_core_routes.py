@@ -3,12 +3,8 @@
 Uses FastAPI TestClient to exercise the HTTP layer end-to-end against
 an in-memory SQLite database.
 """
-import os
 import uuid
 from fastapi.testclient import TestClient
-
-# Allow the TestClient's "testserver" host through TrustedHostMiddleware
-os.environ["ALLOWED_HOSTS"] = "localhost,127.0.0.1,testserver"
 
 from api_gateway.main import app  # noqa: E402
 
@@ -16,7 +12,11 @@ from api_gateway.main import app  # noqa: E402
 # the autouse fixture in tests/conftest.py (init_db() is async and can't be
 # called synchronously here at import/collection time).
 
-client = TestClient(app, raise_server_exceptions=False)
+client = TestClient(
+    app,
+    base_url="http://localhost",
+    raise_server_exceptions=False,
+)
 
 
 def _unique(prefix: str = "") -> str:

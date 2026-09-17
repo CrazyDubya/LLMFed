@@ -1,6 +1,6 @@
 # LLMFed - Federated Learning Management System with AI Agent Orchestration
 
-[![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -96,7 +96,7 @@ For dev/run commands and project layout, see [AGENTS.md](AGENTS.md).
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.10 or higher
 - pip package manager
 - (Optional) PostgreSQL for production deployments
 - (Optional) Ollama or OpenAI API access for LLM features
@@ -135,10 +135,12 @@ For dev/run commands and project layout, see [AGENTS.md](AGENTS.md).
    export DATABASE_URL="postgresql://user:pass@localhost/llmfed"
    ```
 
-5. **Initialize the database**
+5. **Initialize the development database**
    ```bash
-   python -c "from agent_service.database import init_db; init_db()"
+   python -c "import asyncio; from agent_service.database import init_db; asyncio.run(init_db())"
    ```
+
+   Alembic has checked-in revisions for the current schema. Use `alembic upgrade head` for migration-managed environments; `create_all()` is intended only for local development/tests. Review schema parity and the production migration workflow in [docs/STATUS.md](docs/STATUS.md).
 
 6. **Start the server**
    ```bash
@@ -218,9 +220,11 @@ for result in results:
 
 ## 📖 Documentation
 
-- **[docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md)** - Comprehensive API reference and usage examples
+- **[docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md)** - Legacy workflow guide; verify routes against OpenAPI
+- **[docs/API_USAGE_EXAMPLES.md](docs/API_USAGE_EXAMPLES.md)** - Legacy API examples
 - **[docs/ANALYSIS.md](docs/ANALYSIS.md)** - Technical analysis and architecture details
-- **[docs/ENHANCEMENT_PROPOSAL.md](docs/ENHANCEMENT_PROPOSAL.md)** - Roadmap and planned features
+- **[docs/STATUS.md](docs/STATUS.md)** - Current implementation status, known limitations, and active backlog
+- **[docs/ENHANCEMENT_PROPOSAL.md](docs/ENHANCEMENT_PROPOSAL.md)** - Long-term product ideas
 - **[docs/codebase.md](docs/codebase.md)** - Detailed codebase documentation
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines
 - **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** - Community standards
@@ -304,31 +308,13 @@ python -m pytest tests/ --cov=. --cov-report=html
 - ✅ Rule validation
 - ✅ LLM client integration
 - ✅ Prompt building
-- ⚠️ Multi-role interactions (in progress)
+- ⚠️ Multi-role interactions and full end-to-end coverage require verification
 
-## 🗺️ Roadmap
+## 🗺️ Roadmap and current status
 
-The current frontend is a static single-page interface (see [frontend/README.md](frontend/README.md)); a full Web-based UI (e.g. Vite/React) is planned for a later release.
+`web-ui/` is the supported frontend candidate; `frontend/` is retained as a legacy static UI. The production hosting and backend-origin contract still need verification.
 
-### Short-term (v0.2.0)
-- [ ] Web-based UI for federation management
-- [ ] WebSocket support for real-time updates
-- [ ] Enhanced narrative generation
-- [ ] Match scheduling system
-
-### Medium-term (v0.3.0)
-- [ ] Multi-federation universe
-- [ ] Tournament bracket generation
-- [ ] Authentication and authorization
-- [ ] Advanced analytics dashboard
-
-### Long-term (v1.0.0)
-- [ ] Fan interaction features
-- [ ] Automated broadcasting system
-- [ ] Cross-promotional events
-- [ ] Mobile application
-
-See [docs/ENHANCEMENT_PROPOSAL.md](docs/ENHANCEMENT_PROPOSAL.md) for detailed roadmap.
+For the consolidated list of verified limitations, release blockers, and active priorities, see [docs/STATUS.md](docs/STATUS.md). Long-term product ideas are collected in [docs/ENHANCEMENT_PROPOSAL.md](docs/ENHANCEMENT_PROPOSAL.md); that document is not the active sprint plan.
 
 ## 🤝 Contributing
 
@@ -342,23 +328,19 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 
 ## 📊 Project Status
 
-**Current Version**: 0.1.0 (Alpha)
+**Current Version**: 0.1.0 (development)
 
-- ✅ Core engine functional
-- ✅ API gateway operational
-- ✅ Database layer complete
-- ✅ LLM integration working
-- ⚠️ Test coverage improving
-- 🔄 Documentation ongoing
+- ✅ Core engine and API gateway are present
+- ✅ SQLAlchemy game-world models and services are present
+- ✅ LLM provider abstraction and security utilities are present
+- ⚠️ Production readiness, migrations, and end-to-end workflow still require verification
+- 🔄 Documentation is being consolidated; see [docs/STATUS.md](docs/STATUS.md)
 
-## 🐛 Known Issues
+## 🐛 Known limitations
 
-- Multi-role tick processing needs optimization
-- Pydantic v2 deprecation warnings to address
-- WebSocket support not yet implemented
-- Authentication system pending
+The current, verified limitation and release-blocker list lives in [docs/STATUS.md](docs/STATUS.md). Older audit documents contain historical findings and may describe issues that have since been addressed; do not use them as a current issue tracker.
 
-See [Issues](https://github.com/CrazyDubya/LLMFed/issues) for full list.
+See [Issues](https://github.com/CrazyDubya/LLMFed/issues) for externally tracked work.
 
 ## 📄 License
 

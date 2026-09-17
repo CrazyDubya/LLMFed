@@ -1,5 +1,7 @@
 # API Usage Examples
 
+> **Legacy API snapshot.** Many examples target the earlier agent/federation API surface. The current game routes are grouped under `/game/*`; verify paths, authentication, and response shapes against `/openapi.json` before using these examples. See [STATUS.md](STATUS.md) for current priorities.
+
 Complete examples for using the LLMFed API endpoints.
 
 ## Table of Contents

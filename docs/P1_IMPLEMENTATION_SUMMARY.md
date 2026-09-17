@@ -1,5 +1,7 @@
 # P1 Implementation Summary
 
+> **Historical implementation record.** The counts and completion claims are not continuously updated. Use [STATUS.md](STATUS.md) for the active backlog.
+
 ## Overview
 
 All P1 priority items from the comprehensive code review have been successfully implemented and tested, along with completing P0 residuals.
