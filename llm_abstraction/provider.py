@@ -233,6 +233,23 @@ class TokenBudget:
             self.lifetime_prompt_tokens += prompt
             self.lifetime_completion_tokens += completion
 
+    def reset(self) -> Dict[str, Any]:
+        """Reset the per-window counters; lifetime counters survive.
+
+        Returns a snapshot of the window that just closed so callers can
+        log spend before it is discarded.
+        """
+        snapshot = {
+            "request_count": self.request_count,
+            "total_tokens": self.total_prompt_tokens + self.total_completion_tokens,
+            "total_cost_usd": self.total_cost_usd,
+        }
+        self.request_count = 0
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+        self.total_cost_usd = 0.0
+        return snapshot
+
 
 class LLMAbstraction:
     """
