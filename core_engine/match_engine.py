@@ -950,14 +950,16 @@ class MatchSimulator:
             rating = max(RATING_MIN, rating - botch_penalty)
             rating = round(rating, 1)
 
-        return MatchResult(
+        # Only retain highlight spots in the result to reduce memory
+        # pressure during multi-match show simulations.
+        result = MatchResult(
             winner_id=finish_spot.attacker_id,
             finish_type=finish_spot.finish_type or "pinfall",
             finish_description=finish_spot.description,
             match_rating=rating,
             crowd_heat=self._calculate_heat(),
             duration_ticks=self.tick,
-            spots=self.spots,
+            spots=highlights,
             narrative_summary=narrative,
             interference_occurred=self._interference_happened,
             botch_count=botch_count,
@@ -965,6 +967,11 @@ class MatchSimulator:
             went_into_business=self._shoot_occurred,
             shoot_wrestler_id=self._shoot_wrestler_id,
         )
+
+        # Release the full spot list now that highlights have been extracted
+        self.spots.clear()
+
+        return result
 
 
 # ---------------------------------------------------------------------------
