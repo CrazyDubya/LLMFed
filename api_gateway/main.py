@@ -17,6 +17,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, Request
+from contextlib import asynccontextmanager
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry import trace
@@ -57,10 +58,25 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Application
 # ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_reaper()
+
+    # Setup Redis Cache
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    try:
+        redis = aioredis.from_url(redis_url, encoding="utf8", decode_responses=True)
+        FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
+    except Exception as e:
+        logger.warning(f"Failed to connect to redis, caching disabled: {e}")
+    yield
+
+
 limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="LLMFed API",
+    lifespan=lifespan,
     description="""
 # LLMFed - Federated Learning Management System
 
@@ -145,24 +161,6 @@ async def add_security_headers(request: Request, call_next):
 # Error handlers
 # ---------------------------------------------------------------------------
 register_error_handlers(app)
-
-# ---------------------------------------------------------------------------
-# Startup / shutdown
-# ---------------------------------------------------------------------------
-
-
-@app.on_event("startup")
-async def _on_startup():
-    start_reaper()
-
-    # Setup Redis Cache
-    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-    try:
-        redis = aioredis.from_url(redis_url, encoding="utf8", decode_responses=True)
-        FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
-    except Exception as e:
-        logger.warning(f"Failed to connect to redis, caching disabled: {e}")
-
 
 # ---------------------------------------------------------------------------
 # Routers

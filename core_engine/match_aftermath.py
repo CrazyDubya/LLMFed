@@ -8,6 +8,7 @@ wrestler relationships/chemistry, history entries, and storyline triggers.
 import random
 import logging
 from sqlalchemy.orm import Session
+from sqlalchemy import cast, String
 
 from models.game_models import (
     MatchDB, MatchParticipantDB, GameWrestlerDB, WrestlerStatsDB,
@@ -369,8 +370,8 @@ def _update_relationships(db: Session, match: MatchDB,
             if wr1 and wr2:
                 storyline_link = db.query(GameNarrativeLogDB).filter(
                     GameNarrativeLogDB.world_id == match.world_id,
-                    GameNarrativeLogDB.involved_entities.contains(w1),
-                    GameNarrativeLogDB.involved_entities.contains(w2),
+                    cast(GameNarrativeLogDB.involved_entities, String).like(f'%"{w1}"%'),
+                    cast(GameNarrativeLogDB.involved_entities, String).like(f'%"{w2}"%'),
                 ).first()
                 if storyline_link:
                     heat_increase += HEAT_STORYLINE_LINK

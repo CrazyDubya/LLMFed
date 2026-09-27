@@ -22,7 +22,7 @@ from game_service.player_action_handler import PlayerActionHandler, get_active_c
 import logging
 import os
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 from sqlalchemy.orm import Session
 
@@ -220,7 +220,7 @@ class WorldTicker:
                 result = handler.execute(action)
                 action.status = "completed"
                 action.result = result
-                action.processed_at = datetime.utcnow()
+                action.processed_at = datetime.now(timezone.utc)
                 self.events.append(f"Processed action: {action.action_type}")
             except Exception as e:
                 action.status = "failed"
