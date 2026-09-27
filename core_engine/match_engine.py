@@ -950,7 +950,10 @@ class MatchSimulator:
             rating = max(RATING_MIN, rating - botch_penalty)
             rating = round(rating, 1)
 
-        return MatchResult(
+        # Keep ALL spots in the result for correct DB persistence.
+        # The DB integration layer will persist all events to simulation_log
+        # and MatchEventDB. Callers can optionally filter to highlights after.
+        result = MatchResult(
             winner_id=finish_spot.attacker_id,
             finish_type=finish_spot.finish_type or "pinfall",
             finish_description=finish_spot.description,
@@ -965,6 +968,8 @@ class MatchSimulator:
             went_into_business=self._shoot_occurred,
             shoot_wrestler_id=self._shoot_wrestler_id,
         )
+
+        return result
 
 
 # ---------------------------------------------------------------------------
