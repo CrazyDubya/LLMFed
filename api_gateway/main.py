@@ -29,10 +29,6 @@ import os
 import sys
 import logging
 
-# Configure local Ollama before any imports to enforce using long-gemma
-os.environ.setdefault("OPENAI_MODEL", "long-gemma")
-os.environ.setdefault("OPENAI_API_BASE", "http://127.0.0.1:11434/v1")
-
 # Ensure project root is on sys.path for all internal imports
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _project_root not in sys.path:
@@ -91,7 +87,7 @@ async def lifespan(app: FastAPI):
     # Dispose the SQLAlchemy connection pool
     try:
         from agent_service.database import engine as db_engine
-        db_engine.dispose()
+        await db_engine.dispose()
         logger.info("Database connection pool disposed")
     except Exception as e:
         logger.warning("Error disposing database pool: %s", e)

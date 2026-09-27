@@ -12,6 +12,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Make entrypoint script executable
+RUN chmod +x docker-entrypoint.sh
+
 EXPOSE 8091
 
-CMD ["uvicorn", "api_gateway.main:app", "--host", "0.0.0.0", "--port", "8091"]
+ENTRYPOINT ["./docker-entrypoint.sh"]

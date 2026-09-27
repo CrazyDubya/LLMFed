@@ -6,7 +6,7 @@ services:
     ports:
       - "8091:8091"
     environment:
-      DATABASE_URL: "postgresql+asyncpg://llmfed:changeme@db:5432/llmfed"
+      DATABASE_URL: "postgresql+asyncpg://llmfed:${POSTGRES_PASSWORD:-changeme}@db:5432/llmfed"
       OPENAI_MODEL: "${OPENAI_MODEL:-long-gemma}"
       OPENAI_API_BASE: "${OPENAI_API_BASE:-http://ollama:11434/v1}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-ollama}"
