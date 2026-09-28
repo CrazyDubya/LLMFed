@@ -31,7 +31,11 @@ _REAPER_INTERVAL_SECONDS = 30
 
 
 class ConnectionManager:
-    """Manages WebSocket connections grouped by world_id."""
+    """Manages WebSocket connections grouped by world_id.
+
+    All mutations are guarded by an asyncio.Lock to prevent races when
+    multiple connections arrive or depart concurrently.
+    """
 
     def __init__(self):
         # world_id -> set of connected websockets
@@ -40,28 +44,32 @@ class ConnectionManager:
         self._last_activity: Dict[WebSocket, float] = {}
         # reverse lookup: websocket -> world_id (needed by reaper)
         self._ws_to_world: Dict[WebSocket, str] = {}
+        self._lock = asyncio.Lock()
 
     async def connect(self, websocket: WebSocket, world_id: str):
         """Accept and register a new connection."""
         await websocket.accept()
-        if world_id not in self.active_connections:
-            self.active_connections[world_id] = set()
-        self.active_connections[world_id].add(websocket)
-        self._last_activity[websocket] = time.monotonic()
-        self._ws_to_world[websocket] = world_id
+        async with self._lock:
+            if world_id not in self.active_connections:
+                self.active_connections[world_id] = set()
+            self.active_connections[world_id].add(websocket)
+            self._last_activity[websocket] = time.monotonic()
+            self._ws_to_world[websocket] = world_id
+            count = len(self.active_connections[world_id])
         logger.info(
             "WebSocket connected to world %s (%d connections)",
-            world_id, len(self.active_connections[world_id]),
+            world_id, count,
         )
 
-    def disconnect(self, websocket: WebSocket, world_id: str):
+    async def disconnect(self, websocket: WebSocket, world_id: str):
         """Remove a connection and clean up tracking state."""
-        if world_id in self.active_connections:
-            self.active_connections[world_id].discard(websocket)
-            if not self.active_connections[world_id]:
-                del self.active_connections[world_id]
-        self._last_activity.pop(websocket, None)
-        self._ws_to_world.pop(websocket, None)
+        async with self._lock:
+            if world_id in self.active_connections:
+                self.active_connections[world_id].discard(websocket)
+                if not self.active_connections[world_id]:
+                    del self.active_connections[world_id]
+            self._last_activity.pop(websocket, None)
+            self._ws_to_world.pop(websocket, None)
 
     def touch(self, websocket: WebSocket):
         """Update the last-activity timestamp for heartbeat tracking."""
@@ -89,7 +97,7 @@ class ConnectionManager:
 
         # Clean up dead connections
         for conn in dead:
-            self.disconnect(conn, world_id)
+            await self.disconnect(conn, world_id)
 
     async def send_personal(self, websocket: WebSocket, message: dict):
         """Send a message to a specific connection."""
@@ -125,7 +133,7 @@ class ConnectionManager:
         stale = self.get_stale_connections()
         for ws, world_id in stale:
             logger.info("Closing stale WebSocket for world %s", world_id)
-            self.disconnect(ws, world_id)
+            await self.disconnect(ws, world_id)
             try:
                 await ws.close(code=1000, reason="heartbeat timeout")
             except Exception:
@@ -176,6 +184,15 @@ def start_reaper():
     if _reaper_task is None or _reaper_task.done():
         _reaper_task = asyncio.ensure_future(_reaper_loop())
         logger.info("WebSocket stale-connection reaper started")
+
+
+def stop_reaper():
+    """Stop the stale-connection reaper task, if running."""
+    global _reaper_task
+    if _reaper_task is not None and not _reaper_task.done():
+        _reaper_task.cancel()
+        logger.info("WebSocket stale-connection reaper stopped")
+    _reaper_task = None
 
 
 # ---------------------------------------------------------------------------
@@ -257,4 +274,4 @@ async def websocket_endpoint(websocket: WebSocket, world_id: str):
     except Exception as e:
         logger.error("WebSocket error for world %s: %s: %s", world_id, type(e).__name__, e)
     finally:
-        manager.disconnect(websocket, world_id)
+        await manager.disconnect(websocket, world_id)
