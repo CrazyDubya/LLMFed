@@ -370,8 +370,8 @@ def _update_relationships(db: Session, match: MatchDB,
             if wr1 and wr2:
                 storyline_link = db.query(GameNarrativeLogDB).filter(
                     GameNarrativeLogDB.world_id == match.world_id,
-                    cast(GameNarrativeLogDB.involved_entities, String).like(f'%"{w1}"%'),
-                    cast(GameNarrativeLogDB.involved_entities, String).like(f'%"{w2}"%'),
+                    cast(GameNarrativeLogDB.involved_entities, String).contains(f'"{w1}"'),
+                    cast(GameNarrativeLogDB.involved_entities, String).contains(f'"{w2}"'),
                 ).first()
                 if storyline_link:
                     heat_increase += HEAT_STORYLINE_LINK
