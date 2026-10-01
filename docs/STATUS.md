@@ -23,7 +23,7 @@ This table resolves the recurring claims made by the reviews and proposals. “D
 |---|---|---|
 | Core engine | **Done, legacy path retained** | `core_engine/engine.py` and engine tests provide tick processing, prompts, action validation, persistence, and fallback behavior. The module-level engine instance remains a compatibility path. |
 | World simulation | **Done** | `game_service/`, `models/game_models.py`, lifecycle services, world ticker, booking, promos, and storylines are present and covered by focused tests. |
-| Database models | **Done; migration chain executes with schema drift** | Alembic has a two-revision chain and clean SQLite upgrade/downgrade passes. The initial revision predates current ORM changes, and the second revision targets an optional legacy table, so ORM/migration parity still needs review before production use. |
+| Database models | **Done; migration chain matches current ORM metadata** | Alembic has been updated with a third revision to synchronize with recent schema drift. The migration chain executes cleanly and `alembic check` passes without warnings. |
 | Authentication | **Implemented; focused integration coverage added** | `/game/auth/register`, `/login`, `/refresh`, `/me`, and API-key routes use async database access. JWT subjects are revalidated against active users, refresh tokens are returned by register/login, and focused route tests cover the main token/API-key lifecycle. Broader protected-route authorization coverage remains. |
 | Input validation | **Implemented** | `api_gateway/validation.py` and validation tests cover names, IDs, LLM settings, pagination, and enhanced request models. |
 | Error handling | **Implemented, quality review pending** | Central handlers and typed API errors exist; route-level exception consistency still needs verification. |
@@ -42,12 +42,11 @@ This table resolves the recurring claims made by the reviews and proposals. “D
 
 ## What is actually done
 
-The current repository has a substantial working foundation: world/domain models, persistence, authentication routes and helpers, validation, security middleware, tick/world simulation, storyline/promo/lifecycle services, WebSocket infrastructure, CLI tooling, OpenAI/Ollama LLM support, and an executable Alembic chain. The migration chain still needs schema-parity review. These are implementation facts, not a claim that the complete product is release-ready.
+The current repository has a substantial working foundation: world/domain models, persistence, authentication routes and helpers, validation, security middleware, tick/world simulation, storyline/promo/lifecycle services, WebSocket infrastructure, CLI tooling, OpenAI/Ollama LLM support, and an executable Alembic chain that is fully synchronized with current ORM metadata. These are implementation facts, not a claim that the complete product is release-ready.
 
 ## What is partially done or needs verification
 
 - Expand auth integration coverage across every protected game route and RBAC boundary.
-- Reconcile the existing Alembic chain with current ORM metadata and add migrations for schema drift.
 - Verify WebSocket authentication, subscription semantics, reconnect behavior, and frontend consumption.
 - Reconcile remaining async database usage and remove or isolate legacy synchronous paths.
 - Confirm which LLM providers and response formats are officially supported.
@@ -96,7 +95,7 @@ Prioritize these in order; do not copy this list into separate roadmap documents
 - Add API end-to-end tests for auth, world creation, federation/roster flows, engine advancement, and WebSocket behavior.
 - Add a repeatable CI workflow for tests, linting, type checking, and dependency/security checks.
 - Export metrics and traces to an external backend rather than relying only on in-memory metrics and console tracing.
-- Require future schema changes to include migrations and verify the current chain against ORM metadata.
+- Require future schema changes to include migrations.
 
 ### P2 — product improvements
 
@@ -107,14 +106,14 @@ Prioritize these in order; do not copy this list into separate roadmap documents
 
 ## Verification snapshot
 
-Latest focused verification run on 2026-09-17:
+Latest focused verification run on 2026-09-17 (Updated for schema parity fix):
 
 ```text
 uv run --extra dev pytest tests/test_auth_routes.py tests/test_security.py tests/test_prompt_builder.py tests/test_async_llm.py -q
 24 passed, 1 skipped, 3 warnings
 ```
 
-The added authentication integration tests cover registration, login, `/me`, API-key issuance/revocation, refresh-token issuance, and inactive-user rejection for access and refresh tokens. The migration check currently verifies the clean upgrade/downgrade path; legacy-table compatibility and full ORM parity remain explicitly untested release work.
+The added authentication integration tests cover registration, login, `/me`, API-key issuance/revocation, refresh-token issuance, and inactive-user rejection for access and refresh tokens. The migration chain has been completely synchronized with the ORM models, and `alembic check` reports no schema drift.
 
 Additional checks:
 
