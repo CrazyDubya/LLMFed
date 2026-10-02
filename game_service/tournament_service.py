@@ -9,6 +9,7 @@ import logging
 import random
 import math
 import uuid
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from enum import Enum
@@ -28,6 +29,8 @@ class MatchStatus(str, Enum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
+    BYE = "bye"
+    SKIPPED = "skipped"
 
 
 @dataclass
@@ -59,10 +62,24 @@ class TournamentMatch:
     stipulation: Optional[str] = None
     is_final: bool = False
 
+    # Explicit DAG edges for double elimination; next_match_id remains the
+    # compatible winner-destination mirror. Slots are "a" or "b".
+    winner_next_match_id: Optional[str] = None
+    winner_next_slot: Optional[str] = None
+    loser_next_match_id: Optional[str] = None
+    loser_next_slot: Optional[str] = None
+    stage: str = ""
+    participant_a_resolved: bool = True
+    participant_b_resolved: bool = True
+    active: bool = True
+
     def is_ready(self) -> bool:
         """Both participants are set and match hasn't been played."""
         return (
-            self.participant_a_id is not None
+            self.active
+            and self.participant_a_resolved
+            and self.participant_b_resolved
+            and self.participant_a_id is not None
             and self.participant_b_id is not None
             and self.status == MatchStatus.PENDING
         )
@@ -120,6 +137,9 @@ def create_tournament(
     if len(wrestler_ids) < 2:
         raise ValueError("Tournament requires at least 2 participants")
 
+    if len(set(wrestler_ids)) != len(wrestler_ids):
+        raise ValueError("Tournament participants must be unique")
+
     wrestler_names = wrestler_names or {}
     rankings = rankings or {}
 
@@ -154,7 +174,7 @@ def create_tournament(
     elif format == TournamentFormat.GAUNTLET:
         _generate_gauntlet(bracket)
     elif format == TournamentFormat.DOUBLE_ELIMINATION:
-        _generate_single_elimination(bracket)  # Simplified: use SE structure
+        _generate_double_elimination(bracket)
 
     return bracket
 
@@ -215,6 +235,145 @@ def _generate_single_elimination(bracket: TournamentBracket) -> None:
             match.winner_id = match.participant_b_id
             match.status = MatchStatus.COMPLETED
             _advance_winner(bracket, match)
+
+
+def _generate_double_elimination(bracket: TournamentBracket) -> None:
+    """Build a seeded winners/losers DAG with a pre-generated reset final.
+
+    Preserve SE's first-vs-last pairings and adjacent winner merges. Highest
+    seeds receive byes. Losers rounds alternate consolidation and WB drops;
+    reversed drops avoid immediate rematches where the field permits it.
+    """
+    n = len(bracket.participants)
+    rounds = (n - 1).bit_length()
+    size = 1 << rounds
+
+    def make_round(stage: str, number: int, count: int) -> List[TournamentMatch]:
+        matches = [TournamentMatch(
+            match_id=f"{stage}-{number}-{i + 1}",
+            stage=stage, round_number=number, match_number=i + 1,
+            participant_a_resolved=False, participant_b_resolved=False,
+        ) for i in range(count)]
+        bracket.matches.extend(matches)
+        return matches
+
+    def link(source: TournamentMatch, outcome: str,
+             target: TournamentMatch, slot: str) -> None:
+        setattr(source, f"{outcome}_next_match_id", target.match_id)
+        setattr(source, f"{outcome}_next_slot", slot)
+        if outcome == "winner":
+            source.next_match_id = target.match_id
+
+    winners = [make_round("winners", r, size >> r)
+               for r in range(1, rounds + 1)]
+    for current, following in zip(winners, winners[1:]):
+        for i, match in enumerate(current):
+            link(match, "winner", following[i // 2], "ab"[i % 2])
+
+    final = make_round("grand_final", 1, 1)[0]
+    final.is_final = True
+    reset = make_round("reset_final", 1, 1)[0]
+    reset.is_final = True
+    reset.active = False
+    link(final, "winner", reset, "a")
+    link(final, "loser", reset, "b")
+    link(winners[-1][0], "winner", final, "a")
+
+    if rounds == 1:
+        # With two entrants the WB loser is already the LB champion.
+        link(winners[0][0], "loser", final, "b")
+    else:
+        lower = make_round("losers", 1, size // 4)
+        for i, match in enumerate(winners[0]):
+            link(match, "loser", lower[i // 2], "ab"[i % 2])
+        for r in range(2, rounds + 1):
+            incoming = make_round("losers", 2 * r - 2, len(winners[r - 1]))
+            for i, match in enumerate(lower):
+                link(match, "winner", incoming[i], "a")
+            for i, match in enumerate(reversed(winners[r - 1])):
+                link(match, "loser", incoming[i], "b")
+            lower = incoming
+            if r < rounds:
+                lower = make_round("losers", 2 * r - 1, len(incoming) // 2)
+                for i, match in enumerate(incoming):
+                    link(match, "winner", lower[i // 2], "ab"[i % 2])
+        link(lower[0], "winner", final, "b")
+
+    # round_number is stage-local. total_rounds counts maximum dependency
+    # waves, including the optional reset; current_round is the earliest
+    # unfinished active wave, not a scheduling barrier.
+    for i, match in enumerate(winners[0]):
+        match.participant_a_id = bracket.participants[i].wrestler_id
+        other = size - 1 - i
+        if other < n:
+            match.participant_b_id = bracket.participants[other].wrestler_id
+        match.participant_a_resolved = match.participant_b_resolved = True
+    _resolve_double_elimination_byes(bracket)
+    _update_double_elimination_round(bracket)
+
+
+def _route_outcome(bracket: TournamentBracket, match: TournamentMatch,
+                   outcome: str, participant_id: Optional[str]) -> None:
+    """Resolve one explicit destination, including an empty bye output."""
+    target_id = getattr(match, f"{outcome}_next_match_id")
+    slot = getattr(match, f"{outcome}_next_slot")
+    if target_id is None and slot is None:
+        return
+    target = next((m for m in bracket.matches if m.match_id == target_id), None)
+    if target is None or slot not in ("a", "b"):
+        raise ValueError("Invalid progression destination")
+    field_name = f"participant_{slot}_id"
+    resolved_name = f"participant_{slot}_resolved"
+    if target.status != MatchStatus.PENDING:
+        raise ValueError("Progression destination is already settled")
+    if getattr(target, resolved_name) or getattr(target, field_name) is not None:
+        raise ValueError("Progression destination slot is already occupied or resolved")
+    other = target.participant_b_id if slot == "a" else target.participant_a_id
+    if participant_id is not None and participant_id == other:
+        raise ValueError("Progression would pair a participant with themselves")
+    setattr(target, field_name, participant_id)
+    setattr(target, resolved_name, True)
+
+
+def _resolve_double_elimination_byes(bracket: TournamentBracket) -> None:
+    """Propagate empty inputs only after both predecessors are resolved."""
+    changed = True
+    while changed:
+        changed = False
+        for match in bracket.matches:
+            if (not match.active or match.status != MatchStatus.PENDING
+                    or not match.participant_a_resolved or not match.participant_b_resolved
+                    or (match.participant_a_id is not None and match.participant_b_id is not None)):
+                continue
+            match.winner_id = match.participant_a_id or match.participant_b_id
+            match.status = MatchStatus.BYE
+            _route_outcome(bracket, match, "winner", match.winner_id)
+            _route_outcome(bracket, match, "loser", None)
+            changed = True
+
+
+def _update_double_elimination_round(bracket: TournamentBracket) -> None:
+    """Report the earliest unfinished dependency wave, never gate readiness."""
+    depths: Dict[str, int] = {}
+    predecessors: Dict[str, List[str]] = {m.match_id: [] for m in bracket.matches}
+    for match in bracket.matches:
+        for target in (match.winner_next_match_id, match.loser_next_match_id):
+            if target is not None:
+                predecessors[target].append(match.match_id)
+    remaining = list(bracket.matches)
+    while remaining:
+        ready = [m for m in remaining if all(p in depths for p in predecessors[m.match_id])]
+        if not ready:
+            raise ValueError("Tournament progression contains a cycle")
+        for match in ready:
+            depths[match.match_id] = 1 + max(
+                (depths[p] for p in predecessors[match.match_id]), default=0)
+            remaining.remove(match)
+    bracket.total_rounds = max(depths.values())
+    pending = [depths[m.match_id] for m in bracket.matches
+               if m.active and m.status in (MatchStatus.PENDING, MatchStatus.IN_PROGRESS)]
+    bracket.current_round = min(pending) if pending else max(
+        depths[m.match_id] for m in bracket.matches if m.status == MatchStatus.COMPLETED)
 
 
 def _generate_round_robin(bracket: TournamentBracket) -> None:
@@ -313,6 +472,9 @@ def record_match_result(
     if winner_id not in (match.participant_a_id, match.participant_b_id):
         raise ValueError(f"Winner '{winner_id}' is not a participant in this match")
 
+    if bracket.format == TournamentFormat.DOUBLE_ELIMINATION:
+        return _record_double_elimination_result(bracket, match, winner_id)
+
     # Record result
     match.winner_id = winner_id
     match.loser_id = (
@@ -364,6 +526,66 @@ def record_match_result(
     if completed_in_round >= total_in_round and not bracket.is_complete:
         bracket.current_round += 1
 
+    return result
+
+
+def _record_double_elimination_result(
+    bracket: TournamentBracket, match: TournamentMatch, winner_id: str,
+) -> Dict[str, Any]:
+    """Apply the DAG transactionally so invalid edges cannot partially record a result."""
+    if (not match.active or not match.participant_a_resolved
+            or not match.participant_b_resolved
+            or match.participant_a_id is None or match.participant_b_id is None
+            or match.status not in (MatchStatus.PENDING, MatchStatus.IN_PROGRESS)):
+        raise ValueError("Match is not ready for a result")
+    if bracket.is_complete:
+        raise ValueError("Tournament already completed")
+
+    updated = deepcopy(bracket)
+    played = next(m for m in updated.matches if m.match_id == match.match_id)
+    played.winner_id = winner_id
+    played.loser_id = (played.participant_b_id if winner_id == played.participant_a_id
+                       else played.participant_a_id)
+    played.status = MatchStatus.COMPLETED
+    for participant in updated.participants:
+        if participant.wrestler_id == played.winner_id:
+            participant.wins += 1
+        elif participant.wrestler_id == played.loser_id:
+            participant.losses += 1
+            participant.eliminated = participant.losses == 2
+
+    complete = played.stage == "reset_final"
+    if played.stage == "grand_final":
+        reset = next(m for m in updated.matches if m.stage == "reset_final")
+        complete = winner_id == played.participant_a_id  # undefeated WB champion
+        if complete:
+            reset.status = MatchStatus.SKIPPED
+        else:
+            reset.active = True
+    if not complete:
+        _route_outcome(updated, played, "winner", played.winner_id)
+        _route_outcome(updated, played, "loser", played.loser_id)
+        _resolve_double_elimination_byes(updated)
+    else:
+        updated.winner_id = winner_id
+        updated.is_complete = True
+    _update_double_elimination_round(updated)
+
+    # Preserve references held by callers while committing the validated state.
+    for original, new in zip(bracket.matches, updated.matches):
+        original.__dict__.update(new.__dict__)
+    for original, new in zip(bracket.participants, updated.participants):
+        original.__dict__.update(new.__dict__)
+    bracket.current_round = updated.current_round
+    bracket.winner_id = updated.winner_id
+    bracket.is_complete = updated.is_complete
+    result = {
+        "match_id": match.match_id, "winner_id": winner_id,
+        "loser_id": match.loser_id, "round": match.round_number,
+        "is_final": match.is_final, "tournament_complete": complete,
+    }
+    if complete:
+        result["tournament_winner_id"] = winner_id
     return result
 
 
