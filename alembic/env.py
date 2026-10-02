@@ -29,6 +29,7 @@ def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
+        render_as_batch=True,
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
@@ -47,6 +48,7 @@ def run_migrations_online() -> None:
     )
     with connectable.connect() as connection:
         context.configure(
+            render_as_batch=True,
             connection=connection,
             target_metadata=target_metadata,
         )

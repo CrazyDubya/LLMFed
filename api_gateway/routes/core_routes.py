@@ -288,7 +288,7 @@ async def list_narrative_logs(limit: int = Query(100, ge=1, le=1000), db: AsyncS
 
 
 @router.get("/engine/debug", summary="Engine Debug Info", tags=["engine"])
-async def engine_debug(request: Request):
+async def engine_debug(eng=Depends(get_engine_dependency)):
     """Return engine and database status. Only available in debug mode."""
     debug_enabled = os.getenv("DEBUG_MODE", "false").lower() == "true"
     if not debug_enabled:
@@ -297,7 +297,6 @@ async def engine_debug(request: Request):
     from agent_service.database import engine as db_engine
     from sqlalchemy import inspect
 
-    eng = request.app.state.engine
     inspector = inspect(db_engine)
     return {
         "tables": inspector.get_table_names(),
@@ -309,9 +308,8 @@ async def engine_debug(request: Request):
 
 
 @router.post("/prompter/hints", summary="Prompter Hints", tags=["engine"])
-async def prompter_hints(request: PrompterHintRequest, http_request: Request):
+async def prompter_hints(request: PrompterHintRequest, eng=Depends(get_engine_dependency)):
     """Accepts promoter hints, stores them, and builds LLM prompt."""
-    eng = http_request.app.state.engine
     eng.set_hints(request.hints)
     prompt = PromptBuilder.build_prompt(request.context, request.hints)
     return prompt
