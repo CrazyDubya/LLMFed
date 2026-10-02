@@ -175,29 +175,56 @@ def upgrade() -> None:
     op.create_index(op.f('ix_mentorships_mentor_id'), 'mentorships', ['mentor_id'], unique=False)
     op.create_index(op.f('ix_mentorships_protege_id'), 'mentorships', ['protege_id'], unique=False)
     op.create_index(op.f('ix_mentorships_world_id'), 'mentorships', ['world_id'], unique=False)
-    op.create_table('tag_teams',
-                    sa.Column('id', sa.String(), nullable=False),
-                    sa.Column('world_id', sa.String(), nullable=False),
-                    sa.Column('name', sa.String(length=100), nullable=False),
-                    sa.Column('wrestler1_id', sa.String(), nullable=False),
-                    sa.Column('wrestler2_id', sa.String(), nullable=False),
-                    sa.Column('team_chemistry', sa.Integer(), nullable=True),
-                    sa.Column('team_finisher_name', sa.String(length=100), nullable=True),
-                    sa.Column('wins', sa.Integer(), nullable=True),
-                    sa.Column('losses', sa.Integer(), nullable=True),
-                    sa.Column('formed_date', sa.String(length=10), nullable=True),
-                    sa.Column('dissolved_date', sa.String(length=10), nullable=True),
-                    sa.Column('is_active', sa.Boolean(), nullable=True),
-                    sa.Column('created_at', sa.DateTime(), nullable=True),
-                    sa.Column('updated_at', sa.DateTime(), nullable=True),
-                    sa.ForeignKeyConstraint(['world_id'], ['worlds.id'], ),
-                    sa.ForeignKeyConstraint(['wrestler1_id'], ['game_wrestlers.id'], ),
-                    sa.ForeignKeyConstraint(['wrestler2_id'], ['game_wrestlers.id'], ),
-                    sa.PrimaryKeyConstraint('id')
-                    )
-    op.create_index(op.f('ix_tag_teams_world_id'), 'tag_teams', ['world_id'], unique=False)
-    op.create_index(op.f('ix_tag_teams_wrestler1_id'), 'tag_teams', ['wrestler1_id'], unique=False)
-    op.create_index(op.f('ix_tag_teams_wrestler2_id'), 'tag_teams', ['wrestler2_id'], unique=False)
+    # Legacy DBs may already have tag_teams (see a1b2c3d4e5f6). Create only
+    # when missing; otherwise ensure ORM columns/indexes exist.
+    _inspector = sa.inspect(op.get_bind())
+    if 'tag_teams' not in _inspector.get_table_names():
+        op.create_table('tag_teams',
+                        sa.Column('id', sa.String(), nullable=False),
+                        sa.Column('world_id', sa.String(), nullable=False),
+                        sa.Column('name', sa.String(length=100), nullable=False),
+                        sa.Column('wrestler1_id', sa.String(), nullable=False),
+                        sa.Column('wrestler2_id', sa.String(), nullable=False),
+                        sa.Column('team_chemistry', sa.Integer(), nullable=True),
+                        sa.Column('team_finisher_name', sa.String(length=100), nullable=True),
+                        sa.Column('wins', sa.Integer(), nullable=True),
+                        sa.Column('losses', sa.Integer(), nullable=True),
+                        sa.Column('formed_date', sa.String(length=10), nullable=True),
+                        sa.Column('dissolved_date', sa.String(length=10), nullable=True),
+                        sa.Column('is_active', sa.Boolean(), nullable=True),
+                        sa.Column('created_at', sa.DateTime(), nullable=True),
+                        sa.Column('updated_at', sa.DateTime(), nullable=True),
+                        sa.ForeignKeyConstraint(['world_id'], ['worlds.id'], ),
+                        sa.ForeignKeyConstraint(['wrestler1_id'], ['game_wrestlers.id'], ),
+                        sa.ForeignKeyConstraint(['wrestler2_id'], ['game_wrestlers.id'], ),
+                        sa.PrimaryKeyConstraint('id')
+                        )
+        op.create_index(op.f('ix_tag_teams_world_id'), 'tag_teams', ['world_id'], unique=False)
+        op.create_index(op.f('ix_tag_teams_wrestler1_id'), 'tag_teams', ['wrestler1_id'], unique=False)
+        op.create_index(op.f('ix_tag_teams_wrestler2_id'), 'tag_teams', ['wrestler2_id'], unique=False)
+    else:
+        _cols = {c['name'] for c in _inspector.get_columns('tag_teams')}
+        for _name, _col in (
+            ('team_chemistry', sa.Column('team_chemistry', sa.Integer(), nullable=True)),
+            ('team_finisher_name', sa.Column('team_finisher_name', sa.String(length=100), nullable=True)),
+            ('wins', sa.Column('wins', sa.Integer(), nullable=True)),
+            ('losses', sa.Column('losses', sa.Integer(), nullable=True)),
+            ('formed_date', sa.Column('formed_date', sa.String(length=10), nullable=True)),
+            ('dissolved_date', sa.Column('dissolved_date', sa.String(length=10), nullable=True)),
+            ('is_active', sa.Column('is_active', sa.Boolean(), nullable=True)),
+            ('created_at', sa.Column('created_at', sa.DateTime(), nullable=True)),
+            ('updated_at', sa.Column('updated_at', sa.DateTime(), nullable=True)),
+        ):
+            if _name not in _cols:
+                op.add_column('tag_teams', _col)
+        _idx = {ix['name'] for ix in _inspector.get_indexes('tag_teams')}
+        for _iname, _icols in (
+            ('ix_tag_teams_world_id', ['world_id']),
+            ('ix_tag_teams_wrestler1_id', ['wrestler1_id']),
+            ('ix_tag_teams_wrestler2_id', ['wrestler2_id']),
+        ):
+            if _iname not in _idx and op.f(_iname) not in _idx:
+                op.create_index(op.f(_iname), 'tag_teams', _icols, unique=False)
     op.create_table('talent_offers',
                     sa.Column('id', sa.String(), nullable=False),
                     sa.Column('world_id', sa.String(), nullable=False),
@@ -442,7 +469,8 @@ def upgrade() -> None:
     op.add_column('game_federations', sa.Column('social_media_policy', sa.String(length=20), nullable=True))
     op.add_column('game_wrestlers', sa.Column('alignment_momentum', sa.Integer(), nullable=True))
     op.add_column('game_wrestlers', sa.Column('draw_rating', sa.Float(), nullable=True))
-    op.add_column('game_wrestlers', sa.Column('win_streak', sa.Integer(), nullable=True))
+    # server_default backfills existing wrestlers; NOT NULL prevents streak TypeError
+    op.add_column('game_wrestlers', sa.Column('win_streak', sa.Integer(), server_default='0', nullable=False))
     op.add_column('game_wrestlers', sa.Column('last_booked_date', sa.String(length=10), nullable=True))
     op.add_column('game_wrestlers', sa.Column('birth_date', sa.String(length=10), nullable=True))
     op.add_column('game_wrestlers', sa.Column('peak_age', sa.Integer(), nullable=True))
@@ -562,10 +590,17 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_talent_offers_world_id'), table_name='talent_offers')
     op.drop_index(op.f('ix_talent_offers_federation_id'), table_name='talent_offers')
     op.drop_table('talent_offers')
-    op.drop_index(op.f('ix_tag_teams_wrestler2_id'), table_name='tag_teams')
-    op.drop_index(op.f('ix_tag_teams_wrestler1_id'), table_name='tag_teams')
-    op.drop_index(op.f('ix_tag_teams_world_id'), table_name='tag_teams')
-    op.drop_table('tag_teams')
+    _down_insp = sa.inspect(op.get_bind())
+    if 'tag_teams' in _down_insp.get_table_names():
+        _down_idx = {ix['name'] for ix in _down_insp.get_indexes('tag_teams')}
+        for _iname in (
+            'ix_tag_teams_wrestler2_id',
+            'ix_tag_teams_wrestler1_id',
+            'ix_tag_teams_world_id',
+        ):
+            if _iname in _down_idx or op.f(_iname) in _down_idx:
+                op.drop_index(op.f(_iname), table_name='tag_teams')
+        op.drop_table('tag_teams')
     op.drop_index(op.f('ix_mentorships_world_id'), table_name='mentorships')
     op.drop_index(op.f('ix_mentorships_protege_id'), table_name='mentorships')
     op.drop_index(op.f('ix_mentorships_mentor_id'), table_name='mentorships')
