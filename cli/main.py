@@ -53,8 +53,8 @@ def _get_db():
 @app.command()
 def init():
     """Initialize the database tables."""
-    from agent_service.database import init_db
-    init_db()
+    from agent_service.database import init_db_sync
+    init_db_sync()
     console.print("[green]Database initialized successfully.[/green]")
 
 

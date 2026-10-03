@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from api_gateway.dependencies import get_engine_dependency
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from models.entities import (
     Agent, AgentCreateData, AgentUpdateData,
@@ -23,7 +24,7 @@ from models.entities import (
 )
 from models.db_models import EngineRequestDB, NarrativeLogDB
 from agent_service import crud
-from agent_service.database import get_db
+from agent_service.database import get_db, get_db_sync
 
 from core_engine.prompt_builder import PromptBuilder
 from api_gateway.logging_config import performance_monitor
@@ -423,7 +424,7 @@ async def list_world_shows(
     world_id: str,
     limit: int = Query(50, ge=1, le=200),
     completed_only: bool = False,
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """List all shows across all federations in a world."""
     from models.game_models import ShowDB, GameFederationDB
