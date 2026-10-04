@@ -1,7 +1,6 @@
 from core_engine.engine import create_engine
 from models.entities import AgentCreateData
 from agent_service.crud import get_agents, create_agent
-from agent_service.database import SessionLocal
 from llm_abstraction.provider import get_llm
 import logging
 from dataclasses import asdict

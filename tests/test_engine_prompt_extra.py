@@ -6,6 +6,7 @@ from core_engine.engine import create_engine
 async def test_engine_prompt_includes_state_and_actions(monkeypatch):
     engine = create_engine()
     # Stub agent list
+
     class DummyAgentDB:
         def __init__(self):
             self.gimmick_description = "Masked Marvel"
