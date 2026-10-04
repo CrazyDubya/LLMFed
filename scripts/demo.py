@@ -1,7 +1,8 @@
-from core_engine.engine import engine_instance
+from core_engine.engine import create_engine
 from dataclasses import asdict
 import logging
 import os
+import asyncio
 # Configure model and API base for local Ollama
 os.environ["OPENAI_MODEL"] = "long-gemma"
 os.environ["OPENAI_API_BASE"] = "http://127.0.0.1:11434/v1"
@@ -11,11 +12,17 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s:%(nam
 
 
 # Set some promoter hints for demonstration
-engine_instance.set_hints({"promo_note": "Make the crowd go wild!"})
+engine = create_engine()
+engine.set_hints({"promo_note": "Make the crowd go wild!"})
 
 # Run a single tick
-results = engine_instance.run_ticks(1)
+async def main():
+    results = await engine.run_ticks(1)
 
-# Print the TickResult(s)
-for res in results:
-    print(asdict(res))
+    # Print the TickResult(s)
+    for res in results:
+        print(asdict(res))
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
