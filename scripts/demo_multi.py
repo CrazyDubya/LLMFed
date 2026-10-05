@@ -1,4 +1,4 @@
-from core_engine.engine import engine_instance
+from core_engine.engine import create_engine
 from models.entities import AgentCreateData
 from agent_service.crud import get_agents, create_agent
 from agent_service.database import SessionLocal
@@ -14,11 +14,12 @@ os.environ["OPENAI_MODEL"] = "long-gemma:latest"
 os.environ["OPENAI_API_BASE"] = "http://127.0.0.1:11434/v1"
 
 
+engine = create_engine()
 # Re-initialize llm_client with new API base
-engine_instance.llm_client = LLMClient()
+engine.llm_client = LLMClient()
 # For demo, use local dispatcher stub instead of LLM HTTP calls
-engine_instance.llm_client.force_remote = False
-engine_instance.llm_client.api_key = None  # clear API key to force dispatcher fallback
+engine.llm_client.force_remote = False
+engine.llm_client.api_key = None  # clear API key to force dispatcher fallback
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s:%(name)s: %(message)s')
@@ -28,7 +29,7 @@ db = SessionLocal()
 agents = get_agents(db)
 logging.info("Seeding demo agents for missing roles...")
 existing_roles = {a.role for a in agents}
-for role in engine_instance.role_order:
+for role in engine.ROLE_ORDER:
     if role not in existing_roles:
         name = f"Demo_{role.title()}"
         logging.info(f"Creating agent for role: {role}")
@@ -50,10 +51,10 @@ for ag in agents:
 db.close()
 
 # Set promoter hints
-engine_instance.set_hints({"promo_note": "May the best champion win!"})
+engine.set_hints({"promo_note": "May the best champion win!"})
 
 # Run multiple ticks (e.g., 5) with multi-agent selection
-results = engine_instance.run_ticks(5)
+results = engine.run_ticks(5)
 
 # Display results
 for res in results:

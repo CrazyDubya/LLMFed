@@ -1,9 +1,10 @@
 import pytest
-from core_engine.engine import engine_instance, AppliedAction
+from core_engine.engine import create_engine, AppliedAction
 
 
 @pytest.mark.asyncio
 async def test_run_multiple_ticks(monkeypatch):
+    engine = create_engine()
     # Stub agent list
     dummy = type('A', (), {'agent_id': 'agent1'})()
 
@@ -17,11 +18,11 @@ async def test_run_multiple_ticks(monkeypatch):
     async def fake_generate_action_async(prompt):
         return fake
 
-    monkeypatch.setattr(engine_instance.llm_client, 'generate_action_async', fake_generate_action_async)
+    monkeypatch.setattr(engine.llm_client, 'generate_action_async', fake_generate_action_async)
 
     # Run 3 ticks
-    engine_instance.set_hints({})
-    results = await engine_instance.run_ticks(3)
+    engine.set_hints({})
+    results = await engine.run_ticks(3)
     assert isinstance(results, list) and len(results) == 3
     for tick in results:
         action = tick.applied_actions[0]
@@ -40,6 +41,7 @@ async def test_llm_transient_error_fallback(monkeypatch):
     """
     from llm_abstraction.provider import LLMTransientError
 
+    engine = create_engine()
     dummy = type('A', (), {'agent_id': 'agent2'})()
 
     async def fake_get_agents(db):
@@ -50,10 +52,10 @@ async def test_llm_transient_error_fallback(monkeypatch):
     async def raise_transient(messages, **kwargs):
         raise LLMTransientError("LLM timed out")
 
-    monkeypatch.setattr(engine_instance.llm_client.provider, 'generate_async', raise_transient)
+    monkeypatch.setattr(engine.llm_client.provider, 'generate_async', raise_transient)
 
-    engine_instance.set_hints({})
-    results = await engine_instance.run_ticks(1)
+    engine.set_hints({})
+    results = await engine.run_ticks(1)
     action = results[0].applied_actions[0]
     assert isinstance(action, AppliedAction)
     # Transient error → fallback stub with a random dispatcher action
@@ -65,6 +67,7 @@ async def test_llm_permanent_error_propagates(monkeypatch):
     """Permanent LLM errors (auth, config) propagate to the caller."""
     from llm_abstraction.provider import LLMPermanentError
 
+    engine = create_engine()
     dummy = type('A', (), {'agent_id': 'agent3'})()
 
     async def fake_get_agents(db):
@@ -75,8 +78,8 @@ async def test_llm_permanent_error_propagates(monkeypatch):
     async def raise_permanent(messages, **kwargs):
         raise LLMPermanentError("Invalid API key")
 
-    monkeypatch.setattr(engine_instance.llm_client.provider, 'generate_async', raise_permanent)
+    monkeypatch.setattr(engine.llm_client.provider, 'generate_async', raise_permanent)
 
-    engine_instance.set_hints({})
+    engine.set_hints({})
     with pytest.raises(LLMPermanentError, match="Invalid API key"):
-        await engine_instance.run_ticks(1)
+        await engine.run_ticks(1)

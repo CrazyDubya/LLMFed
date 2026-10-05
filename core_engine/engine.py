@@ -413,32 +413,14 @@ class Engine:
 
 
 # ---------------------------------------------------------------------------
-# Singleton accessor (thread-safe, lazy — avoids import-time side effects)
+# Engine factory
 # ---------------------------------------------------------------------------
 
-_engine_instance: Optional[Engine] = None
-_engine_lock = threading.Lock()
 
+def create_engine() -> Engine:
+    """Factory function to create a new Engine instance."""
+    return Engine()
 
-def get_engine() -> Engine:
-    """Return the shared Engine instance, creating it on first call."""
-    global _engine_instance
-    if _engine_instance is None:
-        with _engine_lock:
-            if _engine_instance is None:
-                _engine_instance = Engine()
-    return _engine_instance
-
-
-def reset_engine() -> None:
-    """Reset the engine singleton (for testing)."""
-    global _engine_instance
-    with _engine_lock:
-        _engine_instance = None
-
-
-# Backwards-compatible alias — will be removed in a future release
-engine_instance = get_engine()
 
 __all__ = [
     "AppliedAction",
@@ -447,8 +429,6 @@ __all__ = [
     "TickScheduler",
     "Engine",
     "EngineRequest",
-    "engine_instance",
-    "get_engine",
-    "reset_engine",
+    "create_engine",
     "MAX_TICKS_PER_CALL",
 ]

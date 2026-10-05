@@ -144,11 +144,11 @@ Most endpoints require JWT authentication. Get your token from `/auth/token`.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Legacy agent/federation engine singleton, used by core_routes.py's
+# Core engine instance, used by core_routes.py's
 # engine/debug, prompter/hints, and engine/advance endpoints via
 # get_engine_dependency / request.app.state.engine.
-from core_engine.engine import engine_instance  # noqa: E402
-app.state.engine = engine_instance
+from core_engine.engine import create_engine  # noqa: E402
+app.state.engine = create_engine()
 
 ALLOWED_ORIGINS = os.getenv(
     "CORS_ORIGINS",
