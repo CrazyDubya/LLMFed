@@ -12,7 +12,7 @@ Tier 9: Absolute immutables — card dates, attendance, match card and results,
 from __future__ import annotations
 
 from enum import IntEnum
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 from datetime import date, datetime
 from pydantic import BaseModel, Field
 
