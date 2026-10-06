@@ -203,13 +203,15 @@ import os
 os.environ["OPENAI_MODEL"] = "long-gemma"
 os.environ["OPENAI_API_BASE"] = "http://127.0.0.1:11434/v1"
 
-from core_engine.engine import engine_instance
+from core_engine.engine import create_engine
+
+engine = create_engine()
 
 # Set promotional hints
-engine_instance.set_hints({"storyline": "championship rivalry"})
+engine.set_hints({"storyline": "championship rivalry"})
 
 # Run simulation ticks
-results = engine_instance.run_ticks(10)
+results = engine.run_ticks(10)
 
 # Process results
 for result in results:

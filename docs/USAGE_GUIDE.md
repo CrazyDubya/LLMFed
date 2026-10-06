@@ -261,13 +261,15 @@ done
 ### Direct Engine Access
 
 ```python
-from core_engine.engine import engine_instance
+from core_engine.engine import create_engine
+
+engine = create_engine()
 
 # Set promotional hints
-engine_instance.set_hints({"storyline": "championship tournament"})
+engine.set_hints({"storyline": "championship tournament"})
 
 # Advance simulation
-results = engine_instance.run_ticks(10)
+results = engine.run_ticks(10)
 
 # Process results
 for result in results:

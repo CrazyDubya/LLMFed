@@ -190,7 +190,7 @@
 
 ### Phase 4: Scope and Lifetime Fixes (Rule 3, Rule 8)
 
-- [ ] **4.1** Remove module-level `engine_instance` singleton. Provide a factory function `create_engine()` instead. Wire it into FastAPI's dependency injection via `app.state`.
+- [x] **4.1** Remove module-level `engine_instance` singleton. Provide a factory function `create_engine()` instead. Wire it into FastAPI's dependency injection via `app.state`.
 - [ ] **4.2** Remove module-level `init_db()` call from `database.py:64`. Make it an explicit startup step in the app's lifespan handler.
 - [ ] **4.3** In `run_ticks()`, scope DB session per-tick (not per-call). Wrap each tick in its own `try/except` with rollback.
 - [ ] **4.4** Remove `_default_llm` global singleton from `provider.py`. Use dependency injection or explicit construction.
