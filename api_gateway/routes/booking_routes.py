@@ -10,15 +10,16 @@ from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
     ShowCreate, ShowResponse, ShowSegmentResponse, ShowCardResponse,
     MatchResultResponse,
-    MatchBooking,
+    MatchBooking, CardReorderRequest,
 )
 from models.game_models import (
     GameFederationDB, ShowDB, MatchDB,
 )
-from game_service.world_service import get_player_for_user
+from game_service.world_service import require_federation_owner
 from game_service.show_service import (
     create_show as svc_create_show, book_match as svc_book_match,
     book_promo_segment as svc_book_promo_segment, get_show_card,
+    reorder_card as svc_reorder_card,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,12 +31,38 @@ def _handle_value_error(e: ValueError):
     raise HTTPException(status_code=400, detail=str(e))
 
 
+def _get_show_or_404(db: Session, show_id: str) -> ShowDB:
+    """Fetch a show by ID or raise a 404."""
+    show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
+    if not show:
+        raise HTTPException(status_code=404, detail="Show not found")
+    return show
+
+
+def _get_match_or_404(db: Session, match_id: str) -> MatchDB:
+    """Fetch a match by ID or raise a 404."""
+    match = db.query(MatchDB).filter(MatchDB.id == match_id).first()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match not found")
+    return match
+
+
+def _require_show_owner(db: Session, user_id: str, show: ShowDB):
+    """Verify the current user controls the federation that owns this show."""
+    try:
+        require_federation_owner(db, user_id, show.federation_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
 # ---------------------------------------------------------------------------
 # Show creation
 # ---------------------------------------------------------------------------
 
 @router.post("/federations/{federation_id}/shows", response_model=ShowResponse, status_code=201)
-async def api_create_show(
+def api_create_show(
     federation_id: str,
     data: ShowCreate,
     current_user: TokenData = Depends(get_current_user),
@@ -43,15 +70,15 @@ async def api_create_show(
 ):
     """Create a new show for a federation (promoter action)."""
     try:
-        get_player_for_user(db, current_user.user_id, None)
-    except ValueError:
-        pass
+        require_federation_owner(db, current_user.user_id, federation_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
     fed = db.query(GameFederationDB).filter(
         GameFederationDB.id == federation_id
     ).first()
-    if not fed:
-        raise HTTPException(status_code=404, detail="Federation not found")
 
     show = svc_create_show(
         db, fed.world_id, federation_id,
@@ -68,15 +95,34 @@ async def api_create_show(
 # ---------------------------------------------------------------------------
 
 @router.get("/shows/{show_id}/card", response_model=ShowCardResponse)
-async def api_get_show_card(
+def api_get_show_card(
     show_id: str,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
     """Get the full card for a show."""
-    show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
-    if not show:
-        raise HTTPException(status_code=404, detail="Show not found")
+    show = _get_show_or_404(db, show_id)
+
+    segments = get_show_card(db, show_id)
+    return ShowCardResponse(
+        show=ShowResponse.model_validate(show),
+        segments=[ShowSegmentResponse.model_validate(s) for s in segments],
+    )
+
+
+@router.patch("/shows/{show_id}/card/order", response_model=ShowCardResponse)
+def api_reorder_card(
+    show_id: str,
+    data: CardReorderRequest,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db_sync),
+):
+    """Reorder the segments on a show's card."""
+    show = _get_show_or_404(db, show_id)
+    _require_show_owner(db, current_user.user_id, show)
+
+    svc_reorder_card(db, show_id, data.segment_order)
+    db.commit()
 
     segments = get_show_card(db, show_id)
     return ShowCardResponse(
@@ -90,16 +136,15 @@ async def api_get_show_card(
 # ---------------------------------------------------------------------------
 
 @router.post("/shows/{show_id}/matches", response_model=ShowSegmentResponse, status_code=201)
-async def api_book_match(
+def api_book_match(
     show_id: str,
     data: MatchBooking,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
     """Book a match on a show."""
-    show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
-    if not show:
-        raise HTTPException(status_code=404, detail="Show not found")
+    show = _get_show_or_404(db, show_id)
+    _require_show_owner(db, current_user.user_id, show)
 
     try:
         seg = svc_book_match(
@@ -125,7 +170,7 @@ async def api_book_match(
 # ---------------------------------------------------------------------------
 
 @router.post("/shows/{show_id}/promos", response_model=ShowSegmentResponse, status_code=201)
-async def api_book_promo(
+def api_book_promo(
     show_id: str,
     wrestler_id: str,
     target_wrestler_id: Optional[str] = None,
@@ -134,9 +179,8 @@ async def api_book_promo(
     db: Session = Depends(get_db_sync),
 ):
     """Book a promo segment on a show."""
-    show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
-    if not show:
-        raise HTTPException(status_code=404, detail="Show not found")
+    show = _get_show_or_404(db, show_id)
+    _require_show_owner(db, current_user.user_id, show)
     try:
         seg = svc_book_promo_segment(
             db, show_id, show.world_id,
@@ -156,15 +200,13 @@ async def api_book_promo(
 # ---------------------------------------------------------------------------
 
 @router.get("/matches/{match_id}", response_model=MatchResultResponse)
-async def api_get_match(
+def api_get_match(
     match_id: str,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
     """Get match result details."""
-    match = db.query(MatchDB).filter(MatchDB.id == match_id).first()
-    if not match:
-        raise HTTPException(status_code=404, detail="Match not found")
+    match = _get_match_or_404(db, match_id)
     return MatchResultResponse.model_validate(match)
 
 
@@ -173,16 +215,14 @@ async def api_get_match(
 # ---------------------------------------------------------------------------
 
 @router.get("/matches/{match_id}/play-by-play")
-async def api_get_play_by_play(
+def api_get_play_by_play(
     match_id: str,
     highlights_only: bool = False,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
     """Get match play-by-play from simulation log."""
-    match = db.query(MatchDB).filter(MatchDB.id == match_id).first()
-    if not match:
-        raise HTTPException(status_code=404, detail="Match not found")
+    match = _get_match_or_404(db, match_id)
     if not match.is_completed:
         raise HTTPException(status_code=400, detail="Match not yet completed")
 

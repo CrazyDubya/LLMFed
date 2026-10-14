@@ -18,9 +18,10 @@ from models.game_models import (
     ShowDB, ShowSegmentDB, WrestlerPushDB,
     GameNarrativeLogDB,
     MentorshipDB, CareerHighlightDB, HallOfFameDB,
-    GimmickHistoryDB, WrestlerBackstoryDB, LifeEventDB,
+    WrestlerBackstoryDB, LifeEventDB,
 )
 import game_service.lifecycle_constants as LC
+from game_service.ticker_query_helpers import get_active_gimmick
 
 # Re-exports so existing imports from this module keep working
 from game_service.goal_service import (          # noqa: F401
@@ -129,6 +130,31 @@ def calculate_ring_rust_modifier(wrestler: GameWrestlerDB) -> float:
     if rust <= LC.RING_RUST_NO_PENALTY_DAYS:
         return 1.0
     return max(LC.RING_RUST_MIN_MODIFIER, 1.0 - (rust / LC.RING_RUST_DIVISOR))
+
+
+def update_public_perception(wrestler: GameWrestlerDB) -> str:
+    """Derive how the audience sees this wrestler right now.
+
+    beloved/respected/controversial/forgotten/neutral — a summary label
+    consumed by news and character-prompt flavor text.
+    """
+    pop = wrestler.popularity or 0
+    breaks = wrestler.kayfabe_break_count or 0
+    legacy = wrestler.legacy_score or 0
+
+    if breaks >= 3 or (pop >= 60 and wrestler.alignment == "heel" and breaks >= 1):
+        perception = "controversial"
+    elif pop >= 75:
+        perception = "beloved" if wrestler.alignment != "heel" else "controversial"
+    elif pop < 15:
+        perception = "forgotten"
+    elif legacy >= 60 or (pop >= 40 and (wrestler.morale or 50) >= 60):
+        perception = "respected"
+    else:
+        perception = "neutral"
+
+    wrestler.public_perception = perception
+    return perception
 
 
 # -- Group 4: Developmental Pipeline ----------------------------------------
@@ -306,7 +332,7 @@ def compute_legacy_score(db: Session, wrestler_id: str) -> int:
     participations = db.query(MatchParticipantDB).join(MatchDB).filter(
         MatchParticipantDB.wrestler_id == wrestler_id,
         MatchDB.is_completed,
-        MatchDB.match_rating is not None,
+        MatchDB.match_rating != None,
     ).all()
     avg_rating = (
         sum(p.performance_rating or 3.0 for p in participations) / len(participations)
@@ -332,7 +358,7 @@ def hall_of_fame_ceremony(db: Session, world_id: str, game_date: str):
     eligible = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.world_id == world_id,
         GameWrestlerDB.is_active.is_(False),
-        GameWrestlerDB.retirement_date is not None,
+        GameWrestlerDB.retirement_date != None,
     ).all()
 
     best = None
@@ -493,22 +519,19 @@ def tick_persona(db: Session, world_id: str, game_date: str):
         if not backstory:
             persona_service.generate_backstory(db, wrestler)
 
-        gimmick = db.query(GimmickHistoryDB).filter(
-            GimmickHistoryDB.wrestler_id == wrestler.id,
-            GimmickHistoryDB.is_active,
-        ).first()
+        gimmick = get_active_gimmick(db, wrestler.id)
         if not gimmick:
             persona_service.generate_initial_gimmick(db, wrestler, game_date)
             continue
 
-        persona_service.tick_gimmick_staleness(db, wrestler, game_date)
-        persona_service.evolve_gimmick(db, wrestler, game_date)
+        persona_service.tick_gimmick_staleness(db, wrestler, game_date, gimmick)
+        persona_service.evolve_gimmick(db, wrestler, game_date, gimmick)
 
         if wrestler.is_npc:
-            pressure = persona_service.check_repackaging_pressure(db, wrestler)
+            pressure = persona_service.check_repackaging_pressure(db, wrestler, gimmick)
             if pressure["pressure"] > 80:
                 persona_service.execute_gimmick_change(
-                    db, wrestler, game_date, pressure["reason"]
+                    db, wrestler, game_date, pressure["reason"], gimmick
                 )
 
         persona_service.generate_life_event(db, wrestler.id, world_id, game_date)

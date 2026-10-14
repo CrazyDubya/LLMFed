@@ -38,7 +38,7 @@ def _handle_value_error(e: ValueError):
 # ---------------------------------------------------------------------------
 
 @router.post("/worlds", response_model=WorldResponse, status_code=201)
-async def api_create_world(
+def api_create_world(
     data: WorldCreate,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
@@ -52,7 +52,7 @@ async def api_create_world(
 
 
 @router.get("/worlds/{world_id}", response_model=WorldResponse)
-async def api_get_world(
+def api_get_world(
     world_id: str,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
@@ -66,7 +66,7 @@ async def api_get_world(
 
 
 @router.get("/worlds/{world_id}/my-player", response_model=PlayerResponse)
-async def api_get_my_player(
+def api_get_my_player(
     world_id: str,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
@@ -84,7 +84,7 @@ async def api_get_my_player(
 # ---------------------------------------------------------------------------
 
 @router.post("/players", response_model=PlayerResponse, status_code=201)
-async def api_create_player(
+def api_create_player(
     data: PlayerCreate,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
@@ -110,7 +110,7 @@ async def api_create_player(
 # ---------------------------------------------------------------------------
 
 @router.post("/worlds/{world_id}/actions", response_model=PlayerActionResponse, status_code=202)
-async def api_submit_action(
+def api_submit_action(
     world_id: str,
     data: PlayerActionSubmit,
     current_user: TokenData = Depends(get_current_user),
@@ -135,7 +135,7 @@ async def api_submit_action(
 
 
 @router.get("/worlds/{world_id}/actions", response_model=List[PlayerActionResponse])
-async def api_list_actions(
+def api_list_actions(
     world_id: str,
     status: Optional[str] = None,
     limit: int = 50,
@@ -220,7 +220,7 @@ async def api_advance_world(
 # ---------------------------------------------------------------------------
 
 @router.get("/worlds/{world_id}/narrative", response_model=List[NarrativeLogResponse])
-async def api_get_narrative(
+def api_get_narrative(
     world_id: str,
     limit: int = 50,
     min_importance: int = 1,
@@ -236,7 +236,7 @@ async def api_get_narrative(
 
 
 @router.get("/worlds/{world_id}/news", response_model=List[WorldNewsResponse])
-async def api_get_news(
+def api_get_news(
     world_id: str,
     limit: int = 20,
     current_user: TokenData = Depends(get_current_user),
@@ -254,7 +254,7 @@ async def api_get_news(
 # ---------------------------------------------------------------------------
 
 @router.post("/worlds/{world_id}/promos", response_model=PromoResponse, status_code=201)
-async def api_generate_promo(
+def api_generate_promo(
     world_id: str,
     data: PromoRequest,
     current_user: TokenData = Depends(get_current_user),

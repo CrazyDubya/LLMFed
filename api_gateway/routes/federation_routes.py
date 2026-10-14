@@ -30,7 +30,7 @@ router = APIRouter(prefix="/game", tags=["game-federation"])
 # ---------------------------------------------------------------------------
 
 @router.get("/worlds/{world_id}/federations", response_model=List[FederationResponse])
-async def api_list_federations(
+def api_list_federations(
     world_id: str,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
@@ -41,7 +41,7 @@ async def api_list_federations(
 
 
 @router.get("/federations/{federation_id}", response_model=FederationResponse)
-async def api_get_federation(
+def api_get_federation(
     federation_id: str,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
@@ -55,7 +55,7 @@ async def api_get_federation(
 
 
 @router.get("/federations/{federation_id}/roster", response_model=List[WrestlerResponse])
-async def api_get_roster(
+def api_get_roster(
     federation_id: str,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
@@ -66,7 +66,7 @@ async def api_get_roster(
 
 
 @router.get("/worlds/{world_id}/free-agents", response_model=List[WrestlerResponse])
-async def api_list_free_agents(
+def api_list_free_agents(
     world_id: str,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
@@ -81,7 +81,7 @@ async def api_list_free_agents(
 # ---------------------------------------------------------------------------
 
 @router.get("/federations/{federation_id}/shows", response_model=List[ShowResponse])
-async def api_list_shows(
+def api_list_shows(
     federation_id: str,
     limit: int = 20,
     current_user: TokenData = Depends(get_current_user),
@@ -99,7 +99,7 @@ async def api_list_shows(
 # ---------------------------------------------------------------------------
 
 @router.get("/federations/{federation_id}/championships", response_model=List[ChampionshipResponse])
-async def api_list_championships(
+def api_list_championships(
     federation_id: str,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),

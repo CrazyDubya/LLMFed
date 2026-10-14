@@ -14,6 +14,7 @@ from typing import Dict, Any, List
 
 from sqlalchemy.orm import Session
 
+from game_service.ticker_query_helpers import get_active_gimmick
 from game_service.character_prompts import (
     FALLBACK_DECISIONS, FALLBACK_REACTIONS,
     BOOKER_SYSTEM, MATCH_NARRATOR_SYSTEM,
@@ -108,7 +109,7 @@ def character_decide(db: Session, wrestler_id: str,
 
     Returns dict with 'action' and 'reasoning'.
     """
-    from models.game_models import GameWrestlerDB, GimmickHistoryDB
+    from models.game_models import GameWrestlerDB
 
     wrestler = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.id == wrestler_id
@@ -116,10 +117,7 @@ def character_decide(db: Session, wrestler_id: str,
     if not wrestler:
         return {"action": "noop", "reasoning": "Wrestler not found"}
 
-    gimmick = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler_id,
-        GimmickHistoryDB.is_active,
-    ).first()
+    gimmick = get_active_gimmick(db, wrestler_id)
     archetype = gimmick.archetype if gimmick else "anti_hero"
 
     # Template fallback
@@ -151,7 +149,7 @@ def character_speak(db: Session, wrestler_id: str,
     Used for promos, social media posts, interview responses, etc.
     The LLM speaks AS the character, not about them.
     """
-    from models.game_models import GameWrestlerDB, GimmickHistoryDB
+    from models.game_models import GameWrestlerDB
     from game_service.promo_service import (
         ARCHETYPE_OPENERS, ARCHETYPE_BODIES, ARCHETYPE_CLOSERS,
     )
@@ -162,10 +160,7 @@ def character_speak(db: Session, wrestler_id: str,
     if not wrestler:
         return "..."
 
-    gimmick = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler_id,
-        GimmickHistoryDB.is_active,
-    ).first()
+    gimmick = get_active_gimmick(db, wrestler_id)
     archetype = gimmick.archetype if gimmick else "anti_hero"
 
     # Template fallback: stitch together archetype templates

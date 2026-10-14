@@ -15,7 +15,7 @@ from api_gateway.security import (
     generate_api_key,
 )
 from models.game_schemas import (
-    UserRegister, UserLogin, UserResponse, TokenResponse,
+    UserRegister, UserLogin, UserResponse, TokenResponse, RefreshTokenRequest,
 )
 from api_gateway.security import get_password_hash, verify_password
 from models.game_models import UserDB
@@ -78,9 +78,9 @@ async def api_login(data: UserLogin, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/auth/refresh")
-async def api_refresh_token(refresh_token: str, db: AsyncSession = Depends(get_db)):
+async def api_refresh_token(body: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
     """Exchange a refresh token for a new access + refresh token pair."""
-    token_data = decode_token(refresh_token, expected_type="refresh")
+    token_data = decode_token(body.refresh_token, expected_type="refresh")
     result = await db.execute(
         select(UserDB).where(UserDB.id == token_data.user_id, UserDB.is_active.is_(True))
     )

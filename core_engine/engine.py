@@ -27,7 +27,6 @@ from models.entities import (
 from core_engine.dispatcher import LLMDispatcher
 from core_engine.rulebook import RuleBook
 from core_engine.prompt_builder import PromptBuilder
-
 from models.db_models import EngineRequestDB, NarrativeLogDB
 from agent_service.database import AsyncSessionLocal
 from agent_service.crud import get_agents

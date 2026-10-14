@@ -141,11 +141,12 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
     recent events, active storylines, relationships, and career state.
     """
     from models.game_models import (
-        GameWrestlerDB, WrestlerStatsDB, GimmickHistoryDB,
+        GameWrestlerDB, WrestlerStatsDB,
         WrestlerBackstoryDB, StorylineDB, StorylineParticipantDB,
         WrestlerRelationshipDB, ContractDB, GameFederationDB,
         ChampionshipDB,
     )
+    from game_service.ticker_query_helpers import get_active_gimmick
 
     wrestler = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.id == wrestler_id
@@ -157,10 +158,7 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
         WrestlerStatsDB.wrestler_id == wrestler_id
     ).first()
 
-    gimmick = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler_id,
-        GimmickHistoryDB.is_active,
-    ).first()
+    gimmick = get_active_gimmick(db, wrestler_id)
 
     backstory = db.query(WrestlerBackstoryDB).filter(
         WrestlerBackstoryDB.wrestler_id == wrestler_id,
@@ -203,6 +201,8 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
     parts.append(f"Popularity: {wrestler.popularity}/100. Morale: {wrestler.morale}/100.")
     if wrestler.career_phase:
         parts.append(f"Career phase: {wrestler.career_phase}.")
+    if wrestler.public_perception and wrestler.public_perception != "neutral":
+        parts.append(f"The audience currently sees you as {wrestler.public_perception}.")
 
     # Current federation
     contract = db.query(ContractDB).filter(

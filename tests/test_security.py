@@ -130,10 +130,21 @@ def test_rate_limiting_decorator():
 def test_debug_endpoint_protection():
     """Test that debug endpoint is protected."""
     pytest.importorskip("slowapi")
+    from unittest.mock import patch
+    import uuid
     from api_gateway.main import app
     import os
 
     client = TestClient(app, base_url="http://localhost")
+    # engine/debug requires authentication; register a real user (DB
+    # revalidation in get_current_user needs an actual users-table row).
+    with patch("api_gateway.routes.auth_routes.get_password_hash", lambda p: f"test-hash:{p}"):
+        resp = client.post("/game/auth/register", json={
+            "email": f"debug-endpoint-{uuid.uuid4().hex[:10]}@test.local",
+            "username": f"debug_endpoint_{uuid.uuid4().hex[:10]}",
+            "password": "irrelevant",
+        })
+    client.headers["Authorization"] = f"Bearer {resp.json()['access_token']}"
 
     # Ensure DEBUG_MODE is not set
     original_debug = os.environ.get("DEBUG_MODE")

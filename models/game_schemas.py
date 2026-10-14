@@ -41,6 +41,10 @@ class TokenResponse(BaseModel):
     user: UserResponse
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
 # ---------------------------------------------------------------------------
 # World
 # ---------------------------------------------------------------------------
@@ -395,6 +399,10 @@ class ShowCardResponse(BaseModel):
     segments: List[ShowSegmentResponse] = []
 
 
+class CardReorderRequest(BaseModel):
+    segment_order: List[str] = Field(description="Segment IDs in the desired order")
+
+
 # ---------------------------------------------------------------------------
 # Promo
 # ---------------------------------------------------------------------------
@@ -544,6 +552,12 @@ class StableAddMember(BaseModel):
     wrestler_id: str
     role: str = Field(
         default="member",
+        pattern=r"^(leader|enforcer|mouthpiece|lieutenant|member|recruit)$"
+    )
+
+
+class StableMemberRoleUpdate(BaseModel):
+    new_role: str = Field(
         pattern=r"^(leader|enforcer|mouthpiece|lieutenant|member|recruit)$"
     )
 

@@ -13,8 +13,9 @@ from sqlalchemy.orm import Session
 
 from models.game_models import (
     PromoDB, GameWrestlerDB, WrestlerStatsDB,
-    GimmickHistoryDB, LifeEventDB,
+    LifeEventDB,
 )
+from game_service.ticker_query_helpers import get_wrestler_federation, get_active_gimmick
 
 logger = logging.getLogger(__name__)
 
@@ -287,15 +288,12 @@ for _arch in ARCHETYPE_OPENERS:
         "closers": ARCHETYPE_CLOSERS.get(_arch, []),
     }
 
-# Event type classifications for emotional state
-NEGATIVE_LIFE_EVENT_TYPES = {
-    "divorce", "death_in_family", "legal_trouble", "substance_issue",
-    "financial_trouble", "mental_health", "public_controversy",
-}
-POSITIVE_LIFE_EVENT_TYPES = {
-    "marriage", "child_born", "personal_achievement", "charity_work",
-    "family_reconciliation",
-}
+# Event type classifications for emotional state — derived from
+# persona_service.LIFE_EVENT_POOL so this can't drift out of sync with it
+# or with news_service's classification of the same event types.
+from game_service.persona_service import (
+    POSITIVE_LIFE_EVENT_TYPES, NEGATIVE_LIFE_EVENT_TYPES,
+)
 
 # Emotional bleed thresholds
 SEVERE_EVENT_THRESHOLD = 7
@@ -400,6 +398,13 @@ def generate_promo(db: Session, world_id: str, wrestler_id: str,
     quality = _evaluate_promo_quality(stats, content, is_player_written, gimmick)
     heat = _calculate_promo_heat(wrestler, quality, target_wrestler_id is not None)
 
+    # A manager at ringside/backstage boosts both the delivery and the pop
+    from game_service.manager_service import calculate_manager_bonus
+    manager_bonus = calculate_manager_bonus(db, wrestler_id)
+    if manager_bonus.get("has_manager"):
+        quality = min(5.0, quality + manager_bonus["charisma_bonus"] / 10)
+        heat = max(HEAT_MIN, min(HEAT_MAX, heat + manager_bonus["heat_bonus"]))
+
     # Crowd reaction: persona-aware
     crowd = _determine_crowd_reaction(wrestler, quality, promo_type, gimmick)
 
@@ -436,10 +441,7 @@ def generate_promo(db: Session, world_id: str, wrestler_id: str,
 
 def _get_current_gimmick(db, wrestler_id):
     """Get the wrestler's current active gimmick, if any."""
-    return db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler_id,
-        GimmickHistoryDB.is_active,
-    ).first()
+    return get_active_gimmick(db, wrestler_id)
 
 
 def _get_active_life_events(db, wrestler_id):
@@ -477,6 +479,12 @@ def _determine_emotional_state(life_events, kayfabe_commitment):
     elif event.event_type in POSITIVE_LIFE_EVENT_TYPES:
         return "joy"
     return None
+
+
+def _federation_allows_worked_shoots(db, wrestler_id: str) -> bool:
+    """Check whether the wrestler's current federation permits worked shoots."""
+    fed = get_wrestler_federation(db, wrestler_id)
+    return fed.allows_worked_shoots if fed else True
 
 
 def _generate_persona_promo(wrestler, stats, target_id, db, promo_type):
@@ -518,10 +526,12 @@ def _generate_persona_promo(wrestler, stats, target_id, db, promo_type):
     parts = []
 
     # Check for worked-shoot promo (low kayfabe commitment + high frustration/life events)
-    if promo_type == "worked_shoot" or (
-        wrestler.kayfabe_commitment < LOW_KAYFABE_THRESHOLD
-        and random.random() < WORKED_SHOOT_CHANCE
-    ):
+    if (
+        promo_type == "worked_shoot" or (
+            wrestler.kayfabe_commitment < LOW_KAYFABE_THRESHOLD
+            and random.random() < WORKED_SHOOT_CHANCE
+        )
+    ) and _federation_allows_worked_shoots(db, wrestler.id):
         return _generate_worked_shoot_promo(wrestler, gimmick, target_id, db)
 
     # Check emotional bleed from life events
@@ -572,8 +582,7 @@ def _generate_worked_shoot_promo(wrestler, gimmick, target_id, db):
     if life_events:
         event = random.choice(life_events)
         if event.is_public:
-            parts.append(
-                "Everyone knows what I've been dealing with. And instead of support, what do I get? More matches, more promos, more demands.")
+            parts.append("Everyone knows what I've been dealing with. And instead of support, what do I get? More matches, more promos, more demands.")
     else:
         parts.append("I've given everything to this company. EVERYTHING. And what do I have to show for it?")
 

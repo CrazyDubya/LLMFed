@@ -106,7 +106,7 @@ async def llm_health(llm: LLMAbstraction = Depends(get_llm_dependency)) -> Dict[
 # -------------------------------------------------------------------------
 
 @router.get("/match-profiles", summary="List match simulation profiles")
-async def list_match_profiles() -> Dict[str, Any]:
+def list_match_profiles() -> Dict[str, Any]:
     """Return available match simulation profiles and the active one."""
     from core_engine.match_config import list_profiles, get_match_config
 

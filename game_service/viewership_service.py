@@ -242,8 +242,18 @@ def calculate_attendance(
     event_bonus = 0.15 if show.show_type == "ppv" else 0.0
     noise = random.uniform(-0.05, 0.05)
 
-    fill_rate = base_fill + card_bonus + momentum_bonus + event_bonus + noise
-    fill_rate = min(1.0, max(0.15, fill_rate))
+    # A loyal fanbase sets a higher floor — diehards show up even on a
+    # rough night, so the fill rate can't collapse all the way to bare
+    # minimum the way it could for a fed with a shallow following.
+    loyalty_floor = 0.15 + ((fed.fanbase_loyalty or 50) / 100.0) * 0.15
+
+    # Strength in the fed's home market — most shows run there — nudges
+    # the fill rate the way a strong (or weak) local following would.
+    home_strength = (fed.regional_strength or {}).get(fed.home_region, 50)
+    regional_bonus = (home_strength - 50) / 500.0
+
+    fill_rate = base_fill + card_bonus + momentum_bonus + event_bonus + regional_bonus + noise
+    fill_rate = min(1.0, max(loyalty_floor, fill_rate))
 
     capacity = show.capacity or 5000
     attendance = int(capacity * fill_rate)

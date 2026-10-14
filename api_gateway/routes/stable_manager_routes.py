@@ -10,11 +10,12 @@ from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
     ManagerCreate, ManagerResponse, ManagerClientCreate, ManagerClientResponse,
     StableCreate, StableResponse, StableMemberResponse, StableAddMember, StableUpdate,
+    StableMemberRoleUpdate,
 )
 from models.game_models import (
     GameWrestlerDB, ContractDB, StableDB,
 )
-from game_service.world_service import get_world
+from game_service.world_service import get_world, require_federation_owner
 from game_service import stable_service, manager_service
 
 logger = logging.getLogger(__name__)
@@ -26,12 +27,36 @@ def _handle_value_error(e: ValueError):
     raise HTTPException(status_code=400, detail=str(e))
 
 
+def _require_federation_owner_if_any(db: Session, user_id: str, federation_id: Optional[str]):
+    """Verify federation ownership when a federation_id is known.
+
+    Some managers/bonds are freelance (no federation), in which case
+    there's no owner to check against.
+    """
+    if not federation_id:
+        return
+    try:
+        require_federation_owner(db, user_id, federation_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+def _get_active_stable_or_404(db: Session, stable_id: str) -> StableDB:
+    """Fetch an active stable by ID or raise a 404."""
+    stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
+    if not stable:
+        raise HTTPException(status_code=404, detail="Stable not found")
+    return stable
+
+
 # ---------------------------------------------------------------------------
 # Managers & Valets
 # ---------------------------------------------------------------------------
 
 @router.get("/worlds/{world_id}/managers", response_model=List[ManagerResponse])
-async def api_list_managers(
+def api_list_managers(
     world_id: str,
     federation_id: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
@@ -43,7 +68,7 @@ async def api_list_managers(
 
 
 @router.post("/worlds/{world_id}/managers", response_model=ManagerResponse, status_code=201)
-async def api_create_manager(
+def api_create_manager(
     world_id: str,
     data: ManagerCreate,
     federation_id: Optional[str] = None,
@@ -51,6 +76,7 @@ async def api_create_manager(
     db: Session = Depends(get_db_sync),
 ):
     """Create a new manager character."""
+    _require_federation_owner_if_any(db, current_user.user_id, federation_id)
     try:
         mgr = manager_service.create_manager(
             db, world_id, name=data.name, alignment=data.alignment,
@@ -65,7 +91,7 @@ async def api_create_manager(
 
 
 @router.get("/worlds/{world_id}/manager-bonds")
-async def api_list_manager_bonds(
+def api_list_manager_bonds(
     world_id: str,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
@@ -83,13 +109,18 @@ async def api_list_manager_bonds(
 
 
 @router.post("/worlds/{world_id}/manager-bonds", response_model=ManagerClientResponse, status_code=201)
-async def api_assign_manager(
+def api_assign_manager(
     world_id: str,
     data: ManagerClientCreate,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
     """Assign a manager to a wrestler client."""
+    from models.game_models import ManagerDB
+    mgr = db.query(ManagerDB).filter_by(id=data.manager_id).first()
+    if not mgr:
+        raise HTTPException(status_code=404, detail="Manager not found")
+    _require_federation_owner_if_any(db, current_user.user_id, mgr.federation_id)
     try:
         world = get_world(db, world_id)
         if not world:
@@ -106,18 +137,25 @@ async def api_assign_manager(
 
 
 @router.delete("/manager-bonds/{bond_id}", status_code=204)
-async def api_remove_manager_bond(
+def api_remove_manager_bond(
     bond_id: str,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
     """End a manager-client relationship."""
+    from models.game_models import ManagerClientDB, ManagerDB
+    bond = db.query(ManagerClientDB).filter_by(id=bond_id).first()
+    if not bond:
+        raise HTTPException(status_code=404, detail="Bond not found")
+    mgr = db.query(ManagerDB).filter_by(id=bond.manager_id).first()
+    _require_federation_owner_if_any(db, current_user.user_id, mgr.federation_id if mgr else None)
+
     if not manager_service.remove_manager(db, bond_id):
         raise HTTPException(status_code=404, detail="Bond not found")
 
 
 @router.post("/managers/{manager_id}/promo")
-async def api_manager_promo(
+def api_manager_promo(
     manager_id: str,
     client_wrestler_id: str,
     target_wrestler_id: Optional[str] = None,
@@ -139,7 +177,7 @@ async def api_manager_promo(
 # ---------------------------------------------------------------------------
 
 @router.get("/worlds/{world_id}/stables", response_model=List[StableResponse])
-async def api_list_stables(
+def api_list_stables(
     world_id: str,
     federation_id: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
@@ -158,7 +196,7 @@ async def api_list_stables(
 
 
 @router.post("/worlds/{world_id}/stables", response_model=StableResponse, status_code=201)
-async def api_create_stable(
+def api_create_stable(
     world_id: str,
     data: StableCreate,
     current_user: TokenData = Depends(get_current_user),
@@ -176,6 +214,7 @@ async def api_create_stable(
         fed_id = contract.federation_id if contract else None
         if not fed_id:
             raise HTTPException(status_code=400, detail="Leader has no active contract")
+        _require_federation_owner_if_any(db, current_user.user_id, fed_id)
 
         world = get_world(db, world_id)
         stable = stable_service.create_stable(
@@ -199,7 +238,7 @@ async def api_create_stable(
 
 
 @router.get("/stables/{stable_id}", response_model=StableResponse)
-async def api_get_stable(
+def api_get_stable(
     stable_id: str,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
@@ -216,16 +255,15 @@ async def api_get_stable(
 
 
 @router.post("/stables/{stable_id}/members", status_code=201)
-async def api_add_stable_member(
+def api_add_stable_member(
     stable_id: str,
     data: StableAddMember,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
     """Add a wrestler to a stable."""
-    stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
-    if not stable:
-        raise HTTPException(status_code=404, detail="Stable not found")
+    stable = _get_active_stable_or_404(db, stable_id)
+    _require_federation_owner_if_any(db, current_user.user_id, stable.federation_id)
     world = get_world(db, stable.world_id)
     member = stable_service.add_member(
         db, stable_id, data.wrestler_id, data.role,
@@ -235,16 +273,15 @@ async def api_add_stable_member(
 
 
 @router.delete("/stables/{stable_id}/members/{wrestler_id}", status_code=204)
-async def api_remove_stable_member(
+def api_remove_stable_member(
     stable_id: str,
     wrestler_id: str,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
     """Remove a wrestler from a stable."""
-    stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
-    if not stable:
-        raise HTTPException(status_code=404, detail="Stable not found")
+    stable = _get_active_stable_or_404(db, stable_id)
+    _require_federation_owner_if_any(db, current_user.user_id, stable.federation_id)
     world = get_world(db, stable.world_id)
     if not stable_service.remove_member(
         db, stable_id, wrestler_id,
@@ -253,17 +290,32 @@ async def api_remove_stable_member(
         raise HTTPException(status_code=404, detail="Member not found")
 
 
+@router.patch("/stables/{stable_id}/members/{wrestler_id}/role", status_code=200)
+def api_promote_stable_member(
+    stable_id: str,
+    wrestler_id: str,
+    data: StableMemberRoleUpdate,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db_sync),
+):
+    """Change a stable member's role (e.g. promote to leader)."""
+    stable = _get_active_stable_or_404(db, stable_id)
+    _require_federation_owner_if_any(db, current_user.user_id, stable.federation_id)
+    if not stable_service.promote_member(db, stable_id, wrestler_id, data.new_role):
+        raise HTTPException(status_code=404, detail="Member not found")
+    return {"wrestler_id": wrestler_id, "role": data.new_role}
+
+
 @router.patch("/stables/{stable_id}", response_model=StableResponse)
-async def api_update_stable(
+def api_update_stable(
     stable_id: str,
     data: StableUpdate,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
     """Update a stable's details."""
-    stable = db.query(StableDB).filter_by(id=stable_id, is_active=True).first()
-    if not stable:
-        raise HTTPException(status_code=404, detail="Stable not found")
+    stable = _get_active_stable_or_404(db, stable_id)
+    _require_federation_owner_if_any(db, current_user.user_id, stable.federation_id)
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(stable, field, value)
     db.commit()

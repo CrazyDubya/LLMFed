@@ -542,7 +542,6 @@ class PlayerActionHandler:
         heat_boost = data.get("heat_boost", 0)
 
         if new_status and new_status in ("brewing", "active", "climax", "resolved"):
-            storyline.status
             storyline.status = new_status
             if new_status == "resolved":
                 storyline.end_date = self.world.current_game_date

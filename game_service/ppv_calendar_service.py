@@ -96,17 +96,21 @@ def generate_ppv_calendar(
     ppv_names = available_names[:num_ppvs - 1]  # Reserve slot for crown jewel
 
     # Crown jewel goes near end of year (last quarter)
-    random.randint(10, 12)
+    crown_jewel_month = random.randint(10, 12)
 
     ppvs = []
     name_idx = 0
 
     for i in range(num_ppvs):
-        # Calculate date
-        ppv_date = start + timedelta(days=spacing * i + random.randint(-7, 7))
+        # Crown jewel is the last or second-to-last PPV
+        if i == num_ppvs - 1:
+            # Pinned to the last-quarter month picked above, not the
+            # even spacing used for the rest of the calendar.
+            ppv_date = datetime(start.year, crown_jewel_month, random.randint(1, 28))
+        else:
+            ppv_date = start + timedelta(days=spacing * i + random.randint(-7, 7))
         date_str = ppv_date.strftime("%Y-%m-%d")
 
-        # Crown jewel is the last or second-to-last PPV
         if i == num_ppvs - 1:
             name = crown_jewel_name
             is_crown_jewel = True
@@ -258,6 +262,25 @@ def plan_ppv_card_from_vision(
             )
             main_event_set = True
 
+    # Crown jewels get the promoter's dream match — the whole reason this
+    # is the biggest show of the year. Book it as the main event if no
+    # title match claimed that slot, otherwise as a second marquee bout —
+    # unless one of the dream wrestlers is already booked in a title match.
+    if ppv.is_crown_jewel:
+        dream = (vision.crown_jewel_vision or {}).get("ideal_wrestlers", [])
+        already_booked = set((ppv.planned_main_event or {}).get("wrestler_ids", []))
+        for m in (ppv.planned_matches or []):
+            already_booked.update(m.get("wrestler_ids", []))
+
+        if len(dream) >= 2 and not already_booked.intersection(dream[:2]):
+            pencil_in_ppv_match(
+                db, ppv,
+                wrestler_ids=dream[:2],
+                match_type="singles",
+                is_main_event=not main_event_set,
+            )
+            main_event_set = True
+
     # Add matches from planned storylines at climax
     planned_sls = vision.planned_storylines or []
     for sl in planned_sls:
@@ -313,7 +336,6 @@ def rollover_ppv_calendar(
 ):
     """Generate next year's PPV calendar. Called when current year's events are done."""
     # Check if next year's PPVs already exist
-    datetime.strptime(new_year_start, "%Y-%m-%d").year
     existing = db.query(PPVEventDB).filter(
         PPVEventDB.federation_id == federation.id,
         PPVEventDB.scheduled_date >= new_year_start,

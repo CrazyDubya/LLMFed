@@ -223,6 +223,16 @@ def _generate_trajectories(
                 "notes": "Young talent with main event potential",
                 "status": "penciled",
             }
+        # Older main eventers may be transitional — checked before the
+        # general "established" branch below, which would otherwise match
+        # every main eventer (including these) first and shadow this case.
+        elif w.id in main_eventers and w.age and w.age > 38:
+            trajectories[w.id] = {
+                "direction": "transitional",
+                "target_tier": "upper_midcard",
+                "notes": "Veteran to put over new talent",
+                "status": "penciled",
+            }
         # Established main eventers
         elif w.id in main_eventers:
             trajectories[w.id] = {
@@ -230,14 +240,6 @@ def _generate_trajectories(
                 "target_tier": "main_event",
                 "notes": "Franchise player",
                 "status": "ink",
-            }
-        # Older main eventers may be transitional
-        elif w.id in main_eventers and w.age and w.age > 38:
-            trajectories[w.id] = {
-                "direction": "transitional",
-                "target_tier": "upper_midcard",
-                "notes": "Veteran to put over new talent",
-                "status": "penciled",
             }
 
     return trajectories
@@ -541,6 +543,7 @@ def adapt_vision_for_hot_act(
         push.push_tier = new_tier
         push.direction = "rising"
         push.confidence = min(100, push.confidence + 15)
+        push.weeks_at_tier = 0
 
     log = list(vision.adaptation_log or [])
     log.append({
@@ -609,6 +612,7 @@ def adapt_vision_for_cold_act(
         push.push_tier = new_tier
         push.direction = "cooling_off"
         push.confidence = max(10, push.confidence - 15)
+        push.weeks_at_tier = 0
 
     log = list(vision.adaptation_log or [])
     log.append({

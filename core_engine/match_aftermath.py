@@ -89,18 +89,31 @@ CHEMISTRY_MAX = 1.0
 DEFAULT_MATCH_RATING = 3.0
 MATCH_RATING_SCALE = 5.0
 
-# Locker room standing progression (downgrade order)
+# Locker room standing progression (downgrade order). "toxic" maps to
+# itself — it's the bottom rung (see GameWrestlerDB.locker_room_standing),
+# and .get()'s fallback default must never be used for it, or a repeat
+# botch would incorrectly rehabilitate a toxic wrestler back to neutral.
 STANDING_DOWNGRADE = {
     "leader": "neutral",
     "respected": "neutral",
     "neutral": "disliked",
     "disliked": "disliked",
+    "toxic": "toxic",
 }
 
 
 def _get_wrestler(db: Session, wrestler_id: str):
-    """Fetch a wrestler by ID."""
-    return db.query(GameWrestlerDB).filter(GameWrestlerDB.id == wrestler_id).first()
+    """Fetch a wrestler by ID.
+
+    Uses Session.get() rather than a filtered query: process_match_aftermath
+    re-fetches the same one or two wrestlers repeatedly across its many
+    sub-steps (title handling, popularity/morale, streaks, history,
+    relationships, ...) — get() checks the session's identity map first,
+    so the same row is only actually queried once per match, not ~6x.
+    """
+    if not wrestler_id:
+        return None
+    return db.get(GameWrestlerDB, wrestler_id)
 
 
 def _get_relationship(db: Session, world_id: str, id1: str, id2: str):
@@ -166,6 +179,12 @@ def process_match_aftermath(db: Session, match: MatchDB, game_date: str):
     # 11. Going-into-business consequences — discipline, locker room heat, trust destruction
     _process_shoot_consequences(db, match, game_date)
 
+    # _get_wrestler() now uses Session.get(), which (unlike the filtered
+    # queries used elsewhere in this module) does not autoflush — flush
+    # explicitly so every wrestler mutation above is visible to callers
+    # that refresh() or re-query these rows before the caller commits.
+    db.flush()
+
 
 def _handle_title_result(db: Session, match: MatchDB,
                          winners: list, losers: list, game_date: str):
@@ -204,7 +223,7 @@ def _handle_title_result(db: Session, match: MatchDB,
             old_reign = db.query(ChampionshipHistoryDB).filter(
                 ChampionshipHistoryDB.championship_id == champ.id,
                 ChampionshipHistoryDB.wrestler_id == old_holder_id,
-                ChampionshipHistoryDB.reign_end is None,
+                ChampionshipHistoryDB.reign_end == None,
             ).first()
             if old_reign:
                 old_reign.reign_end = game_date
@@ -442,7 +461,6 @@ def _update_alignment_momentum(db: Session, match: MatchDB,
 def _execute_alignment_turn(db: Session, wrestler: GameWrestlerDB,
                             new_alignment: str, game_date: str, world_id: str):
     """Execute an alignment turn — shared logic for face/heel transitions."""
-    wrestler.alignment
     wrestler.alignment = new_alignment
     wrestler.alignment_momentum = 0
     wrestler.popularity = min(100, wrestler.popularity + TURN_POPULARITY_BONUS)
@@ -534,7 +552,7 @@ def compute_win_loss(db: Session, wrestler_id: str) -> dict:
         MatchParticipantDB.wrestler_id == wrestler_id,
         MatchParticipantDB.role == "competitor",
         MatchDB.is_completed,
-        MatchDB.winner_id is None,
+        MatchDB.winner_id == None,
     ).count()
 
     losses = total - wins - draws

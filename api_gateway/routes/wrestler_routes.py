@@ -28,7 +28,7 @@ router = APIRouter(prefix="/game", tags=["game-wrestler"])
 # ---------------------------------------------------------------------------
 
 @router.get("/worlds/{world_id}/wrestlers", response_model=List[WrestlerResponse])
-async def api_list_wrestlers(
+def api_list_wrestlers(
     world_id: str,
     limit: int = 100,
     current_user: TokenData = Depends(get_current_user),
@@ -40,7 +40,7 @@ async def api_list_wrestlers(
 
 
 @router.get("/wrestlers/{wrestler_id}", response_model=WrestlerDetailResponse)
-async def api_get_wrestler(
+def api_get_wrestler(
     wrestler_id: str,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
@@ -62,7 +62,7 @@ async def api_get_wrestler(
         # Get active storylines
         storyline_parts = db.query(StorylineParticipantDB).filter(
             StorylineParticipantDB.wrestler_id == wrestler_id,
-            StorylineParticipantDB.left_date is None,
+            StorylineParticipantDB.left_date == None,
         ).all()
 
         # Compute win/loss record
@@ -82,7 +82,7 @@ async def api_get_wrestler(
 
 
 @router.get("/wrestlers/{wrestler_id}/manager")
-async def api_get_wrestler_manager(
+def api_get_wrestler_manager(
     wrestler_id: str,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
@@ -105,7 +105,7 @@ async def api_get_wrestler_manager(
 
 
 @router.get("/wrestlers/{wrestler_id}/stable")
-async def api_get_wrestler_stable(
+def api_get_wrestler_stable(
     wrestler_id: str,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),

@@ -21,7 +21,6 @@ from core_engine.match_constants import (
     INJURY_HEALTH_THRESHOLD, DEFAULT_INJURY_PRONE, INJURY_PRONE_DIVISOR,
     LOW_TRUST_THRESHOLD, LOW_TRUST_PENALTY_DIVISOR,
     MORALE_MODIFIER_BASE, MORALE_MODIFIER_RANGE,
-    RING_RUST_THRESHOLD_DAYS, RING_RUST_DIVISOR, RING_RUST_FLOOR,
     CONDITIONING_MODIFIER_BASE, CONDITIONING_MODIFIER_RANGE,
     FACTION_BEATDOWN_CHANCE, FACTION_SAVE_CHANCE,
     HIGHLIGHT_DAMAGE_THRESHOLD,
@@ -34,18 +33,19 @@ logger = logging.getLogger(__name__)
 # Helper: Stat modifier calculation
 # ---------------------------------------------------------------------------
 
-def _build_stat_modifiers(morale: float, ring_rust_days: int, conditioning: float) -> float:
+def _build_stat_modifiers(morale: float, wrestler: GameWrestlerDB, conditioning: float) -> float:
     """Compute a combined stat modifier from morale, ring rust, and conditioning.
 
     Returns a multiplier (roughly 0.6-1.15) applied to all wrestler stats
     before a match simulation.
     """
+    from game_service.wrestler_lifecycle_service import calculate_ring_rust_modifier
+
     # Morale affects performance: range MORALE_MODIFIER_BASE to BASE+RANGE
     stat_modifier = MORALE_MODIFIER_BASE + (morale / 100) * MORALE_MODIFIER_RANGE
 
     # Ring rust penalty for wrestlers who haven't competed recently
-    if ring_rust_days > RING_RUST_THRESHOLD_DAYS:
-        stat_modifier *= max(RING_RUST_FLOOR, 1.0 - (ring_rust_days / RING_RUST_DIVISOR))
+    stat_modifier *= calculate_ring_rust_modifier(wrestler)
 
     # Conditioning modifier
     cond_modifier = CONDITIONING_MODIFIER_BASE + (conditioning / 100) * CONDITIONING_MODIFIER_RANGE
@@ -76,19 +76,54 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None):
     if len(participants_db) < 2:
         return MatchResult(narrative_summary="Not enough competitors")
 
+    from game_service.wrestler_lifecycle_service import calculate_stipulation_bonus
+
+    # Fetch each participant's wrestler row once and reuse it below, rather
+    # than re-querying per wrestler for the body-modifier precompute and
+    # again while building participant states.
+    wrestlers_by_id = {
+        w.id: w for w in db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.id.in_([p.wrestler_id for p in participants_db]),
+        ).all()
+    }
+
+    # Body-weight modifiers are pairwise (attacker vs. defender), so they're
+    # only well-defined for a two-person match — precompute both sides here.
+    body_mods = {}
+    if len(participants_db) == 2:
+        from game_service.wrestler_lifecycle_service import calculate_body_modifier
+        w_a = wrestlers_by_id.get(participants_db[0].wrestler_id)
+        w_b = wrestlers_by_id.get(participants_db[1].wrestler_id)
+        if w_a and w_b:
+            body_mods[w_a.id] = calculate_body_modifier(w_a.weight_kg, w_b.weight_kg)
+            body_mods[w_b.id] = calculate_body_modifier(w_b.weight_kg, w_a.weight_kg)
+
+    interference_map = getattr(match, "_manager_interference", {})
+
     # Build participant states with morale modifier
     participant_states = []
     for p in participants_db:
-        wrestler = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == p.wrestler_id).first()
+        wrestler = wrestlers_by_id.get(p.wrestler_id)
         stats = db.query(WrestlerStatsDB).filter(WrestlerStatsDB.wrestler_id == p.wrestler_id).first()
 
         if not wrestler or not stats:
             continue
 
         morale = wrestler.morale if wrestler.morale is not None else 50
-        ring_rust = getattr(wrestler, "ring_rust_days", 0) or 0
         conditioning = getattr(stats, "conditioning_level", 70) or 70
-        stat_modifier = _build_stat_modifiers(morale, ring_rust, conditioning)
+        stat_modifier = _build_stat_modifiers(morale, wrestler, conditioning)
+
+        # Stipulation specialists get a boost in their match type (cage,
+        # ladder, hardcore/tables-style bouts) — check both the match_type
+        # (e.g. "cage", "ladder") and the display stipulation (e.g. "No DQ"),
+        # since gimmick matches record the specialty in whichever field
+        # actually carries it.
+        stip_bonus = max(
+            calculate_stipulation_bonus(stats, match.match_type),
+            calculate_stipulation_bonus(stats, match.stipulation),
+        )
+        body_mod = body_mods.get(wrestler.id, {})
+        interference_boost = interference_map.get(wrestler.id, 0)
 
         # Load signature moves
         sig_moves = []
@@ -105,15 +140,16 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None):
             wrestler_id=wrestler.id,
             name=wrestler.name,
             health=wrestler.condition,  # Current condition affects match health
+            momentum=min(100.0, 50.0 + interference_boost),
             stats={
-                "power": int(stats.power * stat_modifier),
+                "power": int(stats.power * stat_modifier * stip_bonus * body_mod.get("power", 1.0)),
                 "technical": int(stats.technical * stat_modifier),
-                "aerial": int(stats.aerial * stat_modifier),
-                "brawling": int(stats.brawling * stat_modifier),
+                "aerial": int(stats.aerial * stat_modifier * body_mod.get("aerial", 1.0)),
+                "brawling": int(stats.brawling * stat_modifier * stip_bonus),
                 "submission": int(stats.submission * stat_modifier),
                 "stamina": int(stats.stamina * stat_modifier),
-                "toughness": int(stats.toughness * stat_modifier),
-                "speed": int(stats.speed * stat_modifier),
+                "toughness": int(stats.toughness * stat_modifier * stip_bonus),
+                "speed": int(stats.speed * stat_modifier * body_mod.get("speed", 1.0)),
                 "charisma": int(stats.charisma * stat_modifier),
                 "psychology": int(stats.psychology * stat_modifier),
                 "selling": int(stats.selling * stat_modifier),
@@ -184,9 +220,7 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None):
     try:
         from models.game_models import WrestlerGoalDB
         for p_state in participant_states:
-            wrestler = db.query(GameWrestlerDB).filter(
-                GameWrestlerDB.id == p_state.wrestler_id
-            ).first()
+            wrestler = wrestlers_by_id.get(p_state.wrestler_id)
             if wrestler:
                 p_state._morale = wrestler.morale or 50
                 # Get max frustration from active goals
@@ -208,6 +242,19 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None):
     # Show momentum passed via match attribute (set by world_ticker)
     show_momentum = getattr(match, "_show_momentum", 50)
 
+    # Real venue capacity, for an accurate venue-atmosphere rating bonus
+    # (matches have no direct show_id — reached via the booking segment).
+    venue_capacity = None
+    try:
+        from models.show_models import ShowSegmentDB, ShowDB
+        segment = db.query(ShowSegmentDB).filter(ShowSegmentDB.match_id == match.id).first()
+        if segment:
+            show = db.query(ShowDB).filter(ShowDB.id == segment.show_id).first()
+            if show:
+                venue_capacity = show.capacity
+    except Exception:
+        pass  # Venue lookup is optional — falls back to the momentum approximation
+
     # Simulate
     simulator = MatchSimulator(
         planned_winner_id=match.winner_id,  # Pre-planned winner from booker
@@ -218,6 +265,7 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None):
         managers=managers,
         rivalry_heat=rivalry_heat,
         show_momentum=show_momentum,
+        venue_capacity=venue_capacity,
     )
     simulator._trust_penalty = trust_penalty
     result = simulator.simulate(participant_states)
@@ -285,9 +333,7 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None):
 
     # Wear on wrestlers' condition
     for p_state in participant_states:
-        wrestler = db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == p_state.wrestler_id
-        ).first()
+        wrestler = wrestlers_by_id.get(p_state.wrestler_id)
         if wrestler:
             stamina_loss = int((100 - p_state.stamina) * STAMINA_WEAR_FACTOR)
             health_loss = int((100 - p_state.health) * HEALTH_WEAR_FACTOR)

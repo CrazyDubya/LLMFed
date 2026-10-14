@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from agent_service.database import get_db_sync
+from api_gateway.security import get_current_user, TokenData
 
 logger = logging.getLogger(__name__)
 
@@ -13,17 +14,22 @@ router = APIRouter(prefix="/game/analytics", tags=["analytics"])
 
 
 @router.get("/world/{world_id}/summary")
-async def api_world_summary(world_id: str, db: Session = Depends(get_db_sync)):
+def api_world_summary(
+    world_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db_sync),
+):
     """Get high-level world summary statistics."""
     from game_service.analytics_service import world_summary
     return world_summary(db, world_id)
 
 
 @router.get("/world/{world_id}/wrestler/{wrestler_id}")
-async def api_wrestler_performance(
+def api_wrestler_performance(
     world_id: str,
     wrestler_id: str,
     limit: int = Query(50, ge=1, le=200),
+    current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
     """Get wrestler performance analytics."""
@@ -32,9 +38,10 @@ async def api_wrestler_performance(
 
 
 @router.get("/world/{world_id}/federation/{federation_id}")
-async def api_federation_health(
+def api_federation_health(
     world_id: str,
     federation_id: str,
+    current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
     """Get federation health metrics."""
@@ -43,9 +50,10 @@ async def api_federation_health(
 
 
 @router.get("/world/{world_id}/match-quality")
-async def api_match_quality(
+def api_match_quality(
     world_id: str,
     federation_id: Optional[str] = Query(None),
+    current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
     """Get match rating distribution."""
@@ -54,10 +62,11 @@ async def api_match_quality(
 
 
 @router.get("/world/{world_id}/head-to-head")
-async def api_head_to_head(
+def api_head_to_head(
     world_id: str,
     wrestler_a: str = Query(..., alias="a"),
     wrestler_b: str = Query(..., alias="b"),
+    current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
     """Get head-to-head comparison between two wrestlers."""
@@ -66,17 +75,18 @@ async def api_head_to_head(
 
 
 @router.get("/llm-usage")
-async def api_llm_usage():
+def api_llm_usage(current_user: TokenData = Depends(get_current_user)):
     """Get LLM cost/usage summary (API calls, total cost, budget remaining)."""
     from game_service.analytics_service import llm_usage_summary
     return llm_usage_summary()
 
 
 @router.get("/world/{world_id}/leaderboard")
-async def api_leaderboard(
+def api_leaderboard(
     world_id: str,
     metric: str = Query("win_rate", description="Sort by: win_rate, avg_match_rating, total_matches, wins"),
     limit: int = Query(10, ge=1, le=50),
+    current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
     """Get top performers leaderboard."""

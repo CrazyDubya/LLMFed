@@ -13,6 +13,7 @@ from models.game_models import (
     GameWrestlerDB, WrestlerBackstoryDB, GimmickHistoryDB,
     LifeEventDB, WrestlerRelationshipDB,
 )
+from game_service.ticker_query_helpers import get_active_gimmick
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +219,33 @@ LIFE_EVENT_POOL = {
         "storyline_pot": False},
 }
 
+# Single source of truth for event polarity, derived from each event's own
+# morale value — other modules (promo_service, news_service) previously
+# each hand-maintained their own positive/negative type sets, and they'd
+# drifted out of sync with each other and with this pool (e.g. news_service
+# reported a wrestler's new relationship or media appearance with a
+# "dealing with personal issues" headline).
+POSITIVE_LIFE_EVENT_TYPES = frozenset(
+    et for et, data in LIFE_EVENT_POOL.items() if data["morale"] >= 0
+)
+NEGATIVE_LIFE_EVENT_TYPES = frozenset(
+    et for et, data in LIFE_EVENT_POOL.items() if data["morale"] < 0
+)
+
+# Ongoing struggles a negative life event weighs the real person down with.
+# Tracked on WrestlerBackstoryDB.personal_struggles for as long as the
+# originating event stays active.
+STRUGGLE_LABELS = {
+    "divorce": "divorce",
+    "death_in_family": "grief",
+    "legal_trouble": "legal_trouble",
+    "substance_issue": "substance_abuse",
+    "public_controversy": "public_scrutiny",
+    "financial_trouble": "financial_pressure",
+    "mental_health": "mental_health_struggle",
+    "relationship_end": "heartbreak",
+}
+
 
 # ---------------------------------------------------------------------------
 # Backstory generation
@@ -277,7 +305,6 @@ def generate_backstory(db: Session, wrestler: GameWrestlerDB) -> WrestlerBacksto
 def _pick_archetype(wrestler):
     """Pick an archetype based on existing wrestler attributes."""
     alignment = wrestler.alignment or "face"
-    wrestler.personality_traits or {}
 
     # Weighted selection based on alignment
     if alignment == "heel":
@@ -404,6 +431,14 @@ def generate_life_event(db: Session, wrestler_id: str, world_id: str,
         is_active=True,
     )
     db.add(event)
+
+    label = STRUGGLE_LABELS.get(event_type)
+    if label and backstory:
+        struggles = list(backstory.personal_struggles or [])
+        if label not in struggles:
+            struggles.append(label)
+            backstory.personal_struggles = struggles
+
     db.flush()
 
     logger.info("Life event '%s' for %s (public=%s)", event_type, wrestler.name, is_public)
@@ -441,18 +476,33 @@ def process_life_event_effects(db: Session, event: LifeEventDB):
     # Auto-resolve low-severity events after creation
     if event.severity <= 3:
         event.is_active = False
+        event.resolved_date = event.game_date
+
+    if not event.is_active and backstory:
+        label = STRUGGLE_LABELS.get(event.event_type)
+        if label and label in (backstory.personal_struggles or []):
+            # Only drop the label once no other active event of the same
+            # type is still weighing on this wrestler.
+            still_active = db.query(LifeEventDB).filter(
+                LifeEventDB.wrestler_id == wrestler.id,
+                LifeEventDB.event_type == event.event_type,
+                LifeEventDB.is_active == True,
+                LifeEventDB.id != event.id,
+            ).first()
+            if not still_active:
+                backstory.personal_struggles = [
+                    s for s in backstory.personal_struggles if s != label
+                ]
 
 
 # ---------------------------------------------------------------------------
 # Gimmick staleness & evolution
 # ---------------------------------------------------------------------------
 
-def tick_gimmick_staleness(db: Session, wrestler: GameWrestlerDB, game_date: str):
+def tick_gimmick_staleness(db: Session, wrestler: GameWrestlerDB, game_date: str,
+                           gimmick: GimmickHistoryDB = None):
     """Increase gimmick staleness over time."""
-    gimmick = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler.id,
-        GimmickHistoryDB.is_active,
-    ).first()
+    gimmick = gimmick or get_active_gimmick(db, wrestler.id)
     if not gimmick:
         return
 
@@ -478,12 +528,10 @@ def tick_gimmick_staleness(db: Session, wrestler: GameWrestlerDB, game_date: str
         gimmick.effectiveness = max(0, (gimmick.effectiveness or 50) - 1)
 
 
-def check_repackaging_pressure(db: Session, wrestler: GameWrestlerDB) -> dict:
+def check_repackaging_pressure(db: Session, wrestler: GameWrestlerDB,
+                               gimmick: GimmickHistoryDB = None) -> dict:
     """Check if a wrestler needs a gimmick change. Returns pressure score and reason."""
-    gimmick = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler.id,
-        GimmickHistoryDB.is_active,
-    ).first()
+    gimmick = gimmick or get_active_gimmick(db, wrestler.id)
     if not gimmick:
         return {"pressure": 0, "reason": "no_gimmick"}
 
@@ -515,13 +563,11 @@ def check_repackaging_pressure(db: Session, wrestler: GameWrestlerDB) -> dict:
 
 
 def execute_gimmick_change(db: Session, wrestler: GameWrestlerDB,
-                           game_date: str, reason: str = None) -> GimmickHistoryDB:
+                           game_date: str, reason: str = None,
+                           current: GimmickHistoryDB = None) -> GimmickHistoryDB:
     """Retire current gimmick and create a new one."""
     # Retire current gimmick
-    current = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler.id,
-        GimmickHistoryDB.is_active,
-    ).first()
+    current = current or get_active_gimmick(db, wrestler.id)
 
     old_name = None
     old_archetype = None
@@ -577,12 +623,10 @@ def execute_gimmick_change(db: Session, wrestler: GameWrestlerDB,
     return new_gimmick
 
 
-def evolve_gimmick(db: Session, wrestler: GameWrestlerDB, game_date: str):
+def evolve_gimmick(db: Session, wrestler: GameWrestlerDB, game_date: str,
+                   gimmick: GimmickHistoryDB = None):
     """Subtle gimmick evolution: adjust depth and fan investment based on activity."""
-    gimmick = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler.id,
-        GimmickHistoryDB.is_active,
-    ).first()
+    gimmick = gimmick or get_active_gimmick(db, wrestler.id)
     if not gimmick:
         return
 
@@ -692,10 +736,7 @@ def migrate_existing_wrestlers(db: Session, world_id: str):
             generate_backstory(db, wrestler)
             count += 1
 
-        gimmick = db.query(GimmickHistoryDB).filter(
-            GimmickHistoryDB.wrestler_id == wrestler.id,
-            GimmickHistoryDB.is_active,
-        ).first()
+        gimmick = get_active_gimmick(db, wrestler.id)
         if not gimmick:
             generate_initial_gimmick(db, wrestler, "migration")
 

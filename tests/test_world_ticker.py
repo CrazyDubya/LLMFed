@@ -142,6 +142,13 @@ class TestWorldTicker:
         wrestler.condition = 50
         db_session.commit()
 
+        # Exercise the recovery mechanic directly rather than the full
+        # tick() pipeline: tick() also runs show/match simulation, which
+        # can (correctly) apply match damage to any wrestler on the card,
+        # including this one — that's a separate concern from whether
+        # daily condition recovery itself works, and routing through it
+        # made this test's pass/fail depend on unrelated random draws
+        # elsewhere in the pipeline.
         ticker = WorldTicker(db_session, world.id)
         ticker._recover_conditions()
         db_session.commit()

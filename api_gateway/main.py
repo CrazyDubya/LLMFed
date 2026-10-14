@@ -34,6 +34,7 @@ _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
+from api_gateway.security import validate_production_config
 
 # Setup OpenTelemetry
 provider = TracerProvider()
@@ -41,7 +42,6 @@ processor = BatchSpanProcessor(ConsoleSpanExporter())
 provider.add_span_processor(processor)
 trace.set_tracer_provider(provider)
 tracer = trace.get_tracer(__name__)
-
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -61,6 +61,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Manage startup and shutdown lifecycle."""
     # --- Startup ---
+    validate_production_config()
     start_reaper()
 
     # Setup Redis Cache
@@ -188,7 +189,6 @@ async def add_security_headers(request: Request, call_next):
 # Error handlers
 # ---------------------------------------------------------------------------
 register_error_handlers(app)
-
 
 # ---------------------------------------------------------------------------
 # Routers

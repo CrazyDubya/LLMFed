@@ -97,5 +97,5 @@ def test_inactive_user_cannot_use_existing_access_or_refresh_token():
         ).status_code == 401
         assert client.post(
             "/game/auth/refresh",
-            params={"refresh_token": tokens["refresh_token"]},
+            json={"refresh_token": tokens["refresh_token"]},
         ).status_code == 401

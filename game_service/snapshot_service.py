@@ -118,6 +118,25 @@ def create_snapshot(
     }
 
 
+def _model_classes_by_table() -> Dict[str, Any]:
+    """Map each serialized table name to its ORM class."""
+    from models.game_models import (
+        WorldDB, GameFederationDB, GameWrestlerDB, ContractDB,
+    )
+    from models.show_models import (
+        ShowDB, MatchDB, MatchParticipantDB, GameNarrativeLogDB, WorldNewsDB,
+    )
+    from models.social_models import (
+        StorylineDB, ChampionshipDB, WrestlerRelationshipDB,
+    )
+    classes = [
+        WorldDB, GameFederationDB, GameWrestlerDB, ContractDB,
+        ShowDB, MatchDB, MatchParticipantDB, GameNarrativeLogDB,
+        StorylineDB, ChampionshipDB, WrestlerRelationshipDB, WorldNewsDB,
+    ]
+    return {cls.__tablename__: cls for cls in classes}
+
+
 def restore_snapshot(
     db: Session,
     snapshot_data: bytes,
@@ -131,28 +150,63 @@ def restore_snapshot(
 
     Returns metadata about the restored world.
     """
+    from sqlalchemy import String as StringType, DateTime as DateTimeType
+
     raw = gzip.decompress(snapshot_data)
     state = json.loads(raw)
 
-    world_data = state["world"]
+    world_data = dict(state["world"])
     old_world_id = world_data.get("id")
+    tables = state.get("tables", {})
+    model_by_table = _model_classes_by_table()
 
     if create_new_world:
         new_world_id = str(uuid.uuid4())
-        world_data["id"] = new_world_id
         world_data["name"] = world_data.get("name", "Restored") + " (branch)"
     else:
         new_world_id = target_world_id or old_world_id
 
-    # Map old world_id to new in all table rows
-    tables = state.get("tables", {})
+    # Build an old-id -> new-id map for every string-PK row (world included),
+    # so foreign keys pointing to a remapped row can be rewritten too.
+    # Integer-autoincrement PK tables (MatchParticipantDB, GameNarrativeLogDB,
+    # WrestlerRelationshipDB) are left to the DB to assign — nothing else
+    # references those rows by id.
+    id_map: Dict[str, str] = {old_world_id: new_world_id}
     for table_name, rows in tables.items():
+        model_cls = model_by_table.get(table_name)
+        if model_cls is None:
+            continue
+        pk_is_string = isinstance(model_cls.id.type, StringType)
         for row in rows:
-            if "world_id" in row and row["world_id"] == old_world_id:
-                row["world_id"] = new_world_id
-            # Generate new PKs for non-world tables to avoid conflicts
-            if "id" in row and table_name != "worlds":
-                row["id"] = str(uuid.uuid4())
+            if pk_is_string and "id" in row and row["id"]:
+                id_map[row["id"]] = str(uuid.uuid4())
+
+    def _remap(value):
+        if isinstance(value, str) and value in id_map:
+            return id_map[value]
+        return value
+
+    # Insert the (possibly-branched) world row first, then every table row,
+    # rewriting ids/foreign keys and reviving ISO datetime strings back into
+    # real datetime objects for DateTime-typed columns.
+    world_data["id"] = new_world_id
+    if not create_new_world:
+        _delete_existing_world_data(db, new_world_id, model_by_table)
+    _upsert_world_row(db, model_by_table["worlds"], world_data, DateTimeType)
+
+    for table_name, rows in tables.items():
+        model_cls = model_by_table.get(table_name)
+        if model_cls is None:
+            logger.warning("No model registered for snapshot table '%s' — skipped", table_name)
+            continue
+        pk_is_string = isinstance(model_cls.id.type, StringType)
+        for row in rows:
+            row = {k: _remap(v) for k, v in row.items()}
+            if not pk_is_string:
+                row.pop("id", None)  # let autoincrement assign
+            _insert_row(db, model_cls, row, DateTimeType)
+
+    db.commit()
 
     logger.info(
         "Snapshot restored as world %s (%d tables)",
@@ -167,6 +221,64 @@ def restore_snapshot(
         "tables_restored": list(tables.keys()),
         "is_branch": create_new_world,
     }
+
+
+def _row_to_kwargs(model_cls, row: dict, datetime_type) -> dict:
+    """Convert a plain (already-remapped) dict into ORM constructor kwargs,
+    reviving ISO datetime strings back into real datetime objects for
+    DateTime-typed columns."""
+    mapper = inspect(model_cls)
+    kwargs = {}
+    for col in mapper.columns:
+        if col.key not in row:
+            continue
+        val = row[col.key]
+        if val is not None and isinstance(col.type, datetime_type) and isinstance(val, str):
+            val = datetime.fromisoformat(val)
+        kwargs[col.key] = val
+    return kwargs
+
+
+def _insert_row(db: Session, model_cls, row: dict, datetime_type) -> None:
+    """Construct and stage a fresh ORM row from a plain (already-remapped) dict."""
+    db.add(model_cls(**_row_to_kwargs(model_cls, row, datetime_type)))
+
+
+def _upsert_world_row(db: Session, model_cls, row: dict, datetime_type) -> None:
+    """Insert the restored world row, or update it in place if its id
+    already exists (the overwrite path keeps the original world id, so a
+    delete+insert here would collide with any already-loaded ORM object
+    for that row still sitting in the session's identity map)."""
+    kwargs = _row_to_kwargs(model_cls, row, datetime_type)
+    existing = db.query(model_cls).filter(model_cls.id == kwargs["id"]).first()
+    if existing:
+        for key, val in kwargs.items():
+            setattr(existing, key, val)
+    else:
+        db.add(model_cls(**kwargs))
+
+
+def _delete_existing_world_data(db: Session, world_id: str, model_by_table: dict) -> None:
+    """Clear out a world's child-table rows before overwriting it in place.
+
+    The world row itself is left alone here — see _upsert_world_row, which
+    updates it rather than deleting and recreating it.
+    """
+    from models.core_models import WorldDB
+    from models.show_models import MatchDB, MatchParticipantDB
+
+    # MatchParticipantDB has no direct world_id — it's scoped via its match.
+    match_ids = [m.id for m in db.query(MatchDB.id).filter(MatchDB.world_id == world_id).all()]
+    if match_ids:
+        db.query(MatchParticipantDB).filter(
+            MatchParticipantDB.match_id.in_(match_ids)
+        ).delete(synchronize_session=False)
+
+    for table_name, model_cls in model_by_table.items():
+        if model_cls in (WorldDB, MatchParticipantDB):
+            continue
+        db.query(model_cls).filter(model_cls.world_id == world_id).delete(synchronize_session=False)
+    db.flush()
 
 
 def export_snapshot_to_file(snapshot: Dict[str, Any], filepath: str) -> str:

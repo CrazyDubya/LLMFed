@@ -190,6 +190,25 @@ def simulate_show(
     if fed:
         vs.update_federation_fanbase(db, fed, show)
 
+    # Granular fan-segment tracking (casual/hardcore/family/smark/lapsed):
+    # satisfaction, churn, and merch revenue by demographic.
+    if fed and fed.fan_base_snapshot:
+        try:
+            from game_service import fan_service
+            fan_base = fan_service.fan_base_from_json(fed.fan_base_snapshot)
+            avg_quality = sum(match_ratings) / len(match_ratings) if match_ratings else 2.5
+            impact = fan_service.process_show_impact(fan_base, {
+                "match_quality": avg_quality,
+                "storyline_quality": 50,
+                "star_power": card_draw,
+                "spectacle": 70 if show.show_type == "ppv" else 40,
+                "surprise": 30,
+            })
+            fed.fan_base_snapshot = fan_service.fan_base_to_json(fan_base)
+            fed.weekly_revenue += impact["merch_revenue_this_show"]
+        except Exception as e:
+            logger.warning("Fan base tracking failed for show %s: %s", show.id, e)
+
     # Update wrestler draw ratings for everyone on the card
     for seg in segments:
         if seg.segment_type == "match" and seg.match_id:
@@ -257,6 +276,29 @@ def _simulate_match_segment(
 
     # Pass show momentum to match engine
     match._show_momentum = show_momentum
+
+    # Manager interference: a manager at ringside may tip the match early —
+    # a successful attempt gives their client a momentum boost, a caught
+    # attempt is just narrative color.
+    try:
+        from game_service.manager_service import get_wrestler_manager, attempt_interference
+        participant_ids = [p.wrestler_id for p in db.query(MatchParticipantDB).filter(
+            MatchParticipantDB.match_id == match.id,
+            MatchParticipantDB.role == "competitor",
+        ).all()]
+        interference_boosts = {}
+        for wid in participant_ids:
+            info = get_wrestler_manager(db, wid)
+            if not info:
+                continue
+            outcome = attempt_interference(db, info["bond"].manager_id, match.id, show.game_date)
+            if outcome.get("description"):
+                events.append(outcome["description"])
+            if outcome.get("success"):
+                interference_boosts[wid] = 15
+        match._manager_interference = interference_boosts
+    except Exception as e:
+        logger.debug("Manager interference check skipped: %s", e)
 
     try:
         result = me.simulate_match_from_db(db, match, game_date=show.game_date)
@@ -331,13 +373,17 @@ def _simulate_match_segment(
             db, match, world.current_game_date
         )
     except Exception as e:
+        # Leave the segment genuinely incomplete rather than inventing a
+        # plausible-looking rating — a fabricated number here would silently
+        # mask a real simulation bug as a mediocre-but-real match, and would
+        # corrupt the show's overall_rating average with data that never
+        # actually happened.
         logger.error(
             "Match simulation failed for match %s: %s",
             match.id, e, exc_info=True,
         )
-        seg.is_completed = True
-        seg.rating = round(random.uniform(2.0, 4.0), 1)
-        match_ratings.append(seg.rating)
+        seg.is_completed = False
+        seg.rating = None
 
     return show_momentum, events
 

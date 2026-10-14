@@ -11,9 +11,10 @@ import logging
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    GameWrestlerDB, SocialMediaPostDB, GimmickHistoryDB,
+    GameWrestlerDB, SocialMediaPostDB,
     WrestlerBackstoryDB, StorylineDB, StorylineParticipantDB,
 )
+from game_service.ticker_query_helpers import get_wrestler_federation, get_active_gimmick
 
 logger = logging.getLogger(__name__)
 
@@ -96,20 +97,23 @@ def generate_social_post(db: Session, wrestler_id: str, world_id: str,
     if not wrestler:
         return None
 
-    gimmick = db.query(GimmickHistoryDB).filter(
-        GimmickHistoryDB.wrestler_id == wrestler_id,
-        GimmickHistoryDB.is_active,
-    ).first()
+    gimmick = get_active_gimmick(db, wrestler_id)
 
     backstory = db.query(WrestlerBackstoryDB).filter(
         WrestlerBackstoryDB.wrestler_id == wrestler_id,
     ).first()
 
-    # Determine post type based on kayfabe commitment
+    fed = get_wrestler_federation(db, wrestler_id)
+    policy = (fed.social_media_policy if fed else None) or "guided"
+
+    # Determine post type based on kayfabe commitment and the federation's
+    # social media policy — a strict_kayfabe fed keeps everyone in character.
     kayfabe_commit = wrestler.kayfabe_commitment or 50
     roll = random.random() * 100
 
-    if roll < kayfabe_commit * 0.6:
+    if policy == "strict_kayfabe":
+        post_type = "kayfabe"
+    elif roll < kayfabe_commit * 0.6:
         post_type = "kayfabe"
     elif roll < kayfabe_commit * 0.6 + 20:
         post_type = "personal"
@@ -117,6 +121,9 @@ def generate_social_post(db: Session, wrestler_id: str, world_id: str,
         post_type = "shoot"
     else:
         post_type = "worked_shoot"
+
+    if post_type == "worked_shoot" and fed and not fed.allows_worked_shoots:
+        post_type = "shoot"
 
     # Generate content
     content = _generate_post_content(wrestler, gimmick, backstory, post_type, db=db)

@@ -151,6 +151,7 @@ class MatchResult:
     botch_events: List[Dict[str, Any]] = field(default_factory=list)  # [{attacker, victim, severity, move}]
     went_into_business: bool = False  # Someone deviated from the planned finish
     shoot_wrestler_id: Optional[str] = None  # Who went into business
+    elimination_order: List[str] = field(default_factory=list)  # wrestler_ids, earliest-eliminated first (multi-person matches only)
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +172,8 @@ class MatchSimulator:
     def __init__(self, planned_winner_id: str = None, planned_finish: str = None,
                  card_position: str = "midcard", is_title_match: bool = False,
                  stipulation: str = None, managers: List[ManagerContext] = None,
-                 rivalry_heat: int = 0, show_momentum: int = 50):
+                 rivalry_heat: int = 0, show_momentum: int = 50,
+                 venue_capacity: int = None):
         self.planned_winner_id = planned_winner_id
         self.planned_finish = planned_finish or "pinfall"
         self.card_position = card_position
@@ -180,6 +182,7 @@ class MatchSimulator:
         self.managers = managers or []
         self.rivalry_heat = rivalry_heat  # 0-100, from storyline/relationship
         self.show_momentum = show_momentum  # crowd energy from earlier segments
+        self.venue_capacity = venue_capacity  # real show capacity, when known
         self.spots: List[MatchSpot] = []
         self.tick = 0
         self._interference_happened = False
@@ -316,7 +319,9 @@ class MatchSimulator:
                 finish_spot = self._attempt_finish(attacker, defender)
                 if finish_spot:
                     self.spots.append(finish_spot)
-                    return self._build_result(finish_spot, attacker, defender, participants)
+                    result = self._build_result(finish_spot, attacker, defender, participants)
+                    result.elimination_order = [p.wrestler_id for p in eliminated]
+                    return result
 
         # Time limit: pick the participant with the highest momentum as winner
         if len(active) >= 2:
@@ -331,6 +336,7 @@ class MatchSimulator:
                 crowd_heat=self._calculate_heat(),
                 duration_ticks=self.tick,
                 spots=self.spots,
+                elimination_order=[p.wrestler_id for p in eliminated],
             )
 
         return MatchResult(
@@ -341,6 +347,7 @@ class MatchSimulator:
             crowd_heat=self._calculate_heat(),
             duration_ticks=self.tick,
             spots=self.spots,
+            elimination_order=[p.wrestler_id for p in eliminated],
         )
 
     def _simulate_tag_match(self, participants: List[MatchParticipantState]) -> MatchResult:
@@ -885,6 +892,7 @@ class MatchSimulator:
             self.spots, self.is_title_match, self.rivalry_heat,
             self._interference_happened, self.stipulation,
             self.show_momentum, self.tick, participants,
+            venue_capacity=self.venue_capacity,
         )
 
     def _calculate_heat(self) -> int:
@@ -896,16 +904,17 @@ class MatchSimulator:
                       defender: MatchParticipantState,
                       participants: List[MatchParticipantState]) -> MatchResult:
         """Build the final MatchResult."""
+        # Computed once and reused everywhere below (for the LLM narrative
+        # prompt and as the base for the stored rating) — _calculate_rating
+        # adds random noise per call, so calling it twice let the narrative
+        # and the persisted match_rating disagree by up to 0.6 stars.
+        base_rating = self._calculate_rating(participants)
+
         # Generate narrative summary
         highlights = [s for s in self.spots if s.damage >=
                       HIGHLIGHT_DAMAGE_THRESHOLD or s.is_near_fall or s.is_finisher]
         narrative_parts = [s.description for s in highlights[-5:]]  # Last 5 highlights
         narrative = " ".join(narrative_parts)
-
-        # Calculate once and reuse — calculate_rating() includes a random
-        # noise term, so calling it twice would give the LLM narrative a
-        # different star rating than the one actually recorded on the match.
-        rating = self._calculate_rating(participants)
 
         # LLM-as-journalist: generate a vivid match narrative
         import os
@@ -917,7 +926,7 @@ class MatchSimulator:
                     loser_name=defender.name,
                     finish_type=finish_spot.finish_type or "pinfall",
                     finish_description=finish_spot.description,
-                    rating=rating,
+                    rating=base_rating,
                     key_spots=narrative_parts,
                     stipulation=self.stipulation or "",
                     is_title_match=self.is_title_match,
@@ -942,6 +951,7 @@ class MatchSimulator:
                 })
 
         # Botches hurt match rating
+        rating = base_rating
         if botch_count > 0:
             botch_penalty = botch_count * BOTCH_RATING_PENALTY_PER
             for be in botch_events:

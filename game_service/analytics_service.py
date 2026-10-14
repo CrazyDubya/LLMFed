@@ -127,18 +127,21 @@ def match_quality_distribution(
     federation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Match rating distribution (star rating histogram)."""
-    from models.show_models import MatchDB, ShowDB
+    from models.show_models import MatchDB, ShowDB, ShowSegmentDB
 
-    query = (
-        db.query(MatchDB.match_rating)
-        .join(ShowDB, MatchDB.world_id == ShowDB.world_id)
-        .filter(
-            MatchDB.world_id == world_id,
-            MatchDB.match_rating.isnot(None),
-        )
+    query = db.query(MatchDB.match_rating).filter(
+        MatchDB.world_id == world_id,
+        MatchDB.match_rating.isnot(None),
     )
     if federation_id:
-        query = query.filter(ShowDB.federation_id == federation_id)
+        # Matches don't carry a federation_id directly — join through the
+        # show segment that books them to reach the owning show's federation.
+        query = (
+            query
+            .join(ShowSegmentDB, ShowSegmentDB.match_id == MatchDB.id)
+            .join(ShowDB, ShowDB.id == ShowSegmentDB.show_id)
+            .filter(ShowDB.federation_id == federation_id)
+        )
 
     ratings = [r[0] for r in query.all()]
 

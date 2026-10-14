@@ -543,10 +543,6 @@ class TestTagMatchSimulation:
         assert result.duration_ticks > 0
         assert len(result.spots) > 5
 
-        # Verify that tag-specific spots were generated
-        spot_types = [s.move_type for s in result.spots]
-        spot_names = [s.move_name for s in result.spots]
-        "tag" in spot_types or "Tag" in spot_names or "Hot Tag" in spot_names
         # Tag spots are probabilistic; at minimum verify the match completed
         assert result.finish_type in ("pinfall", "submission", "time_limit_draw")
 

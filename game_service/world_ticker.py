@@ -22,6 +22,7 @@ from game_service.player_action_handler import PlayerActionHandler
 import logging
 import os
 import random
+import zlib
 from datetime import datetime, timedelta, timezone
 from typing import List
 from sqlalchemy.orm import Session
@@ -229,6 +230,16 @@ class WorldTicker:
                 action.status = "failed"
                 action.result = {"error": str(e)}
                 logger.warning(f"Player action {action.id} failed: {e}")
+                # NOTE: some action handlers (stable_service, manager_service)
+                # commit internally mid-operation, so a savepoint around this
+                # whole call can't safely roll back a partial failure without
+                # also breaking those handlers' own commits (tried and
+                # reverted — see PR history). A partial-write leak here is a
+                # real but narrower gap than it looks: it only affects
+                # handlers that stage without committing (e.g. the world.
+                # world_config write in _action_open_challenge) and would
+                # need those handlers' self-commit inconsistency resolved
+                # first to fix safely.
 
     # ------------------------------------------------------------------
     # Phase 2: NPC AI decisions
@@ -254,8 +265,11 @@ class WorldTicker:
             if ppv:
                 self._npc_book_ppv_show(fed, ppv)
             else:
-                # Regular weekly show on the fed's designated day
-                show_day = hash(fed.name) % 7
+                # Regular weekly show on the fed's designated day. Uses a
+                # stable hash (not the builtin hash(), which is randomized
+                # per-process for strings) and the immutable id rather than
+                # the name, so a fed's show day survives a restart.
+                show_day = zlib.crc32(fed.id.encode()) % 7
                 if day_of_week == show_day:
                     self._npc_book_weekly_show(fed)
 
@@ -340,7 +354,8 @@ class WorldTicker:
         """Weekly strategic check — plan PPV cards and adapt to hot/cold acts."""
         from models.game_models import BookingVisionDB
         from game_service.ppv_calendar_service import (
-            get_next_ppv, is_build_window, plan_ppv_card_from_vision,
+            get_next_ppv, is_build_window, is_go_home_week,
+            plan_ppv_card_from_vision, ink_ppv_match,
         )
         from game_service.booking_vision_service import (
             adapt_vision_for_hot_act, adapt_vision_for_cold_act,
@@ -360,6 +375,16 @@ class WorldTicker:
                 plan_ppv_card_from_vision(self.db, next_ppv, vision)
                 self.events.append(f"{fed.short_name}: PPV card planned for {next_ppv.name}")
 
+        # Go-home week: convert the penciled card to ink — publicly
+        # announced and no longer subject to hot/cold-act reshuffling.
+        if next_ppv and is_go_home_week(game_date, next_ppv.scheduled_date):
+            card_matches = list(next_ppv.planned_matches or [])
+            if next_ppv.planned_main_event:
+                card_matches.append(next_ppv.planned_main_event)
+            for match in card_matches:
+                if match.get("status") == "penciled":
+                    ink_ppv_match(next_ppv, match.get("wrestler_ids", []))
+
         # Check for hot/cold acts — wrestlers whose popularity diverges from push tier
         from models.game_models import WrestlerPushDB
         pushes = self.db.query(WrestlerPushDB).filter(
@@ -373,6 +398,7 @@ class WorldTicker:
         }
 
         for push in pushes:
+            push.weeks_at_tier = (push.weeks_at_tier or 0) + 1
             wrestler = wrestlers_by_id.get(push.wrestler_id)
             if not wrestler:
                 continue
@@ -529,6 +555,23 @@ class WorldTicker:
             self.db, self.world.id, victim, weeks_out, game_date,
         )
 
+        def _tick_vision_injury():
+            from models.game_models import BookingVisionDB
+            from game_service.booking_vision_service import adapt_vision_for_injury
+            contract = self.db.query(ContractDB).filter(
+                ContractDB.wrestler_id == victim.id,
+                ContractDB.status == "active",
+            ).first()
+            if not contract:
+                return
+            vision = self.db.query(BookingVisionDB).filter(
+                BookingVisionDB.federation_id == contract.federation_id,
+            ).first()
+            if vision:
+                adapt_vision_for_injury(self.db, vision, victim.id, weeks_out, game_date)
+
+        self._safe_tick("Vision adaptation for injury", _tick_vision_injury)
+
     def _random_retirement(self, game_date: str):
         """Pressure-based retirement (replaces flat random)."""
         from game_service.wrestler_lifecycle_service import calculate_retirement_pressure
@@ -551,6 +594,15 @@ class WorldTicker:
                     importance=8,
                 )
                 self.events.append(f"RETIREMENT: {w.name}")
+
+                from game_service.audit_service import record_change
+                record_change(
+                    self.db, entity_type="wrestler", entity_id=w.id,
+                    field_name="is_active", old_value=True, new_value=False,
+                    action="retire", actor_type="system", world_id=self.world.id,
+                    reason=f"retirement_pressure={pressure}",
+                )
+
                 break  # One retirement per day max
 
     # ------------------------------------------------------------------
@@ -562,7 +614,7 @@ class WorldTicker:
         expiring = self.db.query(ContractDB).filter(
             ContractDB.world_id == self.world.id,
             ContractDB.status == "active",
-            ContractDB.end_date is not None,
+            ContractDB.end_date != None,
             ContractDB.end_date <= game_date,
         ).all()
 
@@ -583,6 +635,25 @@ class WorldTicker:
                     importance=6,
                 )
                 self.events.append(f"Contract expired: {wrestler.name} is now a free agent")
+
+                from game_service.audit_service import record_change
+                record_change(
+                    self.db, entity_type="contract", entity_id=contract.id,
+                    field_name="status", old_value="active", new_value="expired",
+                    action="expire", actor_type="system", world_id=self.world.id,
+                    reason="end_date_reached",
+                )
+
+                def _tick_vision_departure(wrestler_id=wrestler.id, federation_id=contract.federation_id):
+                    from models.game_models import BookingVisionDB
+                    from game_service.booking_vision_service import adapt_vision_for_departure
+                    vision = self.db.query(BookingVisionDB).filter(
+                        BookingVisionDB.federation_id == federation_id,
+                    ).first()
+                    if vision:
+                        adapt_vision_for_departure(self.db, vision, wrestler_id, game_date)
+
+                self._safe_tick("Vision adaptation for departure", _tick_vision_departure)
 
     # ------------------------------------------------------------------
     # Phase 8: Recovery
@@ -880,7 +951,7 @@ class WorldTicker:
         from game_service.wrestler_lifecycle_service import (
             evaluate_goals, create_wrestler_goals,
             update_locker_room_dynamics, auto_assign_mentors,
-            update_conditioning,
+            update_conditioning, update_public_perception,
         )
 
         wrestlers = get_active_wrestlers(self.db, self.world.id)
@@ -889,6 +960,7 @@ class WorldTicker:
             completed = evaluate_goals(self.db, w, game_date)
             for g in completed:
                 self.events.append(f"{w.name} achieved: {g}")
+            update_public_perception(w)
 
         feds = get_active_federations(self.db, self.world.id)
         for fed in feds:
@@ -938,8 +1010,32 @@ class WorldTicker:
                 for sl in check_relationship_collision_storylines(self.db, self.world.id, game_date):
                     self.events.append(f"Collision storyline '{sl.name}' created!")
 
+            def _tick_persona_collisions():
+                # Surface where a wrestler's real life and kayfabe are
+                # colliding — a crisis during a push, or a facade cracking
+                # under low personal stability with a strict kayfabe
+                # commitment. The relationship-based collisions here overlap
+                # with _tick_kayfabe's storyline triggers, so this is
+                # throttled to avoid repeating the same note every week.
+                from game_service.persona_service import detect_collision_events
+                for wrestler in get_active_wrestlers(self.db, self.world.id):
+                    for collision in detect_collision_events(self.db, wrestler, game_date):
+                        if random.random() > 0.15:
+                            continue
+                        self.db.add(GameNarrativeLogDB(
+                            world_id=self.world.id,
+                            game_date=game_date,
+                            tick=0,
+                            event_type="persona_collision",
+                            description=collision["description"],
+                            involved_entities=[wrestler.id],
+                            importance=min(10, collision["severity"]),
+                        ))
+                        self.events.append(collision["description"])
+
             self._safe_tick("Persona tick", _tick_persona)
             self._safe_tick("Kayfabe collision check", _tick_kayfabe)
+            self._safe_tick("Persona collision detection", _tick_persona_collisions)
 
         # Daily social media tick
         def _tick_social():
@@ -1071,9 +1167,14 @@ class WorldTicker:
     def _seasonal_king_of_the_ring(self, game_date: str):
         """Q2 event: King of the Ring tournament across all NPC feds.
 
-        Picks top 8 by popularity per federation, announces a tournament via
-        narrative log, and crowns a winner with +10 popularity.
+        Picks top 8 by popularity per federation, runs a properly seeded
+        single-elimination bracket via tournament_service, and crowns a
+        winner with +10 popularity.
         """
+        from game_service.tournament_service import (
+            TournamentFormat, create_tournament, record_match_result,
+        )
+
         npc_feds = get_npc_federations(self.db, self.world.id)
 
         for fed in npc_feds:
@@ -1087,25 +1188,36 @@ class WorldTicker:
             if len(wrestlers) < 4:
                 continue
 
-            # Simulate single-elimination tournament (simplified)
-            bracket = list(wrestlers)
-            round_num = 1
-            while len(bracket) > 1:
-                next_round = []
-                for i in range(0, len(bracket) - 1, 2):
-                    w1, w2 = bracket[i], bracket[i + 1]
-                    # Higher popularity + randomness wins
+            by_id = {w.id: w for w in wrestlers}
+            # Rank 1 = most popular, so the seeded bracket keeps top seeds
+            # apart for as long as possible, same as a real KOTR draw.
+            rankings = {w.id: i + 1 for i, w in enumerate(wrestlers)}
+
+            bracket = create_tournament(
+                name=f"{fed.short_name or fed.name} King of the Ring",
+                format=TournamentFormat.SINGLE_ELIMINATION,
+                wrestler_ids=[w.id for w in wrestlers],
+                wrestler_names={w.id: w.name for w in wrestlers},
+                rankings=rankings,
+                stakes="King of the Ring crown",
+            )
+
+            while not bracket.is_complete:
+                pending = bracket.get_pending_matches()
+                if not pending:
+                    break
+                for match in pending:
+                    w1 = by_id[match.participant_a_id]
+                    w2 = by_id[match.participant_b_id]
                     w1_score = w1.popularity + random.randint(-20, 20)
                     w2_score = w2.popularity + random.randint(-20, 20)
-                    winner = w1 if w1_score >= w2_score else w2
-                    next_round.append(winner)
-                # Handle odd bracket
-                if len(bracket) % 2 == 1:
-                    next_round.append(bracket[-1])
-                bracket = next_round
-                round_num += 1
+                    winner_id = w1.id if w1_score >= w2_score else w2.id
+                    record_match_result(bracket, match.match_id, winner_id)
 
-            king = bracket[0]
+            if not bracket.winner_id:
+                continue
+
+            king = by_id[bracket.winner_id]
             old_pop = king.popularity
             king.popularity = min(100, king.popularity + 10)
 
@@ -1125,7 +1237,6 @@ class WorldTicker:
 
     def _generate_year_end_summary(self, game_date: str):
         """Generate year-end awards and summary news. Fires on Dec 31."""
-        _get_news_service()
         year = game_date[:4]
 
         # Find all completed shows this year
@@ -1151,7 +1262,7 @@ class WorldTicker:
         best_match = self.db.query(MatchDB).filter(
             MatchDB.world_id == self.world.id,
             MatchDB.is_completed,
-            MatchDB.match_rating is not None,
+            MatchDB.match_rating != None,
             MatchDB.game_date >= year_start,
         ).order_by(MatchDB.match_rating.desc()).first()
 
