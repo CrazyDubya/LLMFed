@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from agent_service.database import get_db
+from agent_service.database import get_db_sync
 from api_gateway.security import get_current_user, TokenData
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/game/analytics", tags=["analytics"])
 def api_world_summary(
     world_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Get high-level world summary statistics."""
     from game_service.analytics_service import world_summary
@@ -30,7 +30,7 @@ def api_wrestler_performance(
     wrestler_id: str,
     limit: int = Query(50, ge=1, le=200),
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Get wrestler performance analytics."""
     from game_service.analytics_service import wrestler_performance
@@ -42,7 +42,7 @@ def api_federation_health(
     world_id: str,
     federation_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Get federation health metrics."""
     from game_service.analytics_service import federation_health
@@ -54,7 +54,7 @@ def api_match_quality(
     world_id: str,
     federation_id: Optional[str] = Query(None),
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Get match rating distribution."""
     from game_service.analytics_service import match_quality_distribution
@@ -67,7 +67,7 @@ def api_head_to_head(
     wrestler_a: str = Query(..., alias="a"),
     wrestler_b: str = Query(..., alias="b"),
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Get head-to-head comparison between two wrestlers."""
     from game_service.analytics_service import head_to_head
@@ -87,7 +87,7 @@ def api_leaderboard(
     metric: str = Query("win_rate", description="Sort by: win_rate, avg_match_rating, total_matches, wins"),
     limit: int = Query(10, ge=1, le=50),
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Get top performers leaderboard."""
     from game_service.analytics_service import top_performers

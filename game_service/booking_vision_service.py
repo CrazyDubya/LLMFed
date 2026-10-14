@@ -253,7 +253,7 @@ def _build_title_pipelines(
     """Build title pipelines — who challenges next for each belt."""
     championships = db.query(ChampionshipDB).filter(
         ChampionshipDB.federation_id == federation.id,
-        ChampionshipDB.is_active == True,
+        ChampionshipDB.is_active,
     ).all()
 
     pipelines = {}

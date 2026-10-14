@@ -1,4 +1,5 @@
 import { api } from '../../api/client';
+import { getErrorMessage } from '../../utils/errors';
 import { AlignmentBadge, HeatBar, RoleBadge } from '../PromoterDashboard';
 import type { Wrestler } from '../PromoterDashboard';
 
@@ -112,7 +113,7 @@ export default function FactionsTab({
                 setShowStableForm(false);
                 setFormData({});
                 await loadData();
-              } catch (err: any) { setError(err.message); }
+              } catch (err) { setError(getErrorMessage(err)); }
             }}
             className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded text-sm font-medium"
           >Create Faction</button>
@@ -202,7 +203,7 @@ export default function FactionsTab({
                       await api.addStableMember(s.id, { wrestler_id: wid, role: 'recruit' });
                       setFormData({ ...formData, [`add_to_${s.id}`]: '' });
                       await loadData();
-                    } catch (err: any) { setError(err.message); }
+                    } catch (err) { setError(getErrorMessage(err)); }
                   }}
                   className="px-3 py-1.5 bg-purple-700 hover:bg-purple-600 text-white rounded text-xs"
                 >Add</button>
@@ -212,7 +213,7 @@ export default function FactionsTab({
                     try {
                       await api.submitAction(worldId!, 'dissolve_stable', { stable_id: s.id });
                       await advanceDay(1);
-                    } catch (err: any) { setError(err.message); }
+                    } catch (err) { setError(getErrorMessage(err)); }
                   }}
                   className="px-3 py-1.5 bg-red-800 hover:bg-red-700 text-red-200 rounded text-xs"
                 >Dissolve</button>

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import { api } from '../api/client';
+import { getErrorMessage } from '../utils/errors';
 
 interface Wrestler {
   id: string;
@@ -19,11 +20,13 @@ interface Segment {
   match_id: string | null;
   description: string | null;
   is_completed: boolean;
+  participants?: Array<{ wrestler_id?: string }>;
+  match_participants?: Array<{ wrestler_id?: string }>;
 }
 
 export default function CardBuilderPage() {
   const { showId } = useParams<{ showId: string }>();
-  const { worldId, federationId } = useGame();
+  const { federationId } = useGame();
   const navigate = useNavigate();
 
   const [show, setShow] = useState<any>(null);
@@ -49,10 +52,6 @@ export default function CardBuilderPage() {
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    loadData();
-  }, [showId, federationId]);
-
   const loadData = async () => {
     if (!showId || !federationId) return;
     try {
@@ -66,12 +65,16 @@ export default function CardBuilderPage() {
       setSegments(card.segments);
       setRoster(rost.filter((w: Wrestler) => !w.is_injured));
       setChampionships(champs);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadData();
+  }, [showId, federationId]);
 
   const toggleWrestler = (id: string) => {
     setSelectedWrestlers(prev => {
@@ -103,8 +106,8 @@ export default function CardBuilderPage() {
       setStipulation('');
       setIsTitleMatch(false);
       await loadData();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(getErrorMessage(err));
     } finally {
       setBooking(false);
     }
@@ -390,8 +393,8 @@ export default function CardBuilderPage() {
                         setPromoTarget('');
                         setPromoMode(false);
                         await loadData();
-                      } catch (err: any) {
-                        setError(err.message);
+                      } catch (err) {
+                        setError(getErrorMessage(err));
                       } finally {
                         setBooking(false);
                       }

@@ -129,7 +129,8 @@ class WrestlerRelationshipDB(Base):
     rivalry_heat = Column(Integer, default=0)  # 0-100, intensity of rivalry
     last_match_date = Column(String(10), nullable=True)
     # --- Real vs Kayfabe relationship layers ---
-    relationship_type = Column(String(20), default="professional")  # professional, personal, romantic, family, mentorship
+    # professional, personal, romantic, family, mentorship
+    relationship_type = Column(String(20), default="professional")
     kayfabe_alignment = Column(String(20), nullable=True)  # allies, rivals, tag_partners, neutral (on-screen)
     real_relationship = Column(String(20), nullable=True)  # friends, enemies, indifferent, romantic (backstage)
     trust_level = Column(Integer, default=50)  # 0-100, real interpersonal trust

@@ -7,8 +7,9 @@
 - `agent_service/` – CRUD for agents and federations, database session management.
 - `llm_abstraction/` – Multi-provider LLM interface (OpenAI, Ollama, custom).
 - `models/` – Pydantic entities and SQLAlchemy DB models.
-- `frontend/` – Static single-page UI (`index.html`); serve with any static file server.
-- `docs/` – Long-form documentation (usage guide, analysis, roadmap, codebase, security, etc.).
+- `frontend/` – Legacy static single-page UI (`index.html`); serve with any static file server.
+- `web-ui/` – supported React/Vite frontend candidate; production hosting still requires verification.
+- `docs/` – Current status plus long-form documentation (usage, architecture, historical audits, and proposals). Use `docs/STATUS.md` for active limitations and priorities.
 - `scripts/` – Demo and helper scripts (e.g. `demo.py`, `demo_multi.py`).
 - `tests/` – Pytest suite (validation, security, engine, CRUD, LLM, heat, etc.).
 - `config.py` – Environment-based config (database URL, API host/port, etc.).
@@ -37,10 +38,10 @@ uv run uvicorn api_gateway.main:app --host 0.0.0.0 --port 8091 --reload
 **Database init**
 
 ```bash
-python -c "from agent_service.database import init_db; init_db()"
+python -c "import asyncio; from agent_service.database import init_db; asyncio.run(init_db())"
 ```
 
-**Frontend**
+**Legacy frontend**
 
 Static only. From `frontend/`:
 
@@ -69,7 +70,7 @@ python -m pytest tests/ -v
 
 ## Testing Guidelines
 
-- Backend: hit critical endpoints (e.g. `/health`, `/agents`, `/engine/advance`) via curl or the frontend. Run strategy/engine logic via API or scripts before merge.
+- Backend: hit critical endpoints (e.g. `/health`, `/game/auth/register`, `/game/worlds`, and `/engine/advance`) via curl or the frontend. Run strategy/engine logic via API or scripts before merge.
 - Frontend: manual verification (create agents, advance engine, check narrative). No automated frontend test suite yet; document manual checks in PRs.
 
 ## Commit & Pull Request Guidelines

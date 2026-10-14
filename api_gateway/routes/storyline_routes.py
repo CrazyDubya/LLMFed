@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from agent_service.database import get_db
+from agent_service.database import get_db_sync
 from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
     StorylineCreate, StorylineAdvance, StorylineResponse,
@@ -54,7 +54,7 @@ def api_list_storylines(
     status: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """List storylines in a world."""
     query = db.query(StorylineDB).filter(StorylineDB.world_id == world_id)
@@ -94,7 +94,7 @@ def api_create_storyline(
     world_id: str,
     data: StorylineCreate,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Promoter creates a storyline between wrestlers."""
     from game_service.storyline_service import create_storyline as sl_create
@@ -136,7 +136,7 @@ def api_advance_storyline(
     storyline_id: str,
     data: StorylineAdvance,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Advance a storyline's status or boost its heat."""
     storyline = db.query(StorylineDB).filter_by(id=storyline_id).first()

@@ -5,6 +5,8 @@ does one thing; the inner loop is decomposed into private helpers so each
 fits on a screen (Rule 1) and can be tested in isolation.
 """
 from __future__ import annotations
+import asyncio
+import threading
 
 import uuid
 import logging
@@ -25,10 +27,11 @@ from models.entities import (
 from core_engine.dispatcher import LLMDispatcher
 from core_engine.rulebook import RuleBook
 from core_engine.prompt_builder import PromptBuilder
-from core_engine.llm_client import LLMClient
 from models.db_models import EngineRequestDB, NarrativeLogDB
-from agent_service.database import SessionLocal, init_db
+from agent_service.database import AsyncSessionLocal
 from agent_service.crud import get_agents
+from sqlalchemy import select
+from llm_abstraction import get_llm
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,7 @@ MAX_TICKS_PER_CALL = 1000
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class AppliedAction:
@@ -166,9 +170,15 @@ class Engine:
         self.state = GameState()
         self.scheduler = TickScheduler()
         self.dispatcher = LLMDispatcher()
-        self.llm_client = LLMClient()
-        init_db()
+        self.llm_client = get_llm()
         self.promoter_hints: Dict[str, Any] = {}
+        # Serializes run_ticks: the engine is a shared, process-wide
+        # singleton (see get_engine/engine_instance below), and its
+        # scheduler/game state/promoter hints are mutated in place across
+        # the many `await` points inside a tick. Two overlapping callers
+        # (e.g. concurrent /engine/advance requests) would otherwise
+        # interleave and hand out non-contiguous or duplicate tick numbers.
+        self._tick_lock = asyncio.Lock()
 
     def set_hints(self, hints: Dict[str, Any]) -> None:
         """Store promoter hints for use in prompt building."""
@@ -178,7 +188,7 @@ class Engine:
     # Public API
     # ------------------------------------------------------------------
 
-    def run_ticks(self, n: int = 1) -> List[TickResult]:
+    async def run_ticks(self, n: int = 1) -> List[TickResult]:
         """Advance the simulation by *n* ticks.
 
         Raises ValueError if n < 1 or n > MAX_TICKS_PER_CALL (Rule 2, 7).
@@ -188,40 +198,41 @@ class Engine:
         if n > MAX_TICKS_PER_CALL:
             raise ValueError(f"n must be <= {MAX_TICKS_PER_CALL}, got {n}")
 
-        results: List[TickResult] = []
-        db = SessionLocal()
-        try:
-            for _ in range(n):
-                tick_results = self._process_one_tick(db)
-                if tick_results is None:
-                    # Finisher ended the match
-                    break
-                results.extend(tick_results)
-            return results
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
+        async with self._tick_lock:
+            return await self._run_ticks_locked(n)
 
-    def get_pending_requests(self) -> list:
+    async def _run_ticks_locked(self, n: int) -> List[TickResult]:
+        results: List[TickResult] = []
+        async with AsyncSessionLocal() as db:
+            try:
+                for _ in range(n):
+                    tick_results = await self._process_one_tick(db)
+                    if tick_results is None:
+                        # Finisher ended the match
+                        break
+                    results.extend(tick_results)
+                return results
+            except Exception:
+                await db.rollback()
+                raise
+
+    async def get_pending_requests(self) -> list:
         """Get pending requests from database."""
-        db = SessionLocal()
-        try:
-            return db.query(EngineRequestDB).filter(
-                EngineRequestDB.status == "pending"
-            ).all()
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
+        async with AsyncSessionLocal() as db:
+            try:
+                result = await db.execute(
+                    select(EngineRequestDB).filter(EngineRequestDB.status == "pending")
+                )
+                return list(result.scalars().all())
+            except Exception:
+                await db.rollback()
+                raise
 
     # ------------------------------------------------------------------
     # Private: one tick
     # ------------------------------------------------------------------
 
-    def _process_one_tick(self, db) -> Optional[List[TickResult]]:
+    async def _process_one_tick(self, db) -> Optional[List[TickResult]]:
         """Process a single tick across all roles.
 
         All DB writes within a tick are staged (``db.add``) and committed
@@ -233,7 +244,7 @@ class Engine:
         self.state.current_tick = tick_index
         tick_id = str(uuid.uuid4())
 
-        agents = get_agents(db)
+        agents = await get_agents(db)
         if not agents:
             agents = [_DefaultAgent()]
 
@@ -241,23 +252,23 @@ class Engine:
         for role in self.ROLE_ORDER:
             role_agents = [a for a in agents if getattr(a, "role", "participant") == role]
             for agent_db in role_agents:
-                result = self._process_agent(db, agent_db, role, tick_id, tick_index)
+                result = await self._process_agent(db, agent_db, role, tick_id, tick_index)
                 if result is None:
                     # Finisher — commit staged writes then signal match over
-                    db.commit()
+                    await db.commit()
                     return None
                 results.append(result)
 
         # Single commit for the entire tick — keeps engine_request and
         # narrative_log rows atomically consistent.
-        db.commit()
+        await db.commit()
         return results
 
     # ------------------------------------------------------------------
     # Private: one agent in one role
     # ------------------------------------------------------------------
 
-    def _process_agent(self, db, agent_db, role: str, tick_id: str, tick_index: int) -> Optional[TickResult]:
+    async def _process_agent(self, db, agent_db, role: str, tick_id: str, tick_index: int) -> Optional[TickResult]:
         """Process a single agent for a single role in a tick.
 
         Returns TickResult, or None if a finisher ended the match.
@@ -267,9 +278,9 @@ class Engine:
         request_id = str(uuid.uuid4())
 
         # Call LLM — permanent errors (auth/config) propagate;
-        # transient errors are handled inside send_prompt via fallback.
-        prompt_payload = PromptBuilder.build_prompt(context, self.promoter_hints)
-        action_data = self.llm_client.send_prompt(prompt_payload)
+        # transient errors are handled inside generate_action_async via fallback.
+        prompt_payload = PromptBuilder.build_prompt_dict(context, self.promoter_hints)
+        action_data = await self.llm_client.generate_action_async(prompt_payload)
 
         # Persist engine request
         self._persist_engine_request(db, request_id, agent_id, tick_index, context)
@@ -401,39 +412,14 @@ class Engine:
 
 
 # ---------------------------------------------------------------------------
-# Singleton accessor (thread-safe, lazy — avoids import-time side effects)
+# Engine factory
 # ---------------------------------------------------------------------------
-import threading
-
-_engine_instance: Optional[Engine] = None
-_engine_lock = threading.Lock()
 
 
-def get_engine() -> Engine:
-    """Return the shared Engine instance, creating it on first call."""
-    global _engine_instance
-    if _engine_instance is None:
-        with _engine_lock:
-            if _engine_instance is None:
-                _engine_instance = Engine()
-    return _engine_instance
+def create_engine() -> Engine:
+    """Factory function to create a new Engine instance."""
+    return Engine()
 
-
-def reset_engine() -> None:
-    """Reset the engine singleton (for testing)."""
-    global _engine_instance
-    with _engine_lock:
-        _engine_instance = None
-
-
-# Backwards-compatible alias — will be removed in a future release.
-# NOTE: unlike get_engine(), this line runs at import time (some existing
-# scripts/tests import `engine_instance` and use it immediately, without
-# calling get_engine() themselves), so importing this module *does* still
-# construct the Engine — including its init_db() call — as a side effect,
-# despite the "lazy" singleton machinery above. New code should call
-# get_engine() explicitly instead of importing this alias.
-engine_instance = get_engine()
 
 __all__ = [
     "AppliedAction",
@@ -442,8 +428,6 @@ __all__ = [
     "TickScheduler",
     "Engine",
     "EngineRequest",
-    "engine_instance",
-    "get_engine",
-    "reset_engine",
+    "create_engine",
     "MAX_TICKS_PER_CALL",
 ]

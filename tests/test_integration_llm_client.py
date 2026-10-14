@@ -2,6 +2,13 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
+
+pytest.importorskip(
+    "core_engine.llm_client",
+    reason="core_engine.llm_client doesn't exist on this branch (belongs to an "
+           "unmerged unified-LLM-abstraction feature, not this codebase's master)",
+)
+
 from core_engine.llm_client import LLMClient
 from llm_abstraction.provider import (
     LLMAbstraction,
@@ -26,7 +33,8 @@ def make_handler(response_body, status=200):
 
 @pytest.fixture(scope='module')
 def mock_ollama_server():
-    body = {"choices": [{"message": {"content": json.dumps({"action_id": "mockfoo", "description": "mockbar", "meta": {}})}}]}
+    body = {"choices": [{"message": {"content": json.dumps(
+        {"action_id": "mockfoo", "description": "mockbar", "meta": {}})}}]}
     Handler = make_handler(body)
     server = HTTPServer(('localhost', 0), Handler)
     port = server.server_address[1]

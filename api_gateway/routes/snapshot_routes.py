@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from agent_service.database import get_db
+from agent_service.database import get_db_sync
 from api_gateway.security import get_current_user, TokenData
 from game_service.snapshot_service import (
     create_snapshot,
@@ -69,7 +69,7 @@ class SnapshotDiff(BaseModel):
 def api_create_snapshot(
     body: SnapshotCreate,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Create a snapshot of the current world state."""
     try:
@@ -129,7 +129,7 @@ def api_list_snapshots(
 def api_restore_snapshot(
     body: SnapshotRestore,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Restore a world from a previously saved snapshot."""
     snap = _snapshots.get(body.snapshot_id)

@@ -104,8 +104,8 @@ def simulate_tag_match(sim, participants: List[MatchParticipantState]) -> MatchR
         finish_type="time_limit_draw",
         finish_description="The tag team match ends in a time limit draw!",
         match_rating=calculate_rating(sim.spots, sim.is_title_match, sim.rivalry_heat,
-                                       sim._interference_happened, sim.stipulation,
-                                       sim.show_momentum, sim.tick, participants),
+                                      sim._interference_happened, sim.stipulation,
+                                      sim.show_momentum, sim.tick, participants),
         crowd_heat=calculate_heat(sim.spots, sim.show_momentum, sim.rivalry_heat),
         duration_ticks=sim.tick,
         spots=sim.spots,
@@ -158,14 +158,18 @@ def tag_team_action(
         hot_tag = teams[def_team][legal_indices[def_team]]
         hot_tag.momentum = min(100, hot_tag.momentum + HOT_TAG_MOMENTUM_BOOST)
         hot_tag.finisher_available = True
-        sim.spots.append(MatchSpot(
-            tick=sim.tick, attacker_id=hot_tag.wrestler_id,
-            defender_id=attacker.wrestler_id, move_name="Hot Tag",
-            move_type="tag", damage=0,
-            crowd_reaction="The crowd erupts for the hot tag!",
-            heat_change=4,
-            description=f"{defender.name} desperately reaches out... HOT TAG! {hot_tag.name} storms into the ring on fire!",
-        ))
+        sim.spots.append(
+            MatchSpot(
+                tick=sim.tick,
+                attacker_id=hot_tag.wrestler_id,
+                defender_id=attacker.wrestler_id,
+                move_name="Hot Tag",
+                move_type="tag",
+                damage=0,
+                crowd_reaction="The crowd erupts for the hot tag!",
+                heat_change=4,
+                description=f"{defender.name} desperately reaches out... HOT TAG! {hot_tag.name} storms into the ring on fire!",
+            ))
         # Offense switches to the defending team
         new_attacking_team = def_team
         return ("hot_tag", hot_tag, attacker, new_attacking_team)

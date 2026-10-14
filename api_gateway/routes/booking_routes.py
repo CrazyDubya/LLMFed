@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from agent_service.database import get_db
+from agent_service.database import get_db_sync
 from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
     ShowCreate, ShowResponse, ShowSegmentResponse, ShowCardResponse,
@@ -66,7 +66,7 @@ def api_create_show(
     federation_id: str,
     data: ShowCreate,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Create a new show for a federation (promoter action)."""
     try:
@@ -98,7 +98,7 @@ def api_create_show(
 def api_get_show_card(
     show_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Get the full card for a show."""
     show = _get_show_or_404(db, show_id)
@@ -115,7 +115,7 @@ def api_reorder_card(
     show_id: str,
     data: CardReorderRequest,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Reorder the segments on a show's card."""
     show = _get_show_or_404(db, show_id)
@@ -140,7 +140,7 @@ def api_book_match(
     show_id: str,
     data: MatchBooking,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Book a match on a show."""
     show = _get_show_or_404(db, show_id)
@@ -176,7 +176,7 @@ def api_book_promo(
     target_wrestler_id: Optional[str] = None,
     promo_type: str = "in_ring",
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Book a promo segment on a show."""
     show = _get_show_or_404(db, show_id)
@@ -203,7 +203,7 @@ def api_book_promo(
 def api_get_match(
     match_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Get match result details."""
     match = _get_match_or_404(db, match_id)
@@ -219,7 +219,7 @@ def api_get_play_by_play(
     match_id: str,
     highlights_only: bool = False,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Get match play-by-play from simulation log."""
     match = _get_match_or_404(db, match_id)

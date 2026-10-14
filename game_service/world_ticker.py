@@ -5,11 +5,25 @@ Each tick processes player actions, AI decisions, scheduled shows,
 storyline progression, economy, and world events.
 """
 
+from models.game_models import (
+    WorldDB, PlayerActionDB, GameFederationDB, GameWrestlerDB,
+    WrestlerStatsDB, ContractDB, ShowDB, MatchDB,
+    MatchParticipantDB, StorylineDB,
+    GameNarrativeLogDB, WorldNewsDB, WrestlerRelationshipDB,
+    TagTeamDB,
+)
+from game_service.show_simulation_service import simulate_show
+from game_service.tag_team_data import generate_tag_team_name
+from game_service.ticker_query_helpers import (
+    get_active_wrestlers, get_npc_federations, get_active_federations,
+)
+from game_service import inter_federation_service
+from game_service.player_action_handler import PlayerActionHandler
 import logging
 import os
 import random
 import zlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 from sqlalchemy.orm import Session
 
@@ -34,20 +48,6 @@ def _llm_generate(prompt: str, fallback: str, system_msg: str = None) -> str:
         logging.getLogger(__name__).debug("LLM generation failed, using fallback: %s", e)
     return fallback
 
-from models.game_models import (
-    WorldDB, PlayerActionDB, GameFederationDB, GameWrestlerDB,
-    WrestlerStatsDB, ContractDB, ShowDB, MatchDB,
-    MatchParticipantDB, StorylineDB,
-    GameNarrativeLogDB, WorldNewsDB, WrestlerRelationshipDB,
-    TagTeamDB,
-)
-from game_service.player_action_handler import PlayerActionHandler
-from game_service import inter_federation_service
-from game_service.ticker_query_helpers import (
-    get_active_wrestlers, get_npc_federations, get_active_federations,
-)
-from game_service.tag_team_data import generate_tag_team_name
-from game_service.show_simulation_service import simulate_show
 
 logger = logging.getLogger(__name__)
 
@@ -194,6 +194,9 @@ class WorldTicker:
         # 17. Character agency — LLM-driven wrestler decisions
         self._character_agency_tick(new_date)
 
+        # 18. Reset daily LLM budget window and log spend
+        self._reset_llm_budget()
+
         self.db.commit()
 
         return {
@@ -221,7 +224,7 @@ class WorldTicker:
                 result = handler.execute(action)
                 action.status = "completed"
                 action.result = result
-                action.processed_at = datetime.utcnow()
+                action.processed_at = datetime.now(timezone.utc)
                 self.events.append(f"Processed action: {action.action_type}")
             except Exception as e:
                 action.status = "failed"
@@ -280,7 +283,7 @@ class WorldTicker:
         return self.db.query(PPVEventDB).filter(
             PPVEventDB.federation_id == fed.id,
             PPVEventDB.scheduled_date == game_date,
-            PPVEventDB.is_completed == False,
+            PPVEventDB.is_completed.is_(False),
         ).first()
 
     def _npc_book_ppv_show(self, fed: GameFederationDB, ppv):
@@ -421,7 +424,7 @@ class WorldTicker:
         shows = self.db.query(ShowDB).filter(
             ShowDB.world_id == self.world.id,
             ShowDB.game_date == game_date,
-            ShowDB.is_completed == False,
+            ShowDB.is_completed.is_(False),
         ).all()
 
         for show in shows:
@@ -575,7 +578,7 @@ class WorldTicker:
 
         wrestlers = self.db.query(GameWrestlerDB).filter(
             GameWrestlerDB.world_id == self.world.id,
-            GameWrestlerDB.is_active == True,
+            GameWrestlerDB.is_active,
             GameWrestlerDB.age >= 34,
         ).all()
 
@@ -772,7 +775,7 @@ class WorldTicker:
         # Check existing teams
         existing_teams = self.db.query(TagTeamDB).filter(
             TagTeamDB.world_id == self.world.id,
-            TagTeamDB.is_active == True,
+            TagTeamDB.is_active,
         ).all()
         teamed_ids = set()
         for t in existing_teams:
@@ -825,7 +828,7 @@ class WorldTicker:
         """Dissolve tag teams where members have diverged."""
         teams = self.db.query(TagTeamDB).filter(
             TagTeamDB.world_id == self.world.id,
-            TagTeamDB.is_active == True,
+            TagTeamDB.is_active,
         ).all()
 
         for team in teams:
@@ -1114,6 +1117,32 @@ class WorldTicker:
             logger.error("Character agency tick failed: %s", e, exc_info=True)
 
     # ------------------------------------------------------------------
+    # LLM budget management
+    # ------------------------------------------------------------------
+
+    def _reset_llm_budget(self):
+        """Reset the daily LLM token budget window.
+
+        Logs the spend for the previous window so operators can track
+        cost-per-game-day. The lifetime counters survive the reset.
+        """
+        if not USE_LLM:
+            return
+        try:
+            from llm_abstraction.provider import get_llm
+            llm = get_llm()
+            snapshot = llm.budget.reset()
+            if snapshot.get("request_count", 0) > 0:
+                logger.info(
+                    "LLM daily budget reset — window spend: $%.4f (%d requests, %d tokens)",
+                    snapshot.get("total_cost_usd", 0),
+                    snapshot.get("request_count", 0),
+                    snapshot.get("total_tokens", 0),
+                )
+        except Exception as e:
+            logger.debug("LLM budget reset skipped: %s", e)
+
+    # ------------------------------------------------------------------
     # Seasonal events
     # ------------------------------------------------------------------
 
@@ -1152,8 +1181,8 @@ class WorldTicker:
             wrestler_ids = self._get_fed_roster_ids(fed)
             wrestlers = self.db.query(GameWrestlerDB).filter(
                 GameWrestlerDB.id.in_(wrestler_ids),
-                GameWrestlerDB.is_active == True,
-                GameWrestlerDB.is_injured == False,
+                GameWrestlerDB.is_active,
+                GameWrestlerDB.is_injured.is_(False),
             ).order_by(GameWrestlerDB.popularity.desc()).limit(8).all()
 
             if len(wrestlers) < 4:
@@ -1214,7 +1243,7 @@ class WorldTicker:
         year_start = f"{year}-01-01"
         shows = self.db.query(ShowDB).filter(
             ShowDB.world_id == self.world.id,
-            ShowDB.is_completed == True,
+            ShowDB.is_completed,
             ShowDB.game_date >= year_start,
             ShowDB.game_date <= game_date,
         ).all()
@@ -1225,14 +1254,14 @@ class WorldTicker:
         # Most popular wrestler (current popularity)
         wrestlers = self.db.query(GameWrestlerDB).filter(
             GameWrestlerDB.world_id == self.world.id,
-            GameWrestlerDB.is_active == True,
+            GameWrestlerDB.is_active,
         ).order_by(GameWrestlerDB.popularity.desc()).all()
         wrestler_of_year = wrestlers[0] if wrestlers else None
 
         # Best match of the year
         best_match = self.db.query(MatchDB).filter(
             MatchDB.world_id == self.world.id,
-            MatchDB.is_completed == True,
+            MatchDB.is_completed,
             MatchDB.match_rating != None,
             MatchDB.game_date >= year_start,
         ).order_by(MatchDB.match_rating.desc()).first()
@@ -1246,8 +1275,8 @@ class WorldTicker:
             )
             .join(MatchDB)
             .filter(
-                MatchParticipantDB.is_winner == True,
-                MatchDB.is_completed == True,
+                MatchParticipantDB.is_winner,
+                MatchDB.is_completed,
                 MatchDB.game_date >= year_start,
                 MatchDB.game_date <= game_date,
             )
@@ -1267,7 +1296,7 @@ class WorldTicker:
         # Federation of the year (highest momentum)
         feds = self.db.query(GameFederationDB).filter(
             GameFederationDB.world_id == self.world.id,
-            GameFederationDB.is_active == True,
+            GameFederationDB.is_active,
         ).order_by(GameFederationDB.momentum.desc()).all()
         fed_of_year = feds[0] if feds else None
 
@@ -1286,7 +1315,8 @@ class WorldTicker:
         if most_wins_wrestler:
             awards.append(f"Most Dominant: {most_wins_wrestler.name} ({most_wins_count} wins)")
         if fed_of_year:
-            awards.append(f"Federation of the Year: {fed_of_year.short_name or fed_of_year.name} (Momentum: {fed_of_year.momentum})")
+            awards.append(
+                f"Federation of the Year: {fed_of_year.short_name or fed_of_year.name} (Momentum: {fed_of_year.momentum})")
 
         summary = f"YEAR IN REVIEW {year}\n" + "\n".join(f"  - {a}" for a in awards)
 

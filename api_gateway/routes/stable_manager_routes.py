@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from agent_service.database import get_db
+from agent_service.database import get_db_sync
 from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
     ManagerCreate, ManagerResponse, ManagerClientCreate, ManagerClientResponse,
@@ -60,7 +60,7 @@ def api_list_managers(
     world_id: str,
     federation_id: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """List all managers in a world."""
     managers = manager_service.list_managers(db, world_id, federation_id)
@@ -73,7 +73,7 @@ def api_create_manager(
     data: ManagerCreate,
     federation_id: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Create a new manager character."""
     _require_federation_owner_if_any(db, current_user.user_id, federation_id)
@@ -94,7 +94,7 @@ def api_create_manager(
 def api_list_manager_bonds(
     world_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """List all manager-client bonds in a world."""
     bonds = manager_service.list_manager_bonds(db, world_id)
@@ -113,7 +113,7 @@ def api_assign_manager(
     world_id: str,
     data: ManagerClientCreate,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Assign a manager to a wrestler client."""
     from models.game_models import ManagerDB
@@ -140,7 +140,7 @@ def api_assign_manager(
 def api_remove_manager_bond(
     bond_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """End a manager-client relationship."""
     from models.game_models import ManagerClientDB, ManagerDB
@@ -161,7 +161,7 @@ def api_manager_promo(
     target_wrestler_id: Optional[str] = None,
     promo_type: str = "in_ring",
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Generate a promo where a manager speaks on behalf of their client."""
     result = manager_service.generate_manager_promo(
@@ -181,7 +181,7 @@ def api_list_stables(
     world_id: str,
     federation_id: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """List all active stables in a world."""
     stables = stable_service.list_stables(db, world_id, federation_id)
@@ -200,7 +200,7 @@ def api_create_stable(
     world_id: str,
     data: StableCreate,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Create a new stable/faction."""
     try:
@@ -241,7 +241,7 @@ def api_create_stable(
 def api_get_stable(
     stable_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Get a stable with its members."""
     data = stable_service.get_stable_with_members(db, stable_id)
@@ -259,7 +259,7 @@ def api_add_stable_member(
     stable_id: str,
     data: StableAddMember,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Add a wrestler to a stable."""
     stable = _get_active_stable_or_404(db, stable_id)
@@ -277,7 +277,7 @@ def api_remove_stable_member(
     stable_id: str,
     wrestler_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Remove a wrestler from a stable."""
     stable = _get_active_stable_or_404(db, stable_id)
@@ -296,7 +296,7 @@ def api_promote_stable_member(
     wrestler_id: str,
     data: StableMemberRoleUpdate,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Change a stable member's role (e.g. promote to leader)."""
     stable = _get_active_stable_or_404(db, stable_id)
@@ -311,7 +311,7 @@ def api_update_stable(
     stable_id: str,
     data: StableUpdate,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Update a stable's details."""
     stable = _get_active_stable_or_404(db, stable_id)

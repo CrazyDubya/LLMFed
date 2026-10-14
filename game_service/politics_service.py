@@ -65,7 +65,7 @@ def update_locker_room_dynamics(db: Session, federation: GameFederationDB, game_
 
     wrestlers = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.id.in_(wrestler_ids),
-        GameWrestlerDB.is_active == True,
+        GameWrestlerDB.is_active,
     ).all()
 
     leaders = []

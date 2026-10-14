@@ -1,4 +1,6 @@
 # 🔍 COMPREHENSIVE CODE REVIEW: LLMFed
+
+> **Historical snapshot (2026-01-19).** Metrics, file counts, scores, and recommendations are frozen at review time. Do not treat this report as the current issue tracker; see [STATUS.md](STATUS.md).
 **Review Date**: 2026-01-19  
 **Reviewer**: AI Code Analysis Engine  
 **Branch**: main  

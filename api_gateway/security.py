@@ -13,6 +13,10 @@ from typing import Optional
 
 import jwt
 from fastapi import Depends, HTTPException, status, Header
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from agent_service.database import get_db
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from passlib.context import CryptContext
 from pydantic import BaseModel
@@ -178,6 +182,7 @@ def decode_token(token: str, expected_type: str = "access") -> TokenData:
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     x_api_key: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
 ) -> TokenData:
     """Authenticate via JWT bearer token OR X-API-Key header.
 
@@ -185,11 +190,12 @@ async def get_current_user(
     """
     # Try JWT first
     if credentials is not None:
-        return decode_token(credentials.credentials)
+        token_data = decode_token(credentials.credentials)
+        return await _authenticate_token_user(token_data, db)
 
     # Try API key
     if x_api_key is not None:
-        return _authenticate_api_key(x_api_key)
+        return await _authenticate_api_key(x_api_key, db)
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -198,19 +204,21 @@ async def get_current_user(
     )
 
 
-def get_optional_user(
+async def get_optional_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     x_api_key: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
 ) -> Optional[TokenData]:
     """Optionally authenticate — returns None if no credentials provided."""
     if credentials is not None:
         try:
-            return decode_token(credentials.credentials)
+            token_data = decode_token(credentials.credentials)
+            return await _authenticate_token_user(token_data, db)
         except HTTPException:
             return None
     if x_api_key is not None:
         try:
-            return _authenticate_api_key(x_api_key)
+            return await _authenticate_api_key(x_api_key, db)
         except HTTPException:
             return None
     return None
@@ -267,32 +275,38 @@ def require_minimum_role(minimum_role: str):
 # API key authentication (internal helper)
 # ---------------------------------------------------------------------------
 
-def _authenticate_api_key(api_key: str) -> TokenData:
-    """Look up a user by API key. Raises 401 if not found."""
-    # Lazy import to avoid circular dependency with database
-    from agent_service.database import SessionLocal
+async def _authenticate_token_user(token_data: TokenData, db: AsyncSession) -> TokenData:
+    """Revalidate that a JWT subject still refers to an active user."""
     from models.game_models import UserDB
 
-    db = None
-    try:
-        db = SessionLocal()
-        user = db.query(UserDB).filter(UserDB.api_key == api_key).first()
-        if user is None or not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid API key",
-            )
-        return TokenData(
-            user_id=user.id,
-            username=user.username,
-            role=getattr(user, "role", "player"),
+    result = await db.execute(
+        select(UserDB).where(UserDB.id == token_data.user_id, UserDB.is_active.is_(True))
+    )
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is inactive or no longer exists",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    except HTTPException:
-        raise
-    except Exception:
-        if db is not None:
-            db.rollback()
-        raise
-    finally:
-        if db is not None:
-            db.close()
+    return TokenData(user_id=user.id, username=user.username, role=getattr(user, "role", "player"))
+
+
+async def _authenticate_api_key(api_key: str, db: AsyncSession) -> TokenData:
+    """Look up a user by API key using the request's async database session."""
+    from models.game_models import UserDB
+
+    result = await db.execute(
+        select(UserDB).where(UserDB.api_key == api_key, UserDB.is_active.is_(True))
+    )
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+        )
+    return TokenData(
+        user_id=user.id,
+        username=user.username,
+        role=getattr(user, "role", "player"),
+    )

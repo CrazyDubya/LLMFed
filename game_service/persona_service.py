@@ -89,34 +89,134 @@ ARCHETYPE_DESCRIPTIONS = {
 }
 
 ARCHETYPE_VOICE_STYLES = {
-    "monster_heel": {"vocabulary": "simple", "cadence": "slow_burn", "speech_patterns": ["growling", "short_sentences"], "promo_tempo": "menacing"},
-    "underdog_face": {"vocabulary": "simple", "cadence": "emotional", "speech_patterns": ["passionate", "rising_intensity"], "promo_tempo": "building"},
-    "cocky_technician": {"vocabulary": "elaborate", "cadence": "precise", "speech_patterns": ["condescending", "technical_references"], "promo_tempo": "controlled"},
-    "silent_assassin": {"vocabulary": "minimal", "cadence": "staccato", "speech_patterns": ["whisper", "one_liners"], "promo_tempo": "sparse"},
-    "cult_leader": {"vocabulary": "academic", "cadence": "hypnotic", "speech_patterns": ["preaching", "third_person"], "promo_tempo": "methodical"},
-    "comedy_act": {"vocabulary": "street", "cadence": "rapid_fire", "speech_patterns": ["self_deprecating", "pop_culture"], "promo_tempo": "erratic"},
-    "anti_hero": {"vocabulary": "street", "cadence": "conversational", "speech_patterns": ["profane", "honest"], "promo_tempo": "aggressive"},
-    "legacy": {"vocabulary": "elaborate", "cadence": "measured", "speech_patterns": ["respectful", "tradition_invoking"], "promo_tempo": "dignified"},
-    "patriot": {"vocabulary": "simple", "cadence": "rallying", "speech_patterns": ["inclusive", "motivational"], "promo_tempo": "aggressive"},
-    "daredevil": {"vocabulary": "street", "cadence": "rapid_fire", "speech_patterns": ["excited", "cavalier"], "promo_tempo": "erratic"},
-}
+    "monster_heel": {
+        "vocabulary": "simple", "cadence": "slow_burn", "speech_patterns": [
+            "growling", "short_sentences"], "promo_tempo": "menacing"}, "underdog_face": {
+                "vocabulary": "simple", "cadence": "emotional", "speech_patterns": [
+                    "passionate", "rising_intensity"], "promo_tempo": "building"}, "cocky_technician": {
+                        "vocabulary": "elaborate", "cadence": "precise", "speech_patterns": [
+                            "condescending", "technical_references"], "promo_tempo": "controlled"}, "silent_assassin": {
+                                "vocabulary": "minimal", "cadence": "staccato", "speech_patterns": [
+                                    "whisper", "one_liners"], "promo_tempo": "sparse"}, "cult_leader": {
+                                        "vocabulary": "academic", "cadence": "hypnotic", "speech_patterns": [
+                                            "preaching", "third_person"], "promo_tempo": "methodical"}, "comedy_act": {
+                                                "vocabulary": "street", "cadence": "rapid_fire", "speech_patterns": [
+                                                    "self_deprecating", "pop_culture"], "promo_tempo": "erratic"}, "anti_hero": {
+                                                        "vocabulary": "street", "cadence": "conversational", "speech_patterns": [
+                                                            "profane", "honest"], "promo_tempo": "aggressive"}, "legacy": {
+                                                                "vocabulary": "elaborate", "cadence": "measured", "speech_patterns": [
+                                                                    "respectful", "tradition_invoking"], "promo_tempo": "dignified"}, "patriot": {
+                                                                        "vocabulary": "simple", "cadence": "rallying", "speech_patterns": [
+                                                                            "inclusive", "motivational"], "promo_tempo": "aggressive"}, "daredevil": {
+                                                                                "vocabulary": "street", "cadence": "rapid_fire", "speech_patterns": [
+                                                                                    "excited", "cavalier"], "promo_tempo": "erratic"}, }
 
 LIFE_EVENT_POOL = {
-    "marriage": {"description": "{name} got married in a private ceremony.", "severity": 4, "morale": 15, "performance": 0, "public_chance": 0.6, "storyline_pot": False},
-    "divorce": {"description": "{name} is going through a divorce.", "severity": 7, "morale": -20, "performance": -5, "public_chance": 0.4, "storyline_pot": True},
-    "child_born": {"description": "{name} welcomed a new baby.", "severity": 5, "morale": 20, "performance": 0, "public_chance": 0.7, "storyline_pot": False},
-    "death_in_family": {"description": "{name} lost a close family member.", "severity": 9, "morale": -25, "performance": -10, "public_chance": 0.5, "storyline_pot": True},
-    "legal_trouble": {"description": "{name} is dealing with legal issues.", "severity": 6, "morale": -15, "performance": -3, "public_chance": 0.7, "storyline_pot": True},
-    "personal_achievement": {"description": "{name} achieved a personal milestone outside of wrestling.", "severity": 3, "morale": 10, "performance": 2, "public_chance": 0.8, "storyline_pot": False},
-    "substance_issue": {"description": "{name} has been struggling with substance abuse issues.", "severity": 8, "morale": -20, "performance": -15, "public_chance": 0.3, "storyline_pot": True},
-    "public_controversy": {"description": "{name} is at the center of a public controversy.", "severity": 6, "morale": -10, "performance": -2, "public_chance": 1.0, "storyline_pot": True},
-    "charity_work": {"description": "{name} made headlines for charitable work in their community.", "severity": 2, "morale": 10, "performance": 0, "public_chance": 0.9, "storyline_pot": False},
-    "outside_media": {"description": "{name} appeared on a mainstream media program.", "severity": 3, "morale": 5, "performance": 0, "public_chance": 1.0, "storyline_pot": False},
-    "financial_trouble": {"description": "{name} is reportedly dealing with financial difficulties.", "severity": 6, "morale": -15, "performance": -3, "public_chance": 0.3, "storyline_pot": True},
-    "mental_health": {"description": "{name} has been open about mental health challenges.", "severity": 7, "morale": -10, "performance": -5, "public_chance": 0.4, "storyline_pot": True},
-    "relationship_start": {"description": "{name} has entered a new relationship.", "severity": 3, "morale": 10, "performance": 0, "public_chance": 0.5, "storyline_pot": False},
-    "relationship_end": {"description": "{name} recently went through a breakup.", "severity": 5, "morale": -10, "performance": -2, "public_chance": 0.3, "storyline_pot": False},
-    "family_reconciliation": {"description": "{name} has reconnected with estranged family members.", "severity": 4, "morale": 15, "performance": 2, "public_chance": 0.4, "storyline_pot": False},
+    "marriage": {
+        "description": "{name} got married in a private ceremony.",
+        "severity": 4,
+        "morale": 15,
+        "performance": 0,
+        "public_chance": 0.6,
+        "storyline_pot": False},
+    "divorce": {
+        "description": "{name} is going through a divorce.",
+        "severity": 7,
+        "morale": -20,
+        "performance": -5,
+        "public_chance": 0.4,
+        "storyline_pot": True},
+    "child_born": {
+        "description": "{name} welcomed a new baby.",
+        "severity": 5,
+        "morale": 20,
+        "performance": 0,
+        "public_chance": 0.7,
+        "storyline_pot": False},
+    "death_in_family": {
+        "description": "{name} lost a close family member.",
+        "severity": 9,
+        "morale": -25,
+        "performance": -10,
+        "public_chance": 0.5,
+        "storyline_pot": True},
+    "legal_trouble": {
+        "description": "{name} is dealing with legal issues.",
+        "severity": 6,
+        "morale": -15,
+        "performance": -3,
+        "public_chance": 0.7,
+        "storyline_pot": True},
+    "personal_achievement": {
+        "description": "{name} achieved a personal milestone outside of wrestling.",
+        "severity": 3,
+        "morale": 10,
+        "performance": 2,
+        "public_chance": 0.8,
+        "storyline_pot": False},
+    "substance_issue": {
+        "description": "{name} has been struggling with substance abuse issues.",
+        "severity": 8,
+        "morale": -20,
+        "performance": -15,
+        "public_chance": 0.3,
+        "storyline_pot": True},
+    "public_controversy": {
+        "description": "{name} is at the center of a public controversy.",
+        "severity": 6,
+        "morale": -10,
+        "performance": -2,
+        "public_chance": 1.0,
+        "storyline_pot": True},
+    "charity_work": {
+        "description": "{name} made headlines for charitable work in their community.",
+        "severity": 2,
+        "morale": 10,
+        "performance": 0,
+        "public_chance": 0.9,
+        "storyline_pot": False},
+    "outside_media": {
+        "description": "{name} appeared on a mainstream media program.",
+        "severity": 3,
+        "morale": 5,
+        "performance": 0,
+        "public_chance": 1.0,
+        "storyline_pot": False},
+    "financial_trouble": {
+        "description": "{name} is reportedly dealing with financial difficulties.",
+        "severity": 6,
+        "morale": -15,
+        "performance": -3,
+        "public_chance": 0.3,
+        "storyline_pot": True},
+    "mental_health": {
+        "description": "{name} has been open about mental health challenges.",
+        "severity": 7,
+        "morale": -10,
+        "performance": -5,
+        "public_chance": 0.4,
+        "storyline_pot": True},
+    "relationship_start": {
+        "description": "{name} has entered a new relationship.",
+        "severity": 3,
+        "morale": 10,
+        "performance": 0,
+        "public_chance": 0.5,
+        "storyline_pot": False},
+    "relationship_end": {
+        "description": "{name} recently went through a breakup.",
+        "severity": 5,
+        "morale": -10,
+        "performance": -2,
+        "public_chance": 0.3,
+        "storyline_pot": False},
+    "family_reconciliation": {
+        "description": "{name} has reconnected with estranged family members.",
+        "severity": 4,
+        "morale": 15,
+        "performance": 2,
+        "public_chance": 0.4,
+        "storyline_pot": False},
 }
 
 # Single source of truth for event polarity, derived from each event's own
@@ -230,7 +330,7 @@ def _pick_archetype(wrestler):
 
 
 def generate_initial_gimmick(db: Session, wrestler: GameWrestlerDB,
-                              game_date: str) -> GimmickHistoryDB:
+                             game_date: str) -> GimmickHistoryDB:
     """Create the initial GimmickHistoryDB from existing wrestler data."""
     archetype = _pick_archetype(wrestler)
 
@@ -549,7 +649,7 @@ def evolve_gimmick(db: Session, wrestler: GameWrestlerDB, game_date: str,
 # ---------------------------------------------------------------------------
 
 def detect_collision_events(db: Session, wrestler: GameWrestlerDB,
-                           game_date: str) -> list:
+                            game_date: str) -> list:
     """Detect when real life and kayfabe conflict for a wrestler.
 
     Returns list of collision dicts: {type, description, severity}.
@@ -563,7 +663,7 @@ def detect_collision_events(db: Session, wrestler: GameWrestlerDB,
     # 1. Personal crisis during active push
     active_events = db.query(LifeEventDB).filter(
         LifeEventDB.wrestler_id == wrestler.id,
-        LifeEventDB.is_active == True,
+        LifeEventDB.is_active,
         LifeEventDB.severity >= 7,
     ).all()
 
@@ -624,7 +724,7 @@ def migrate_existing_wrestlers(db: Session, world_id: str):
     """Populate backstory and gimmick for wrestlers that don't have them."""
     wrestlers = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active == True,
+        GameWrestlerDB.is_active,
     ).all()
 
     count = 0

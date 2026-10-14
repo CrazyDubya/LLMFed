@@ -5,6 +5,7 @@ Contains all logic for simulating a single show: match simulation,
 promo evaluation, card psychology, viewership, and news generation.
 """
 
+import threading
 import logging
 import os
 import random
@@ -28,7 +29,6 @@ USE_LLM = os.getenv("LLMFED_USE_LLM", "").lower() in ("1", "true", "yes")
 # to reset state between runs.
 # ------------------------------------------------------------------
 
-import threading
 
 _service_registry: dict = {}
 _service_lock = threading.Lock()
@@ -347,7 +347,7 @@ def _simulate_match_segment(
             stable_svc = _get_stable_service()
             losers = [p.wrestler_id for p in db.query(MatchParticipantDB).filter(
                 MatchParticipantDB.match_id == match.id,
-                MatchParticipantDB.is_winner == False,
+                MatchParticipantDB.is_winner.is_(False),
             ).all()]
             for loser_id in losers:
                 stable_svc.process_match_result_for_stables(

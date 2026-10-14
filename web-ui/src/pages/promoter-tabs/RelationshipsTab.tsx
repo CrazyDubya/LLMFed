@@ -1,4 +1,5 @@
 import { api } from '../../api/client';
+import { getErrorMessage } from '../../utils/errors';
 import { AlignmentBadge, RoleBadge } from '../PromoterDashboard';
 import type { Wrestler } from '../PromoterDashboard';
 
@@ -104,7 +105,7 @@ export default function RelationshipsTab({
                 setShowManagerForm(false);
                 setFormData({});
                 await loadData();
-              } catch (err: any) { setError(err.message); }
+              } catch (err) { setError(getErrorMessage(err)); }
             }}
             className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm font-medium"
           >Create Manager</button>
@@ -170,7 +171,7 @@ export default function RelationshipsTab({
                 setShowAssignForm(false);
                 setFormData({});
                 await loadData();
-              } catch (err: any) { setError(err.message); }
+              } catch (err) { setError(getErrorMessage(err)); }
             }}
             className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded text-sm font-medium"
           >Assign</button>
@@ -204,7 +205,7 @@ export default function RelationshipsTab({
                       try {
                         await api.removeManagerBond(b.id);
                         await loadData();
-                      } catch (err: any) { setError(err.message); }
+                      } catch (err) { setError(getErrorMessage(err)); }
                     }}
                     className="px-2 py-0.5 text-xs bg-red-900/50 hover:bg-red-800/50 text-red-300 rounded"
                   >End</button>

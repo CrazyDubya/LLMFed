@@ -1,5 +1,7 @@
 # Wrestler Personas Analysis: The Human Behind the Character
 
+> **Design proposal.** This document describes a rich persona model and records intended behavior; it should not be read as a complete feature inventory. Confirm implementation in the current models and services, and use [STATUS.md](STATUS.md) for active priorities.
+
 ## They Were People Before They Were Wrestlers
 
 Every wrestler who steps through the curtain carries two lives. There is the person — born somewhere specific, raised by someone, shaped by experience and circumstance — and there is the character, a constructed identity built for the ring, for the camera, for the crowd. These two lives are not separate. They bleed into each other constantly, sometimes by design and sometimes by accident, creating a unique tension that defines professional wrestling as an art form.

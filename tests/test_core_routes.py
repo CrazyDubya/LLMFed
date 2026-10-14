@@ -3,25 +3,44 @@
 Uses FastAPI TestClient to exercise the HTTP layer end-to-end against
 an in-memory SQLite database.
 """
-import os
 import uuid
+from unittest.mock import patch
+
+import pytest
 from fastapi.testclient import TestClient
 
-# Allow the TestClient's "testserver" host through TrustedHostMiddleware
-os.environ["ALLOWED_HOSTS"] = "localhost,127.0.0.1,testserver"
-
 from api_gateway.main import app  # noqa: E402
-from api_gateway.security import create_access_token  # noqa: E402
-from agent_service.database import init_db  # noqa: E402
 
-# Initialise the test database once
-init_db()
+# Table creation for the agent-service tables happens once per session via
+# the autouse fixture in tests/conftest.py (init_db() is async and can't be
+# called synchronously here at import/collection time).
 
-_TOKEN = create_access_token({"sub": "test-user-1", "username": "tester", "role": "admin"})
 client = TestClient(
-    app, raise_server_exceptions=False,
-    headers={"Authorization": f"Bearer {_TOKEN}"},
+    app,
+    base_url="http://localhost",
+    raise_server_exceptions=False,
 )
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _authenticated_client(_create_agent_service_tables):
+    """Register a real user and attach its token to the module client.
+
+    core_routes.py's endpoints require authentication, and get_current_user
+    re-validates the token's subject against the users table — a
+    self-signed token for a non-existent user id would 401. Depending on
+    the session-scoped table-creation fixture ensures the users table
+    exists before this registration runs.
+    """
+    with patch("api_gateway.routes.auth_routes.get_password_hash", lambda p: f"test-hash:{p}"):
+        resp = client.post("/game/auth/register", json={
+            "email": f"core-routes-{uuid.uuid4().hex[:10]}@test.local",
+            "username": f"core_routes_{uuid.uuid4().hex[:10]}",
+            "password": "irrelevant",
+        })
+    token = resp.json()["access_token"]
+    client.headers["Authorization"] = f"Bearer {token}"
+    yield
 
 
 def _unique(prefix: str = "") -> str:

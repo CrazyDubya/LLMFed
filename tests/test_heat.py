@@ -5,6 +5,7 @@ from core_engine.heat import (
     update_feud_heat,
 )
 
+
 class Dummy:
     def __init__(self, current_heat=0):
         self.current_heat = current_heat

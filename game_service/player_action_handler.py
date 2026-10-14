@@ -344,7 +344,7 @@ class PlayerActionHandler:
 
         roster_wrestlers = self.db.query(GameWrestlerDB).filter(
             GameWrestlerDB.id.in_([c.wrestler_id for c in roster_contracts]),
-            GameWrestlerDB.is_injured == False,
+            GameWrestlerDB.is_injured.is_(False),
         ).all()
 
         candidates = [
@@ -430,7 +430,8 @@ class PlayerActionHandler:
             game_date=self.world.current_game_date,
         )
         wrestler = self.db.query(GameWrestlerDB).filter_by(id=wrestler_id).first()
-        return {"member_id": member.id, "role": member.role, "wrestler_name": wrestler.name if wrestler else wrestler_id}
+        return {"member_id": member.id, "role": member.role,
+                "wrestler_name": wrestler.name if wrestler else wrestler_id}
 
     def _action_leave_stable(self, data: dict) -> dict:
         """Remove a wrestler from a stable."""

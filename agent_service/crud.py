@@ -8,10 +8,13 @@ Error handling contract:
 - Return None: resource not found (expected condition, not an error)
 - SQLAlchemyError: re-raised after rollback so callers/error-handlers can respond
 """
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError
 import logging
 import uuid
+from typing import List, Optional
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.future import select
 
 from models.entities import (
     VALID_ROLES,
@@ -31,25 +34,25 @@ _FEDERATION_UPDATE_FIELDS = frozenset({"name", "description", "tier"})
 # --- Agent CRUD ---
 
 
-def get_agent_by_id(db: Session, agent_id: str) -> AgentDB | None:
+async def get_agent_by_id(db: AsyncSession, agent_id: str) -> Optional[AgentDB]:
     """Fetches an agent by its ID from the database."""
     if not agent_id:
         raise ValueError("agent_id must be a non-empty string")
     try:
-        return db.query(AgentDB).filter(AgentDB.agent_id == agent_id).first()
+        result = await db.execute(select(AgentDB).filter(AgentDB.agent_id == agent_id))
+        return result.scalars().first()
     except SQLAlchemyError as e:
         logger.error(f"Database error fetching agent {agent_id}: {e}")
         return None
 
 
-def create_agent(db: Session, agent_data: AgentCreateData) -> AgentDB:
+async def create_agent(db: AsyncSession, agent_data: AgentCreateData) -> AgentDB:
     """Creates a new agent in the database."""
     if agent_data.role not in VALID_ROLES:
         raise ValueError(f"Invalid role '{agent_data.role}', must be one of {VALID_ROLES}")
 
-    agent_id = str(uuid.uuid4())
     db_agent = AgentDB(
-        agent_id=agent_id,
+        agent_id=str(uuid.uuid4()),
         user_id=agent_data.user_id,
         name=agent_data.name,
         role=agent_data.role,
@@ -63,31 +66,32 @@ def create_agent(db: Session, agent_data: AgentCreateData) -> AgentDB:
 
     try:
         db.add(db_agent)
-        db.commit()
-        db.refresh(db_agent)
+        await db.commit()
+        await db.refresh(db_agent)
         logger.info(f"Agent '{db_agent.name}' ({db_agent.agent_id}) created.")
         return db_agent
     except SQLAlchemyError as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"Database error creating agent '{agent_data.name}': {e}")
         raise
 
 
-def get_agents(db: Session, skip: int = 0, limit: int = 100) -> list[AgentDB]:
+async def get_agents(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[AgentDB]:
     """Fetches multiple agents with pagination."""
     try:
-        return db.query(AgentDB).offset(skip).limit(limit).all()
+        result = await db.execute(select(AgentDB).offset(skip).limit(limit))
+        return result.scalars().all()
     except SQLAlchemyError as e:
         logger.error(f"Database error fetching agents: {e}")
         return []
 
 
-def update_agent(db: Session, agent_id: str, update_data: AgentUpdateData) -> AgentDB | None:
+async def update_agent(db: AsyncSession, agent_id: str, update_data: AgentUpdateData) -> Optional[AgentDB]:
     """Updates an agent in the database with provided data.
 
     Only fields in _AGENT_UPDATE_FIELDS are applied (Rule 9).
     """
-    db_agent = get_agent_by_id(db, agent_id)
+    db_agent = await get_agent_by_id(db, agent_id)
     if not db_agent:
         logger.warning(f"Update failed: Agent {agent_id} not found.")
         return None
@@ -105,38 +109,39 @@ def update_agent(db: Session, agent_id: str, update_data: AgentUpdateData) -> Ag
 
     try:
         db.add(db_agent)
-        db.commit()
-        db.refresh(db_agent)
+        await db.commit()
+        await db.refresh(db_agent)
         logger.info(f"Agent {agent_id} updated successfully.")
         return db_agent
     except SQLAlchemyError as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"Database error updating agent {agent_id}: {e}")
         raise
 
 
-def delete_agent(db: Session, agent_id: str) -> bool:
+async def delete_agent(db: AsyncSession, agent_id: str) -> bool:
     """Deletes an agent from the database."""
-    db_agent = get_agent_by_id(db, agent_id)
+    db_agent = await get_agent_by_id(db, agent_id)
     if not db_agent:
         logger.warning(f"Delete failed: Agent {agent_id} not found.")
         return False
 
     try:
-        db.delete(db_agent)
-        db.commit()
+        await db.delete(db_agent)
+        await db.commit()
         logger.info(f"Agent {agent_id} deleted successfully.")
         return True
     except SQLAlchemyError as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"Database error deleting agent {agent_id}: {e}")
         raise
 
 
-def get_agents_by_federation_id(db: Session, federation_id: str) -> list[AgentDB]:
+async def get_agents_by_federation_id(db: AsyncSession, federation_id: str) -> List[AgentDB]:
     """Fetches all agents belonging to a specific federation."""
     try:
-        return db.query(AgentDB).filter(AgentDB.federation_id == federation_id).all()
+        result = await db.execute(select(AgentDB).filter(AgentDB.federation_id == federation_id))
+        return result.scalars().all()
     except SQLAlchemyError as e:
         logger.error(f"Database error fetching agents for federation {federation_id}: {e}")
         return []
@@ -145,22 +150,22 @@ def get_agents_by_federation_id(db: Session, federation_id: str) -> list[AgentDB
 # --- Federation CRUD ---
 
 
-def get_federation_by_id(db: Session, federation_id: str) -> FederationDB | None:
+async def get_federation_by_id(db: AsyncSession, federation_id: str) -> Optional[FederationDB]:
     """Fetches a federation by its ID from the database."""
     if not federation_id:
         raise ValueError("federation_id must be a non-empty string")
     try:
-        return db.query(FederationDB).filter(FederationDB.federation_id == federation_id).first()
+        result = await db.execute(select(FederationDB).filter(FederationDB.federation_id == federation_id))
+        return result.scalars().first()
     except SQLAlchemyError as e:
         logger.error(f"Database error fetching federation {federation_id}: {e}")
         return None
 
 
-def create_federation(db: Session, fed_data: FederationCreateData) -> FederationDB:
+async def create_federation(db: AsyncSession, fed_data: FederationCreateData) -> FederationDB:
     """Creates a new federation in the database."""
-    federation_id = str(uuid.uuid4())
     db_federation = FederationDB(
-        federation_id=federation_id,
+        federation_id=str(uuid.uuid4()),
         name=fed_data.name,
         description=fed_data.description,
         tier=fed_data.tier,
@@ -169,31 +174,34 @@ def create_federation(db: Session, fed_data: FederationCreateData) -> Federation
 
     try:
         db.add(db_federation)
-        db.commit()
-        db.refresh(db_federation)
+        await db.commit()
+        await db.refresh(db_federation)
         logger.info(f"Federation '{db_federation.name}' ({db_federation.federation_id}) created.")
         return db_federation
     except SQLAlchemyError as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"Database error creating federation '{fed_data.name}': {e}")
         raise
 
 
-def get_federations(db: Session, skip: int = 0, limit: int = 100) -> list[FederationDB]:
+async def get_federations(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[FederationDB]:
     """Fetches all federations with pagination."""
     try:
-        return db.query(FederationDB).offset(skip).limit(limit).all()
+        result = await db.execute(select(FederationDB).offset(skip).limit(limit))
+        return result.scalars().all()
     except SQLAlchemyError as e:
         logger.error(f"Database error fetching all federations: {e}")
         return []
 
 
-def update_federation(db: Session, federation_id: str, update_data: FederationUpdateData) -> FederationDB | None:
+async def update_federation(
+    db: AsyncSession, federation_id: str, update_data: FederationUpdateData,
+) -> Optional[FederationDB]:
     """Updates a federation in the database.
 
     Only fields in _FEDERATION_UPDATE_FIELDS are applied (Rule 9).
     """
-    db_federation = get_federation_by_id(db, federation_id)
+    db_federation = await get_federation_by_id(db, federation_id)
     if not db_federation:
         logger.warning(f"Update failed: Federation {federation_id} not found.")
         return None
@@ -208,37 +216,37 @@ def update_federation(db: Session, federation_id: str, update_data: FederationUp
 
     try:
         db.add(db_federation)
-        db.commit()
-        db.refresh(db_federation)
+        await db.commit()
+        await db.refresh(db_federation)
         logger.info(f"Federation {federation_id} updated successfully.")
         return db_federation
     except SQLAlchemyError as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"Database error updating federation {federation_id}: {e}")
         raise
 
 
-def delete_federation(db: Session, federation_id: str) -> bool:
+async def delete_federation(db: AsyncSession, federation_id: str) -> bool:
     """Deletes a federation from the database.
 
     Refuses to delete if the federation still contains agents.
     """
-    db_federation = get_federation_by_id(db, federation_id)
+    db_federation = await get_federation_by_id(db, federation_id)
     if not db_federation:
         logger.warning(f"Delete failed: Federation {federation_id} not found.")
         return False
 
-    agents_in_fed = get_agents_by_federation_id(db, federation_id)
+    agents_in_fed = await get_agents_by_federation_id(db, federation_id)
     if agents_in_fed:
         logger.warning(f"Cannot delete federation {federation_id}: still has {len(agents_in_fed)} agents.")
         return False
 
     try:
-        db.delete(db_federation)
-        db.commit()
+        await db.delete(db_federation)
+        await db.commit()
         logger.info(f"Federation {federation_id} deleted successfully.")
         return True
     except SQLAlchemyError as e:
-        db.rollback()
+        await db.rollback()
         logger.error(f"Database error deleting federation {federation_id}: {e}")
         raise

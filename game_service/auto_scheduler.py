@@ -137,7 +137,7 @@ class AutoScheduler:
         db: Session = SessionLocal()
         results: Dict[str, dict] = {}
         try:
-            worlds = db.query(WorldDB).filter(WorldDB.is_active == True).all()
+            worlds = db.query(WorldDB).filter(WorldDB.is_active).all()
             for world in worlds:
                 if world.id in self._paused_worlds:
                     continue

@@ -1,5 +1,7 @@
 # Codebase Documentation: LLMFed
 
+> **Obsolete template.** This is an early documentation template retained for reference. It contains stale paths and module descriptions; use [codebase.md](codebase.md) and [STATUS.md](STATUS.md) instead.
+
 This document provides an overview of the codebase structure, components, and functionalities of the LLMFed project.
 
 ## Project Structure Overview

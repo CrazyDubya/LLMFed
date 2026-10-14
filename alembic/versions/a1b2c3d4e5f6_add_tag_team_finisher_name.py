@@ -19,8 +19,26 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('tag_teams', sa.Column('team_finisher_name', sa.String(100), nullable=True))
+    """Add the column when the optional legacy tag-team table exists.
+
+    The initial game-world migration does not create ``tag_teams`` and the
+    current ORM has no mapped table by that name. Keeping this revision
+    conditional preserves upgradeability for databases that still have the
+    legacy table without blocking clean installs.
+    """
+    inspector = sa.inspect(op.get_bind())
+    if "tag_teams" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("tag_teams")}
+        if "team_finisher_name" not in columns:
+            op.add_column(
+                "tag_teams",
+                sa.Column("team_finisher_name", sa.String(100), nullable=True),
+            )
 
 
 def downgrade() -> None:
-    op.drop_column('tag_teams', 'team_finisher_name')
+    inspector = sa.inspect(op.get_bind())
+    if "tag_teams" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("tag_teams")}
+        if "team_finisher_name" in columns:
+            op.drop_column("tag_teams", "team_finisher_name")

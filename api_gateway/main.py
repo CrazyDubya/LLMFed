@@ -5,33 +5,43 @@ Route handlers live in ``api_gateway/routes/`` and ``api_gateway/game_routes.py`
 This module wires them together with middleware, error handling, and CORS.
 """
 
+from contextlib import asynccontextmanager
+
+from api_gateway.websocket_hub import websocket_endpoint, start_reaper, stop_reaper, manager
+from api_gateway.routes.metrics_routes import router as metrics_router
+from api_gateway.routes.core_routes import router as core_router
+from api_gateway.game_routes import router as game_router
+from api_gateway.logging_config import setup_logging, logging_middleware
+from api_gateway.error_handlers import register_error_handlers
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Request
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry import trace
+from redis import asyncio as aioredis
+from fastapi_cache.backends.redis import RedisBackend
+from fastapi_cache import FastAPICache
 import os
 import sys
 import logging
-
-# Configure local Ollama before any imports to enforce using long-gemma
-os.environ.setdefault("OPENAI_MODEL", "long-gemma")
-os.environ.setdefault("OPENAI_API_BASE", "http://127.0.0.1:11434/v1")
 
 # Ensure project root is on sys.path for all internal imports
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
-
-from api_gateway.error_handlers import register_error_handlers
-from api_gateway.logging_config import setup_logging, logging_middleware
-from api_gateway.game_routes import router as game_router
-from api_gateway.routes.core_routes import router as core_router
-from api_gateway.routes.metrics_routes import router as metrics_router
-from api_gateway.websocket_hub import websocket_endpoint, start_reaper
 from api_gateway.security import validate_production_config
+
+# Setup OpenTelemetry
+provider = TracerProvider()
+processor = BatchSpanProcessor(ConsoleSpanExporter())
+provider.add_span_processor(processor)
+trace.set_tracer_provider(provider)
+tracer = trace.get_tracer(__name__)
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -41,6 +51,49 @@ use_json_logging = os.getenv("JSON_LOGGING", "false").lower() == "true"
 setup_logging(log_level=log_level, use_json=use_json_logging)
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Lifespan — startup and graceful shutdown (replaces deprecated on_event)
+# ---------------------------------------------------------------------------
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage startup and shutdown lifecycle."""
+    # --- Startup ---
+    validate_production_config()
+    start_reaper()
+
+    # Setup Redis Cache
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    try:
+        redis = aioredis.from_url(redis_url, encoding="utf8", decode_responses=True)
+        FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")
+    except Exception as e:
+        logger.warning(f"Failed to connect to redis, caching disabled: {e}")
+
+    logger.info("LLMFed API started")
+    yield
+    # --- Shutdown ---
+    logger.info("LLMFed API shutting down …")
+    # Stop the WebSocket stale-connection reaper
+    stop_reaper()
+    # Close all active WebSocket connections cleanly
+    for world_id in list(manager.active_connections):
+        for ws in list(manager.active_connections.get(world_id, [])):
+            try:
+                await ws.close(code=1001, reason="server shutting down")
+            except Exception:
+                pass
+    # Dispose the SQLAlchemy connection pool
+    try:
+        from agent_service.database import engine as db_engine
+        await db_engine.dispose()
+        logger.info("Database connection pool disposed")
+    except Exception as e:
+        logger.warning("Error disposing database pool: %s", e)
+    logger.info("Shutdown complete")
+
 
 # ---------------------------------------------------------------------------
 # Application
@@ -74,6 +127,7 @@ Most endpoints require JWT authentication. Get your token from `/auth/token`.
 - Other endpoints: Configurable per endpoint
     """,
     version="0.2.0",
+    lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_tags=[
@@ -90,6 +144,14 @@ Most endpoints require JWT authentication. Get your token from `/auth/token`.
 # ---------------------------------------------------------------------------
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Core engine instance, used by core_routes.py's
+# engine/debug, prompter/hints, and engine/advance endpoints via
+# get_engine_dependency / request.app.state.engine.
+from core_engine.engine import create_engine  # noqa: E402
+app.state.engine = create_engine()
+# Wire the engine's LLM into app state so get_llm_dependency (metrics/health) receives it.
+app.state.llm = app.state.engine.llm_client
 
 ALLOWED_ORIGINS = os.getenv(
     "CORS_ORIGINS",
@@ -127,15 +189,6 @@ async def add_security_headers(request: Request, call_next):
 # Error handlers
 # ---------------------------------------------------------------------------
 register_error_handlers(app)
-
-# ---------------------------------------------------------------------------
-# Startup / shutdown
-# ---------------------------------------------------------------------------
-@app.on_event("startup")
-async def _on_startup():
-    validate_production_config()
-    start_reaper()
-
 
 # ---------------------------------------------------------------------------
 # Routers

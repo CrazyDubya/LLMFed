@@ -158,7 +158,7 @@ def get_next_ppv(db: Session, federation_id: str, current_date: str) -> Optional
         .filter(
             PPVEventDB.federation_id == federation_id,
             PPVEventDB.scheduled_date > current_date,
-            PPVEventDB.is_completed == False,
+            PPVEventDB.is_completed.is_(False),
         )
         .order_by(PPVEventDB.scheduled_date)
         .first()

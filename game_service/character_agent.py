@@ -385,8 +385,8 @@ def tick_character_agency(db: Session, world_id: str, game_date: str) -> List[st
     # Only top wrestlers get character agency (limits LLM calls)
     wrestlers = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active == True,
-        GameWrestlerDB.is_injured == False,
+        GameWrestlerDB.is_active,
+        GameWrestlerDB.is_injured.is_(False),
         GameWrestlerDB.popularity >= 40,
     ).all()
 

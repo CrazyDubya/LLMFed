@@ -86,9 +86,9 @@ def _create_completed_match(db, world_id, w1_id, w2_id, winner_id, **kw):
     db.add(m)
     db.flush()
     db.add(MatchParticipantDB(match_id=m.id, wrestler_id=w1_id, role="competitor",
-                               is_winner=(w1_id == winner_id)))
+                              is_winner=(w1_id == winner_id)))
     db.add(MatchParticipantDB(match_id=m.id, wrestler_id=w2_id, role="competitor",
-                               is_winner=(w2_id == winner_id)))
+                              is_winner=(w2_id == winner_id)))
     db.flush()
     return m
 
@@ -409,13 +409,13 @@ class TestTagTeams:
         db_session.add(match)
         db_session.flush()
         db_session.add(MatchParticipantDB(match_id=match.id, wrestler_id=w1.id,
-                                           role="competitor", is_winner=True))
+                                          role="competitor", is_winner=True))
         db_session.add(MatchParticipantDB(match_id=match.id, wrestler_id=w2.id,
-                                           role="competitor", is_winner=True))
+                                          role="competitor", is_winner=True))
         db_session.add(MatchParticipantDB(match_id=match.id, wrestler_id=w3.id,
-                                           role="competitor", is_winner=False))
+                                          role="competitor", is_winner=False))
         db_session.add(MatchParticipantDB(match_id=match.id, wrestler_id=w4.id,
-                                           role="competitor", is_winner=False))
+                                          role="competitor", is_winner=False))
         db_session.flush()
 
         from core_engine.match_aftermath import _update_tag_team_records

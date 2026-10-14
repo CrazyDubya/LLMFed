@@ -7,6 +7,7 @@ wrestler relationships/chemistry, history entries, and storyline triggers.
 
 import random
 import logging
+from sqlalchemy import cast, String
 from sqlalchemy.orm import Session
 
 from models.game_models import (
@@ -388,8 +389,8 @@ def _update_relationships(db: Session, match: MatchDB,
             if wr1 and wr2:
                 storyline_link = db.query(GameNarrativeLogDB).filter(
                     GameNarrativeLogDB.world_id == match.world_id,
-                    GameNarrativeLogDB.involved_entities.contains(w1),
-                    GameNarrativeLogDB.involved_entities.contains(w2),
+                    cast(GameNarrativeLogDB.involved_entities, String).like(f'%"{w1}"%'),
+                    cast(GameNarrativeLogDB.involved_entities, String).like(f'%"{w2}"%'),
                 ).first()
                 if storyline_link:
                     heat_increase += HEAT_STORYLINE_LINK
@@ -412,7 +413,7 @@ def _update_tag_team_records(db: Session, match: MatchDB, participants: list):
     # Find tag teams involved
     all_ids = [p.wrestler_id for p in participants]
     teams = db.query(TagTeamDB).filter(
-        TagTeamDB.is_active == True,
+        TagTeamDB.is_active,
         TagTeamDB.wrestler1_id.in_(all_ids),
         TagTeamDB.wrestler2_id.in_(all_ids),
     ).all()
@@ -512,7 +513,7 @@ def get_chemistry_bonus(db: Session, world_id: str,
 
 
 def _post_match_lifecycle(db: Session, match: MatchDB,
-                         participants: list, game_date: str):
+                          participants: list, game_date: str):
     """Post-match lifecycle hooks: career highlights and specialization growth."""
     try:
         from game_service.wrestler_lifecycle_service import (
@@ -538,19 +539,19 @@ def compute_win_loss(db: Session, wrestler_id: str) -> dict:
     wins = db.query(MatchParticipantDB).filter(
         MatchParticipantDB.wrestler_id == wrestler_id,
         MatchParticipantDB.role == "competitor",
-        MatchParticipantDB.is_winner == True,
+        MatchParticipantDB.is_winner,
     ).count()
 
     total = db.query(MatchParticipantDB).join(MatchDB).filter(
         MatchParticipantDB.wrestler_id == wrestler_id,
         MatchParticipantDB.role == "competitor",
-        MatchDB.is_completed == True,
+        MatchDB.is_completed,
     ).count()
 
     draws = db.query(MatchParticipantDB).join(MatchDB).filter(
         MatchParticipantDB.wrestler_id == wrestler_id,
         MatchParticipantDB.role == "competitor",
-        MatchDB.is_completed == True,
+        MatchDB.is_completed,
         MatchDB.winner_id == None,
     ).count()
 
@@ -636,14 +637,18 @@ def _process_botch_consequences(db: Session, match: MatchDB, game_date: str):
                 victim.injury_return_date = advance_game_date(game_date, weeks_out * 7)
                 victim.condition = max(0, victim.condition - random.randint(*BOTCH_CONDITION_LOSS_RANGE))
 
-                db.add(GameNarrativeLogDB(
-                    world_id=match.world_id,
-                    game_date=game_date, tick=0,
-                    event_type="botch_injury",
-                    description=f"{victim.name} injured by botched {move_name} from {attacker.name}! Out {weeks_out} weeks.",
-                    involved_entities=[victim_id, attacker_id],
-                    importance=8,
-                ))
+                db.add(
+                    GameNarrativeLogDB(
+                        world_id=match.world_id,
+                        game_date=game_date,
+                        tick=0,
+                        event_type="botch_injury",
+                        description=f"{victim.name} injured by botched {move_name} from {attacker.name}! Out {weeks_out} weeks.",
+                        involved_entities=[
+                            victim_id,
+                            attacker_id],
+                        importance=8,
+                    ))
                 logger.info("BOTCH INJURY: %s hurt by %s's %s, out %d weeks",
                             victim.name, attacker.name, move_name, weeks_out)
 

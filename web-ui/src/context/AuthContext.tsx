@@ -1,12 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { api } from '../api/client';
-
-interface User {
-  id: string;
-  username: string;
-  email: string;
-  display_name?: string;
-}
+import { api, type User } from '../api/client';
 
 interface AuthContextType {
   user: User | null;
@@ -22,17 +15,17 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
-  const [isLoading, setIsLoading] = useState(true);
+  // Only a stored token needs verifying against the API; with no token
+  // there's nothing to load, so start non-loading rather than flipping
+  // it synchronously inside the effect below.
+  const [isLoading, setIsLoading] = useState(() => !!localStorage.getItem('token'));
 
   useEffect(() => {
-    if (token) {
-      api.getMe()
-        .then(setUser)
-        .catch(() => { setToken(null); localStorage.removeItem('token'); })
-        .finally(() => setIsLoading(false));
-    } else {
-      setIsLoading(false);
-    }
+    if (!token) return;
+    api.getMe()
+      .then(setUser)
+      .catch(() => { setToken(null); localStorage.removeItem('token'); })
+      .finally(() => setIsLoading(false));
   }, [token]);
 
   const login = async (username: string, password: string) => {

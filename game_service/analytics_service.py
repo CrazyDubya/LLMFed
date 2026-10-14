@@ -101,7 +101,7 @@ def federation_health(
     # Show stats
     shows = db.query(ShowDB).filter(
         ShowDB.federation_id == federation_id,
-        ShowDB.is_completed == True,
+        ShowDB.is_completed,
     ).order_by(ShowDB.game_date.desc()).limit(20).all()
 
     show_ratings = [s.overall_rating for s in shows if s.overall_rating]
@@ -303,7 +303,7 @@ def world_summary(
             ContractDB.world_id == world_id, ContractDB.status == "active"
         ).scalar() or 0,
         "shows_completed": db.query(func.count(ShowDB.id)).filter(
-            ShowDB.world_id == world_id, ShowDB.is_completed == True
+            ShowDB.world_id == world_id, ShowDB.is_completed
         ).scalar() or 0,
         "total_matches": db.query(func.count(MatchDB.id)).filter(
             MatchDB.world_id == world_id

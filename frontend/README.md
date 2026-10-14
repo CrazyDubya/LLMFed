@@ -1,6 +1,6 @@
-# LLMFed Frontend
+# LLMFed Legacy Frontend
 
-A simple web interface for the LLMFed API.
+A legacy static web interface for the LLMFed API. The repository also contains the newer Vite/React application in `web-ui/`; the supported frontend and deployment path are still release work. See [../docs/STATUS.md](../docs/STATUS.md).
 
 ## Features
 
@@ -32,11 +32,6 @@ npx http-server -p 8080
 3. **Run Simulation**: Advance the engine by specified ticks
 4. **Monitor Status**: Check API, database, and engine health
 
-## Future Improvements
+## Current limitations
 
-- Real-time updates via WebSocket
-- Match visualization
-- Agent statistics dashboard
-- Federation management
-- User authentication
-- Match history viewer
+This legacy UI does not document or guarantee parity with the current `/game/*` API. Use it for reference only until the supported frontend is selected. Potential UI work belongs in the consolidated backlog at [../docs/STATUS.md](../docs/STATUS.md).

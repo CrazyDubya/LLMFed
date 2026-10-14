@@ -241,7 +241,7 @@ def tick_social_media(db: Session, world_id: str, game_date: str):
     """Daily social media tick. Each wrestler has a chance to post."""
     wrestlers = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active == True,
+        GameWrestlerDB.is_active,
     ).all()
 
     for wrestler in wrestlers:
@@ -392,7 +392,7 @@ def get_viral_buzz_bonus(db: Session, world_id: str, game_date: str,
 
     viral_count = db.query(SocialMediaPostDB).filter(
         SocialMediaPostDB.world_id == world_id,
-        SocialMediaPostDB.is_viral == True,
+        SocialMediaPostDB.is_viral,
         SocialMediaPostDB.game_date >= week_ago,
         SocialMediaPostDB.game_date <= game_date,
         SocialMediaPostDB.wrestler_id.in_(wrestler_ids),

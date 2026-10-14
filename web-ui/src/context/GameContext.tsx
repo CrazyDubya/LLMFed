@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
+import type { Player } from '../api/client';
 
 interface GameState {
   worldId: string | null;
@@ -10,7 +11,7 @@ interface GameState {
 
 interface GameContextType extends GameState {
   setWorld: (worldId: string) => void;
-  setPlayer: (player: { id: string; player_type: string; federation_id?: string; wrestler_id?: string }) => void;
+  setPlayer: (player: Player) => void;
   clearGame: () => void;
 }
 
@@ -20,7 +21,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<GameState>({
     worldId: localStorage.getItem('worldId'),
     playerId: localStorage.getItem('playerId'),
-    playerType: localStorage.getItem('playerType') as any,
+    playerType: localStorage.getItem('playerType') as 'promoter' | 'wrestler' | null,
     federationId: localStorage.getItem('federationId'),
     wrestlerId: localStorage.getItem('wrestlerId'),
   });
@@ -30,7 +31,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setState(s => ({ ...s, worldId }));
   };
 
-  const setPlayer = (player: any) => {
+  const setPlayer = (player: Player) => {
     localStorage.setItem('playerId', player.id);
     localStorage.setItem('playerType', player.player_type);
     if (player.federation_id) localStorage.setItem('federationId', player.federation_id);

@@ -67,7 +67,7 @@ def age_wrestlers(db: Session, world_id: str, game_date: str):
     """Annual aging — run on Jan 1 each game year. Increments age, applies stat decay."""
     wrestlers = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active == True,
+        GameWrestlerDB.is_active,
     ).all()
 
     for w in wrestlers:
@@ -193,28 +193,28 @@ def auto_assign_mentors(db: Session, federation: GameFederationDB, game_date: st
 
     rookies = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.id.in_(wrestler_ids),
-        GameWrestlerDB.is_active == True,
+        GameWrestlerDB.is_active,
         GameWrestlerDB.career_phase == "rookie",
     ).all()
 
     mentored_ids = set(
         m.protege_id for m in db.query(MentorshipDB).filter(
             MentorshipDB.federation_id == federation.id,
-            MentorshipDB.is_active == True,
+            MentorshipDB.is_active,
         ).all()
     )
     mentoring_ids = set(
         m.mentor_id for m in db.query(MentorshipDB).filter(
             MentorshipDB.federation_id == federation.id,
-            MentorshipDB.is_active == True,
+            MentorshipDB.is_active,
         ).all()
     )
 
     veterans = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.id.in_(wrestler_ids),
-        GameWrestlerDB.is_active == True,
+        GameWrestlerDB.is_active,
         GameWrestlerDB.career_phase.in_(["veteran", "declining"]),
-        GameWrestlerDB.is_injured == False,
+        GameWrestlerDB.is_injured.is_(False),
     ).all()
 
     for rookie in rookies:
@@ -252,7 +252,7 @@ def training_with_mentor(db: Session, wrestler_id: str, stat_name: str) -> int:
     Returns bonus gain on top of base training."""
     mentorship = db.query(MentorshipDB).filter(
         MentorshipDB.protege_id == wrestler_id,
-        MentorshipDB.is_active == True,
+        MentorshipDB.is_active,
     ).first()
     if not mentorship:
         return 0
@@ -331,7 +331,7 @@ def compute_legacy_score(db: Session, wrestler_id: str) -> int:
 
     participations = db.query(MatchParticipantDB).join(MatchDB).filter(
         MatchParticipantDB.wrestler_id == wrestler_id,
-        MatchDB.is_completed == True,
+        MatchDB.is_completed,
         MatchDB.match_rating != None,
     ).all()
     avg_rating = (
@@ -357,7 +357,7 @@ def hall_of_fame_ceremony(db: Session, world_id: str, game_date: str):
 
     eligible = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active == False,
+        GameWrestlerDB.is_active.is_(False),
         GameWrestlerDB.retirement_date != None,
     ).all()
 
@@ -475,7 +475,7 @@ def update_conditioning(db: Session, wrestler: GameWrestlerDB, game_date: str):
         .join(ShowDB, ShowDB.id == ShowSegmentDB.show_id)
         .filter(
             MatchParticipantDB.wrestler_id == wrestler.id,
-            MatchDB.is_completed == True,
+            MatchDB.is_completed,
             ShowDB.game_date >= week_ago,
             ShowDB.game_date <= game_date,
         ).count()
@@ -509,7 +509,7 @@ def tick_persona(db: Session, world_id: str, game_date: str):
 
     wrestlers = db.query(GameWrestlerDB).filter(
         GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active == True,
+        GameWrestlerDB.is_active,
     ).all()
 
     for wrestler in wrestlers:
@@ -538,7 +538,7 @@ def tick_persona(db: Session, world_id: str, game_date: str):
 
         active_events = db.query(LifeEventDB).filter(
             LifeEventDB.wrestler_id == wrestler.id,
-            LifeEventDB.is_active == True,
+            LifeEventDB.is_active,
         ).all()
         for event in active_events:
             persona_service.process_life_event_effects(db, event)

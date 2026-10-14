@@ -1,5 +1,7 @@
 # P0 Implementation Summary
 
+> **Historical implementation record.** This documents a completed work phase and is not a live checklist. Current release blockers are maintained in [STATUS.md](STATUS.md).
+
 ## Overview
 
 All P0 priority items from the comprehensive code review have been successfully implemented and tested.

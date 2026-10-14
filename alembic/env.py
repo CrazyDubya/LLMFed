@@ -1,4 +1,6 @@
 """Alembic environment configuration for LLMFed."""
+from models.db_models import Base
+from config import DATABASE_URL
 import sys
 from pathlib import Path
 from logging.config import fileConfig
@@ -9,8 +11,6 @@ from alembic import context
 # Ensure project root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config import DATABASE_URL
-from models.db_models import Base
 # Import game models so their tables are registered on Base.metadata
 import models.game_models  # noqa: F401
 
@@ -29,6 +29,7 @@ def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
+        render_as_batch=True,
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
@@ -47,6 +48,7 @@ def run_migrations_online() -> None:
     )
     with connectable.connect() as connection:
         context.configure(
+            render_as_batch=True,
             connection=connection,
             target_metadata=target_metadata,
         )

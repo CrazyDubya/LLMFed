@@ -137,7 +137,7 @@ class TestWorldTicker:
         # Set a wrestler's condition low
         wrestler = db_session.query(GameWrestlerDB).filter(
             GameWrestlerDB.world_id == world.id,
-            GameWrestlerDB.is_injured == False,
+            GameWrestlerDB.is_injured.is_(False),
         ).first()
         wrestler.condition = 50
         db_session.commit()

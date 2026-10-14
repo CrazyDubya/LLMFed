@@ -9,6 +9,8 @@ retry logic, circuit breaking, streaming, and cost tracking.
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any, Iterator
 from dataclasses import dataclass, field
+import asyncio
+import json
 import logging
 import os
 import time
@@ -271,6 +273,21 @@ class LLMProviderBase(ABC):
         resp = self.generate(messages, temperature, max_tokens, **kwargs)
         yield StreamChunk(
             content=resp.content, finish_reason=resp.finish_reason, model=resp.model
+        )
+
+    async def generate_async(
+        self,
+        messages: List[LLMMessage],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        **kwargs,
+    ) -> LLMResponse:
+        """Async facade — runs the sync .generate() in a thread executor
+        so the event loop is never blocked. Override in providers with a
+        native async client."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, lambda: self.generate(messages, temperature, max_tokens, **kwargs)
         )
 
     @abstractmethod
@@ -836,6 +853,8 @@ class LLMAbstraction:
         self.config = kwargs
         self.budget = TokenBudget()
         self.provider = self._initialize_provider()
+        from core_engine.dispatcher import LLMDispatcher
+        self._dispatcher = LLMDispatcher()
 
     def _initialize_provider(self) -> LLMProviderBase:
         if self.provider_name == "auto":
@@ -934,6 +953,44 @@ class LLMAbstraction:
 
     def get_budget_summary(self) -> Dict[str, Any]:
         return self.budget.summary()
+
+    async def generate_action_async(self, prompt: dict) -> dict:
+        """Takes a structured dict prompt, sends it to the LLM, and parses
+        the JSON response. Transient errors fall back to a stub action;
+        LLMPermanentError propagates to the caller."""
+        if not isinstance(prompt, dict) or not prompt:
+            logger.error("generate_action_async called with empty or non-dict prompt")
+            return self._fallback_stub()
+
+        self.budget.check_budget()
+        messages = [LLMMessage(role="user", content=json.dumps(prompt))]
+
+        try:
+            response = await self.provider.generate_async(messages=messages, temperature=0.7)
+            self.budget.record(response)
+            return self._parse_response(response.content)
+        except LLMPermanentError:
+            raise
+        except Exception as e:
+            logger.warning("LLM call failed (transient), using fallback: %s", e)
+            return self._fallback_stub()
+
+    def _parse_response(self, content: str) -> dict:
+        try:
+            parsed = json.loads(content)
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.debug("LLM returned non-JSON content: %s", e)
+        return self._fallback_stub()
+
+    def _fallback_stub(self) -> dict:
+        fallback = self._dispatcher.choose_action()
+        return {
+            "action_id": fallback.action_id,
+            "description": fallback.description,
+            "meta": fallback.meta,
+        }
 
 
 # ---------------------------------------------------------------------------

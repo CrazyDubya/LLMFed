@@ -1,6 +1,7 @@
 from core_engine.prompt_builder import PromptBuilder
 from models.entities import EventContext
 
+
 def test_build_prompt_includes_context_and_hints():
     context = EventContext(
         event_id="evt1",

@@ -487,7 +487,7 @@ class TestMigration:
 
         gimmick = db_session.query(GimmickHistoryDB).filter(
             GimmickHistoryDB.wrestler_id == wrestler.id,
-            GimmickHistoryDB.is_active == True,
+            GimmickHistoryDB.is_active,
         ).first()
         assert gimmick is not None
 

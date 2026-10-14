@@ -5,7 +5,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from agent_service.database import get_db
+from agent_service.database import get_db_sync
 from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
     FederationResponse,
@@ -33,7 +33,7 @@ router = APIRouter(prefix="/game", tags=["game-federation"])
 def api_list_federations(
     world_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """List all federations in a world."""
     feds = get_world_federations(db, world_id)
@@ -44,7 +44,7 @@ def api_list_federations(
 def api_get_federation(
     federation_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Get federation details."""
     try:
@@ -58,7 +58,7 @@ def api_get_federation(
 def api_get_roster(
     federation_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """Get a federation's roster."""
     wrestlers = get_roster(db, federation_id)
@@ -69,7 +69,7 @@ def api_get_roster(
 def api_list_free_agents(
     world_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """List free agent wrestlers in a world."""
     wrestlers = get_free_agents(db, world_id)
@@ -85,7 +85,7 @@ def api_list_shows(
     federation_id: str,
     limit: int = 20,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """List shows for a federation."""
     shows = db.query(ShowDB).filter(
@@ -102,11 +102,11 @@ def api_list_shows(
 def api_list_championships(
     federation_id: str,
     current_user: TokenData = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db_sync),
 ):
     """List championships for a federation."""
     champs = db.query(ChampionshipDB).filter(
         ChampionshipDB.federation_id == federation_id,
-        ChampionshipDB.is_active == True,
+        ChampionshipDB.is_active,
     ).all()
     return [ChampionshipResponse.model_validate(c) for c in champs]

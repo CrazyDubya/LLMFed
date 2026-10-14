@@ -1,4 +1,5 @@
 import { api } from '../../api/client';
+import { getErrorMessage } from '../../utils/errors';
 import { AlignmentBadge, HeatBar } from '../PromoterDashboard';
 import type { Wrestler, TabKey } from '../PromoterDashboard';
 
@@ -130,7 +131,7 @@ export default function WarRoomTab({
                         try {
                           await api.advanceStoryline(sl.id, { heat_boost: 10 });
                           await loadData();
-                        } catch (err: any) { setError(err.message); }
+                        } catch (err) { setError(getErrorMessage(err)); }
                       }}
                       className="px-2 py-0.5 text-xs bg-amber-800 hover:bg-amber-700 text-amber-200 rounded"
                       title="Boost heat +10"
@@ -142,7 +143,7 @@ export default function WarRoomTab({
                         try {
                           await api.advanceStoryline(sl.id, { status: 'active' });
                           await loadData();
-                        } catch (err: any) { setError(err.message); }
+                        } catch (err) { setError(getErrorMessage(err)); }
                       }}
                       className="px-2 py-0.5 text-xs bg-green-800 hover:bg-green-700 text-green-200 rounded"
                     >Activate</button>
@@ -153,7 +154,7 @@ export default function WarRoomTab({
                         try {
                           await api.advanceStoryline(sl.id, { status: 'climax' });
                           await loadData();
-                        } catch (err: any) { setError(err.message); }
+                        } catch (err) { setError(getErrorMessage(err)); }
                       }}
                       className="px-2 py-0.5 text-xs bg-red-800 hover:bg-red-700 text-red-200 rounded"
                     >Climax</button>

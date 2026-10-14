@@ -224,8 +224,8 @@ def auto_generate_storylines(db: Session, world_id: str, game_date: str):
     """
     npc_feds = db.query(GameFederationDB).filter(
         GameFederationDB.world_id == world_id,
-        GameFederationDB.is_npc == True,
-        GameFederationDB.is_active == True,
+        GameFederationDB.is_npc,
+        GameFederationDB.is_active,
     ).all()
 
     new_storylines = []
@@ -403,10 +403,10 @@ def check_life_event_storylines(db: Session, world_id: str, game_date: str):
     # Find public, storyline-potential life events not yet used
     events = db.query(LifeEventDB).filter(
         LifeEventDB.world_id == world_id,
-        LifeEventDB.is_public == True,
-        LifeEventDB.storyline_potential == True,
-        LifeEventDB.was_used_in_storyline == False,
-        LifeEventDB.is_active == True,
+        LifeEventDB.is_public,
+        LifeEventDB.storyline_potential,
+        LifeEventDB.was_used_in_storyline.is_(False),
+        LifeEventDB.is_active,
     ).all()
 
     for event in events:
@@ -475,7 +475,7 @@ def check_life_event_storylines(db: Session, world_id: str, game_date: str):
         event.was_used_in_storyline = True
         new_storylines.append(sl)
         logger.info("Created worked-shoot storyline '%s' from life event for %s",
-                     sl.name, wrestler.name)
+                    sl.name, wrestler.name)
 
     return new_storylines
 

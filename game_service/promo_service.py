@@ -58,6 +58,7 @@ def _get_target_wrestler(db, target_id):
 # Legacy alignment-based templates (fallback)
 # ---------------------------------------------------------------------------
 
+
 FACE_OPENERS = [
     "Let me tell you something, brother!",
     "I came here tonight for one reason and one reason only!",
@@ -447,7 +448,7 @@ def _get_active_life_events(db, wrestler_id):
     """Get active life events affecting the wrestler."""
     return db.query(LifeEventDB).filter(
         LifeEventDB.wrestler_id == wrestler_id,
-        LifeEventDB.is_active == True,
+        LifeEventDB.is_active,
     ).all()
 
 

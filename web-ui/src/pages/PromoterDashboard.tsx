@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useGame } from '../context/GameContext';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { getErrorMessage } from '../utils/errors';
 import { useWorldSocket } from '../hooks/useWorldSocket';
 import { usePromoterData } from '../hooks/usePromoterData';
 import LiveFeed from '../components/LiveFeed';
@@ -303,7 +304,7 @@ export default function PromoterDashboard() {
                       game_date: nextDate,
                     });
                     await loadData();
-                  } catch (err: any) { setError(err.message); }
+                  } catch (err) { setError(getErrorMessage(err)); }
                 }}
                 className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded text-sm"
               >
@@ -426,7 +427,7 @@ export default function PromoterDashboard() {
                       setShowStorylineForm(false);
                       setFormData({});
                       await loadData();
-                    } catch (err: any) { setError(err.message); }
+                    } catch (err) { setError(getErrorMessage(err)); }
                   }}
                   className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded text-sm font-medium"
                 >Create Storyline</button>

@@ -74,14 +74,15 @@ def create_stable(
     # Narrative log
     wrestler_names = _get_wrestler_names(db, list(all_member_ids))
     leader_name = wrestler_names.get(leader_id, "Unknown")
-    db.add(GameNarrativeLogDB(
-        world_id=world_id,
-        game_date=game_date or "",
-        tick=0,
-        event_type="stable_formed",
-        description=f"{name} has formed! Led by {leader_name}, the group includes {', '.join(wrestler_names.values())}.",
-        importance=8,
-    ))
+    db.add(
+        GameNarrativeLogDB(
+            world_id=world_id,
+            game_date=game_date or "",
+            tick=0,
+            event_type="stable_formed",
+            description=f"{name} has formed! Led by {leader_name}, the group includes {', '.join(wrestler_names.values())}.",
+            importance=8,
+        ))
 
     db.commit()
     logger.info("Stable '%s' formed with %d members in world %s", name, len(all_member_ids), world_id)

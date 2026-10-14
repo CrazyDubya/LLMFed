@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Dict, Any
 
+
 class RuleBook:
     """Static utility to validate actions."""
 
