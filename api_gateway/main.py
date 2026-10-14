@@ -149,6 +149,8 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # get_engine_dependency / request.app.state.engine.
 from core_engine.engine import create_engine  # noqa: E402
 app.state.engine = create_engine()
+# Wire the engine's LLM into app state so get_llm_dependency (metrics/health) receives it.
+app.state.llm = app.state.engine.llm_client
 
 ALLOWED_ORIGINS = os.getenv(
     "CORS_ORIGINS",

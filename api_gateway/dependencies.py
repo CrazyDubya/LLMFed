@@ -13,4 +13,4 @@ def get_llm_dependency(request: Request):
     """
     Dependency to get the LLM abstraction from the application state.
     """
-    return request.app.state.llm
+    return getattr(request.app.state, 'llm', None)
