@@ -240,7 +240,7 @@ class TestEngineRoutes:
     def test_engine_advance(self):
         from unittest.mock import patch
         from core_engine.engine import Engine
-        with patch.object(Engine, 'run_ticks', return_value=[]) as mock_run:
+        with patch.object(Engine, 'run_ticks', return_value=[]):
             resp = client.post("/engine/advance?n_ticks=1")
             assert resp.status_code == 200
             assert isinstance(resp.json(), list)
