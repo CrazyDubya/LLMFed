@@ -1,3 +1,4 @@
+import threading
 """
 LLM Abstraction Layer
 
@@ -853,13 +854,19 @@ class LLMAbstraction:
         self.config = kwargs
         self.budget = TokenBudget()
         self._provider_instance = None
+        self._provider_lock = threading.Lock()
         from core_engine.dispatcher import LLMDispatcher
         self._dispatcher = LLMDispatcher()
 
     @property
     def provider(self) -> LLMProviderBase:
         if getattr(self, "_provider_instance", None) is None:
-            self._provider_instance = self._initialize_provider()
+            with getattr(self, "_provider_lock", threading.Lock()):
+                if getattr(self, "_provider_instance", None) is None:
+                    try:
+                        self._provider_instance = self._initialize_provider()
+                    except Exception as e:
+                        raise LLMPermanentError(f"Failed to initialize provider: {e}") from e
         return self._provider_instance
 
     @provider.setter
@@ -1007,7 +1014,6 @@ class LLMAbstraction:
 # Singleton (thread-safe with double-checked locking)
 # ---------------------------------------------------------------------------
 
-import threading
 
 _default_llm: Optional[LLMAbstraction] = None
 _default_llm_lock = threading.Lock()
