@@ -52,12 +52,10 @@ async def test_llm_transient_error_fallback(monkeypatch):
     async def raise_transient(messages, **kwargs):
         raise LLMTransientError("LLM timed out")
 
-
     class DummyProvider:
         async def generate_async(self, messages, **kwargs):
             raise LLMTransientError("LLM timed out")
     engine.llm_client.provider = DummyProvider()
-
 
     engine.set_hints({})
     results = await engine.run_ticks(1)
@@ -83,12 +81,10 @@ async def test_llm_permanent_error_propagates(monkeypatch):
     async def raise_permanent(messages, **kwargs):
         raise LLMPermanentError("Invalid API key")
 
-
     class DummyProvider2:
         async def generate_async(self, messages, **kwargs):
             raise LLMPermanentError("Invalid API key")
     engine.llm_client.provider = DummyProvider2()
-
 
     engine.set_hints({})
     with pytest.raises(LLMPermanentError, match="Invalid API key"):
