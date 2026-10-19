@@ -52,7 +52,9 @@ async def test_llm_transient_error_fallback(monkeypatch):
     async def raise_transient(messages, **kwargs):
         raise LLMTransientError("LLM timed out")
 
-    monkeypatch.setattr(engine.llm_client.provider, 'generate_async', raise_transient)
+    provider = engine.llm_client._create_provider("openai")
+    engine.llm_client._provider_instance = provider
+    monkeypatch.setattr(provider, 'generate_async', raise_transient)
 
     engine.set_hints({})
     results = await engine.run_ticks(1)
@@ -78,7 +80,9 @@ async def test_llm_permanent_error_propagates(monkeypatch):
     async def raise_permanent(messages, **kwargs):
         raise LLMPermanentError("Invalid API key")
 
-    monkeypatch.setattr(engine.llm_client.provider, 'generate_async', raise_permanent)
+    provider = engine.llm_client._create_provider("openai")
+    engine.llm_client._provider_instance = provider
+    monkeypatch.setattr(provider, 'generate_async', raise_permanent)
 
     engine.set_hints({})
     with pytest.raises(LLMPermanentError, match="Invalid API key"):
