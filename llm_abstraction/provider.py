@@ -852,9 +852,19 @@ class LLMAbstraction:
         self.fallback_providers = fallback_providers or ["ollama", "openai"]
         self.config = kwargs
         self.budget = TokenBudget()
-        self.provider = self._initialize_provider()
+        self._provider_instance = None
         from core_engine.dispatcher import LLMDispatcher
         self._dispatcher = LLMDispatcher()
+
+    @property
+    def provider(self) -> LLMProviderBase:
+        if self._provider_instance is None:
+            self._provider_instance = self._initialize_provider()
+        return self._provider_instance
+
+    @provider.setter
+    def provider(self, value):
+        self._provider_instance = value
 
     def _initialize_provider(self) -> LLMProviderBase:
         if self.provider_name == "auto":
