@@ -1,3 +1,4 @@
+import threading
 """
 LLM Abstraction Layer
 
@@ -852,9 +853,25 @@ class LLMAbstraction:
         self.fallback_providers = fallback_providers or ["ollama", "openai"]
         self.config = kwargs
         self.budget = TokenBudget()
-        self.provider = self._initialize_provider()
+        self._provider_instance = None
+        self._provider_lock = threading.Lock()
         from core_engine.dispatcher import LLMDispatcher
         self._dispatcher = LLMDispatcher()
+
+    @property
+    def provider(self) -> LLMProviderBase:
+        if getattr(self, "_provider_instance", None) is None:
+            with getattr(self, "_provider_lock", threading.Lock()):
+                if getattr(self, "_provider_instance", None) is None:
+                    try:
+                        self._provider_instance = self._initialize_provider()
+                    except Exception as e:
+                        raise LLMPermanentError(f"Failed to initialize provider: {e}") from e
+        return self._provider_instance
+
+    @provider.setter
+    def provider(self, value: LLMProviderBase) -> None:
+        self._provider_instance = value
 
     def _initialize_provider(self) -> LLMProviderBase:
         if self.provider_name == "auto":
@@ -997,7 +1014,6 @@ class LLMAbstraction:
 # Singleton (thread-safe with double-checked locking)
 # ---------------------------------------------------------------------------
 
-import threading
 
 _default_llm: Optional[LLMAbstraction] = None
 _default_llm_lock = threading.Lock()
