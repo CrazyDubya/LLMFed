@@ -1,6 +1,6 @@
 fastapi>=0.100
 uvicorn[standard]
-sqlalchemy[asyncio]>=2.0.54
+sqlalchemy[asyncio]>=2.0.55
 psycopg2-binary
 asyncpg
 alembic
