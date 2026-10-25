@@ -108,9 +108,6 @@ class TestAPIKeyGeneration:
 @pytest.mark.skipif(not SECURITY_AVAILABLE, reason="security deps unavailable")
 class TestPasswordUtilities:
     def test_hash_and_verify(self):
-        try:
-            hashed = get_password_hash("mypassword")
-        except (ValueError, AttributeError):
-            pytest.skip("bcrypt/passlib version incompatibility in this environment")
+        hashed = get_password_hash("mypassword")
         assert verify_password("mypassword", hashed) is True
         assert verify_password("wrongpassword", hashed) is False
