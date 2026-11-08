@@ -23,7 +23,7 @@ dependencies = [
     "websockets",
     "rich",
     "PyJWT>=2.10,<3",
-    "passlib[bcrypt]",
+    "bcrypt",
     "python-multipart",
     "slowapi",
     "aiosqlite>=0.22.1",
