@@ -78,4 +78,4 @@ jobs:
 
       - name: Build web UI
         working-directory: web-ui
-        run: npm run build
+        run: npx tsc -b && npm run build
