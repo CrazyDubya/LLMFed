@@ -6,6 +6,7 @@ role-based access control (RBAC), and production safety checks.
 """
 
 import logging
+import hashlib
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -90,14 +91,33 @@ def validate_production_config() -> None:
 # Password utilities
 # ---------------------------------------------------------------------------
 
+def _password_digest(password: str) -> bytes:
+    """Pre-hash UTF-8 passwords to avoid bcrypt's 72-byte truncation limit."""
+    return hashlib.sha256(password.encode("utf-8")).hexdigest().encode("ascii")
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash."""
-    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+    """Verify current pre-hashed bcrypt or legacy direct bcrypt hashes."""
+    encoded_hash = hashed_password.encode("utf-8")
+    try:
+        if bcrypt.checkpw(_password_digest(plain_password), encoded_hash):
+            return True
+    except ValueError:
+        pass
+    # Legacy hashes were created from raw UTF-8 bytes and remain verifiable only
+    # for passwords within bcrypt's historical 72-byte input boundary.
+    raw = plain_password.encode("utf-8")
+    if len(raw) > 72:
+        return False
+    try:
+        return bcrypt.checkpw(raw, encoded_hash)
+    except ValueError:
+        return False
 
 
 def get_password_hash(password: str) -> str:
-    """Generate password hash."""
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    """Generate bcrypt hash over a SHA-256 digest, supporting long passwords."""
+    return bcrypt.hashpw(_password_digest(password), bcrypt.gensalt()).decode("utf-8")
 
 
 # ---------------------------------------------------------------------------

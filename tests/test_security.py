@@ -198,3 +198,19 @@ def test_token_response_model():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_password_hashing_supports_long_passwords_and_legacy_hashes():
+    import bcrypt
+    from api_gateway.security import get_password_hash, verify_password
+
+    long_password = "long-password-" * 12
+    assert len(long_password.encode("utf-8")) > 72
+    hashed = get_password_hash(long_password)
+    assert verify_password(long_password, hashed) is True
+    assert verify_password(long_password + "wrong", hashed) is False
+
+    legacy_password = "legacy-password"
+    legacy_hash = bcrypt.hashpw(legacy_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    assert verify_password(legacy_password, legacy_hash) is True
+    assert verify_password("not-the-legacy-password", legacy_hash) is False
