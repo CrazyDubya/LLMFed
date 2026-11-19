@@ -1,12 +1,13 @@
 """Tests for the match simulation engine."""
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
     GameWrestlerDB, MatchDB, MatchParticipantDB, MatchEventDB, GameFederationDB,
+    WrestlerGoalDB, WrestlerBackstoryDB,
 )
 from core_engine.match_engine import (
     MatchSimulator, MatchParticipantState, MatchResult, simulate_match_from_db,
@@ -187,6 +188,95 @@ class TestMatchSimulator:
 
 
 class TestSimulateMatchFromDB:
+    @pytest.mark.parametrize("participant_count", [2, 4])
+    @pytest.mark.parametrize("populated", [False, True])
+    def test_participant_inputs_are_batched(
+        self, db_session, monkeypatch, participant_count, populated
+    ):
+        world = create_world(db_session, "Batch inputs")
+        wrestlers = db_session.query(GameWrestlerDB).filter_by(
+            world_id=world.id
+        ).limit(participant_count).all()
+        match = MatchDB(world_id=world.id, match_type="singles")
+        db_session.add(match)
+        db_session.flush()
+        for index, wrestler in enumerate(wrestlers):
+            wrestler.morale = 0 if index == 0 else 65
+            db_session.add(MatchParticipantDB(
+                match_id=match.id, wrestler_id=wrestler.id, role="competitor",
+            ))
+        if populated:
+            for frustration, status in [(12, "active"), (73, "active"), (99, "completed")]:
+                db_session.add(WrestlerGoalDB(
+                    wrestler_id=wrestlers[0].id, goal_type="win_title",
+                    frustration=frustration, status=status,
+                ))
+            db_session.add(WrestlerBackstoryDB(
+                wrestler_id=wrestlers[0].id, real_personality={"ego": 0},
+            ))
+            db_session.add(WrestlerBackstoryDB(
+                wrestler_id=wrestlers[1].id, real_personality={"ambition": 80},
+            ))
+        db_session.flush()
+        captured = []
+
+        def simulate(self, participants):
+            captured.extend(participants)
+            return MatchResult()
+        monkeypatch.setattr(MatchSimulator, "simulate", simulate)
+        queries = []
+
+        def count_inputs(conn, cursor, statement, parameters, context, executemany):
+            if statement.startswith("SELECT") and any(
+                "FROM " + table in statement
+                for table in ("wrestler_goals", "wrestler_backstories")
+            ):
+                queries.append(statement)
+        event.listen(db_session.bind, "before_cursor_execute", count_inputs)
+        try:
+            simulate_match_from_db(db_session, match)
+        finally:
+            event.remove(db_session.bind, "before_cursor_execute", count_inputs)
+        assert len(queries) == 2
+        states = {state.wrestler_id: state for state in captured}
+        for index, wrestler in enumerate(wrestlers):
+            state = states[wrestler.id]
+            assert state._morale == (50 if index == 0 else 65)
+            assert state._frustration == (73 if populated and index == 0 else 0)
+            if populated and index < 2:
+                assert state.stats["ego"] == (0 if index == 0 else 50)
+            else:
+                assert "ego" not in state.stats
+
+    def test_optional_participant_input_failure_still_simulates(self, db_session, monkeypatch):
+        world = create_world(db_session, "Optional inputs")
+        wrestlers = db_session.query(GameWrestlerDB).filter_by(world_id=world.id).limit(2).all()
+        match = MatchDB(world_id=world.id, match_type="singles")
+        db_session.add(match)
+        db_session.flush()
+        for wrestler in wrestlers:
+            db_session.add(MatchParticipantDB(
+                match_id=match.id, wrestler_id=wrestler.id, role="competitor",
+            ))
+        db_session.flush()
+        captured = []
+
+        def simulate(self, participants):
+            captured.extend(participants)
+            return MatchResult()
+        monkeypatch.setattr(MatchSimulator, "simulate", simulate)
+
+        def fail_inputs(conn, cursor, statement, parameters, context, executemany):
+            if statement.startswith("SELECT") and "FROM wrestler_goals" in statement:
+                raise RuntimeError("Optional inputs unavailable")
+        event.listen(db_session.bind, "before_cursor_execute", fail_inputs)
+        try:
+            simulate_match_from_db(db_session, match)
+        finally:
+            event.remove(db_session.bind, "before_cursor_execute", fail_inputs)
+        assert len(captured) == 2
+        assert match.is_completed
+
     def test_simulates_and_persists(self, db_session):
         world = create_world(db_session, "Match Test World")
 
