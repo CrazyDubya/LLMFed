@@ -78,37 +78,67 @@ class TestCreateSnapshot:
 
 
 class TestRestoreSnapshot:
-    def test_branch_remaps_pending_action_json(self, db_session, world_with_data):
-        from models.game_models import UserDB, PlayerDB, PlayerActionDB, GameWrestlerDB
+    def test_branch_remaps_booking_vision_json(self, db_session, world_with_data):
+        from models.game_models import BookingVisionDB, GameFederationDB, GameWrestlerDB
 
-        user = UserDB(email="action@example.com", username="action", password_hash="unused")
+        fed = GameFederationDB(world_id=world_with_data.id, name="Vision Fed", short_name="VF")
         wrestler = GameWrestlerDB(world_id=world_with_data.id, name="Action Wrestler")
-        db_session.add_all([user, wrestler])
-        db_session.flush()
-        player = PlayerDB(user_id=user.id, world_id=world_with_data.id, player_type="wrestler")
-        db_session.add(player)
+        db_session.add_all([fed, wrestler])
         db_session.flush()
         payload = {
             "wrestler_id": wrestler.id,
             "nested": [{"target": wrestler.id}, [], {}],
             "amount": 3, "enabled": True, "optional": None, "label": "unchanged",
         }
-        action = PlayerActionDB(
-            world_id=world_with_data.id, player_id=player.id,
-            action_type="train", action_data=payload,
+        vision = BookingVisionDB(
+            world_id=world_with_data.id, federation_id=fed.id,
+            crown_jewel_vision=payload, trajectories={wrestler.id: {"direction": "rising"}},
         )
-        db_session.add(action)
+        db_session.add(vision)
         db_session.commit()
         snapshot = create_snapshot(db_session, world_with_data.id)
         result = restore_snapshot(db_session, snapshot["data"])
         restored_wrestler = db_session.query(GameWrestlerDB).filter_by(world_id=result["world_id"]).one()
-        restored_action = db_session.query(PlayerActionDB).filter_by(world_id=result["world_id"]).one()
+        restored_vision = db_session.query(BookingVisionDB).filter_by(world_id=result["world_id"]).one()
         assert restored_wrestler.id != wrestler.id
-        assert restored_action.action_data == {
+        assert restored_vision.crown_jewel_vision == {
             **payload, "wrestler_id": restored_wrestler.id,
             "nested": [{"target": restored_wrestler.id}, [], {}],
         }
-        assert action.action_data == payload
+        assert restored_vision.trajectories == {restored_wrestler.id: {"direction": "rising"}}
+        assert vision.crown_jewel_vision == payload
+
+    @pytest.mark.parametrize("branch", [True, False])
+    def test_snapshot_excludes_account_bound_rows(self, db_session, world_with_data, branch):
+        from models.game_models import UserDB, PlayerDB, PlayerActionDB
+
+        db_session.execute(text("PRAGMA foreign_keys=ON"))
+        user = UserDB(email="portable@example.com", username="portable", password_hash="unused")
+        db_session.add(user)
+        db_session.flush()
+        player = PlayerDB(user_id=user.id, world_id=world_with_data.id, player_type="promoter")
+        db_session.add(player)
+        db_session.flush()
+        action = PlayerActionDB(
+            world_id=world_with_data.id, player_id=player.id, action_type="train", action_data={},
+        )
+        db_session.add(action)
+        db_session.commit()
+        snapshot = create_snapshot(db_session, world_with_data.id)
+        tables = json.loads(gzip.decompress(snapshot["data"]))["tables"]
+        assert "players" not in tables
+        assert "player_actions" not in tables
+        if branch:
+            db_session.delete(action)
+            db_session.delete(player)
+            db_session.flush()
+            db_session.delete(user)
+            db_session.commit()
+            assert db_session.query(UserDB).count() == 0
+        result = restore_snapshot(db_session, snapshot["data"], create_new_world=branch)
+        assert db_session.query(WorldDB).filter_by(id=result["world_id"]).one()
+        assert db_session.query(PlayerDB).count() == (0 if branch else 1)
+        assert db_session.query(PlayerActionDB).count() == (0 if branch else 1)
 
     @pytest.mark.parametrize("branch", [True, False])
     def test_restores_stats_segments_and_participants(self, db_session, world_with_data, branch):

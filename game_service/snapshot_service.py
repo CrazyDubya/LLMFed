@@ -129,6 +129,8 @@ def _model_classes_by_table() -> Dict[str, Any]:
     owned = {WorldDB.__tablename__}
     result = {}
     for table in Base.metadata.sorted_tables:
+        if table.name in {"players", "player_actions"}:
+            continue
         if (table.name in owned or "world_id" in table.c
                 or any(fk.column.table.name in owned for fk in table.foreign_keys)):
             owned.add(table.name)
@@ -185,7 +187,7 @@ def restore_snapshot(
 
     def _remap(value):
         if isinstance(value, dict):
-            return {key: _remap(item) for key, item in value.items()}
+            return {_remap(key): _remap(item) for key, item in value.items()}
         if isinstance(value, list):
             return [_remap(item) for item in value]
         if isinstance(value, str) and value in id_map:
