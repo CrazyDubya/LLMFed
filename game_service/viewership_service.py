@@ -8,9 +8,11 @@ wrestler popularity, card quality, rivalries, and momentum.
 
 import logging
 import random
+from collections import defaultdict
+from dataclasses import dataclass
 from typing import List, Tuple
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from models.game_models import (
@@ -27,11 +29,71 @@ from models.game_models import (
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class ShowDrawContext:
+    """Draw inputs loaded after match aftermath, valid for one show only."""
+
+    segments: list
+    matches: dict
+    participants: dict
+    wrestlers: dict
+    title_counts: dict
+    high_rivalry_ids: set
+    rivalry_pairs: set
+
+
+def load_show_draw_context(db: Session, show: ShowDB) -> ShowDrawContext:
+    segments = db.query(ShowSegmentDB).filter(
+        ShowSegmentDB.show_id == show.id,
+        ShowSegmentDB.segment_type == "match",
+        ShowSegmentDB.match_id.isnot(None),
+    ).order_by(ShowSegmentDB.position).all()
+    match_ids = {s.match_id for s in segments}
+    matches = {m.id: m for m in db.query(MatchDB).filter(
+        MatchDB.id.in_(match_ids),
+    ).all()} if match_ids else {}
+    participants = defaultdict(list)
+    if match_ids:
+        for p in db.query(MatchParticipantDB).filter(
+            MatchParticipantDB.match_id.in_(match_ids),
+        ).all():
+            participants[p.match_id].append(p)
+    wrestler_ids = {p.wrestler_id for ps in participants.values() for p in ps}
+    wrestlers = {}
+    title_counts = {}
+    high_rivalry_ids = set()
+    rivalry_pairs = set()
+    if wrestler_ids:
+        wrestlers = {w.id: w for w in db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.id.in_(wrestler_ids),
+        ).all()}
+        title_counts = dict(db.query(
+            ChampionshipDB.current_holder_id, func.count(ChampionshipDB.id),
+        ).filter(
+            ChampionshipDB.current_holder_id.in_(wrestler_ids),
+            ChampionshipDB.is_active.is_(True),
+        ).group_by(ChampionshipDB.current_holder_id).all())
+        relationships = db.query(WrestlerRelationshipDB).filter(
+            or_(WrestlerRelationshipDB.wrestler1_id.in_(wrestler_ids),
+                WrestlerRelationshipDB.wrestler2_id.in_(wrestler_ids)),
+            WrestlerRelationshipDB.rivalry_heat > 30,
+        ).all()
+        for rel in relationships:
+            pair = (rel.wrestler1_id, rel.wrestler2_id)
+            rivalry_pairs.add(frozenset(pair))
+            if rel.rivalry_heat > 50:
+                high_rivalry_ids.update(pair)
+    return ShowDrawContext(segments, matches, participants, wrestlers,
+                           title_counts, high_rivalry_ids, rivalry_pairs)
+
+
 # ---------------------------------------------------------------------------
 # 1. Wrestler draw rating
 # ---------------------------------------------------------------------------
 
-def calculate_wrestler_draw(db: Session, wrestler_id: str) -> float:
+def calculate_wrestler_draw(
+    db: Session, wrestler_id: str, context: ShowDrawContext = None,
+) -> float:
     """Return a draw rating (0-100) representing how many fans a wrestler brings.
 
     Factors:
@@ -41,9 +103,10 @@ def calculate_wrestler_draw(db: Session, wrestler_id: str) -> float:
       - Loss streak penalty (capped at -15)
       - High rivalry heat bonus (+5)
     """
-    wrestler = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.id == wrestler_id,
-    ).first()
+    wrestler = (
+        context.wrestlers.get(wrestler_id) if context is not None
+        else db.query(GameWrestlerDB).filter(GameWrestlerDB.id == wrestler_id).first()
+    )
     if wrestler is None:
         logger.warning("calculate_wrestler_draw: wrestler %s not found", wrestler_id)
         return 0.0
@@ -51,10 +114,13 @@ def calculate_wrestler_draw(db: Session, wrestler_id: str) -> float:
     draw = float(wrestler.popularity)
 
     # Title bonus: +10 per active championship held
-    titles_held = db.query(ChampionshipDB).filter(
-        ChampionshipDB.current_holder_id == wrestler_id,
-        ChampionshipDB.is_active.is_(True),
-    ).count()
+    titles_held = (
+        context.title_counts.get(wrestler_id, 0) if context is not None
+        else db.query(ChampionshipDB).filter(
+            ChampionshipDB.current_holder_id == wrestler_id,
+            ChampionshipDB.is_active.is_(True),
+        ).count()
+    )
     draw += titles_held * 10
 
     # Win/loss streak
@@ -65,14 +131,17 @@ def calculate_wrestler_draw(db: Session, wrestler_id: str) -> float:
         draw += max(streak * 3, -15)  # streak is negative, so this subtracts
 
     # Rivalry heat bonus: +5 if any relationship has rivalry_heat > 50
-    high_rivalry = db.query(WrestlerRelationshipDB).filter(
-        or_(
-            WrestlerRelationshipDB.wrestler1_id == wrestler_id,
-            WrestlerRelationshipDB.wrestler2_id == wrestler_id,
-        ),
-        WrestlerRelationshipDB.rivalry_heat > 50,
-    ).first()
-    if high_rivalry is not None:
+    high_rivalry = (
+        wrestler_id in context.high_rivalry_ids if context is not None
+        else db.query(WrestlerRelationshipDB).filter(
+            or_(
+                WrestlerRelationshipDB.wrestler1_id == wrestler_id,
+                WrestlerRelationshipDB.wrestler2_id == wrestler_id,
+            ),
+            WrestlerRelationshipDB.rivalry_heat > 50,
+        ).first()
+    )
+    if high_rivalry:
         draw += 5
 
     draw = max(0.0, min(100.0, draw))
@@ -83,23 +152,18 @@ def calculate_wrestler_draw(db: Session, wrestler_id: str) -> float:
 # 2. Card drawing power
 # ---------------------------------------------------------------------------
 
-def calculate_card_draw(db: Session, show: ShowDB) -> float:
+def calculate_card_draw(
+    db: Session, show: ShowDB, context: ShowDrawContext = None,
+) -> float:
     """Return overall card drawing power on a 0-100 scale.
 
     - Main event (last match) wrestlers are weighted 2x.
     - Title matches apply a 1.3x multiplier on participant draw ratings.
     - A +5 bonus is added if any match features opponents with rivalry_heat > 30.
     """
-    match_segments: List[ShowSegmentDB] = (
-        db.query(ShowSegmentDB)
-        .filter(
-            ShowSegmentDB.show_id == show.id,
-            ShowSegmentDB.segment_type == "match",
-            ShowSegmentDB.match_id.isnot(None),
-        )
-        .order_by(ShowSegmentDB.position)
-        .all()
-    )
+    if context is None:
+        context = load_show_draw_context(db, show)
+    match_segments = context.segments
 
     if not match_segments:
         logger.debug("calculate_card_draw: no match segments for show %s", show.id)
@@ -110,15 +174,11 @@ def calculate_card_draw(db: Session, show: ShowDB) -> float:
     rivalry_bonus = False
 
     for seg in match_segments:
-        match = db.query(MatchDB).filter(MatchDB.id == seg.match_id).first()
+        match = context.matches.get(seg.match_id)
         if match is None:
             continue
 
-        participants = (
-            db.query(MatchParticipantDB)
-            .filter(MatchParticipantDB.match_id == match.id)
-            .all()
-        )
+        participants = context.participants[match.id]
 
         is_main_event = seg.id == last_segment.id
         is_title = bool(match.is_title_match)
@@ -128,23 +188,14 @@ def calculate_card_draw(db: Session, show: ShowDB) -> float:
         participant_ids = [p.wrestler_id for p in participants]
 
         for p in participants:
-            draw = calculate_wrestler_draw(db, p.wrestler_id)
+            draw = calculate_wrestler_draw(db, p.wrestler_id, context)
             weighted_draws.append(draw * weight * title_mult)
 
         # Check rivalry heat between any pair of participants in this match
         if len(participant_ids) >= 2 and not rivalry_bonus:
             for i in range(len(participant_ids)):
                 for j in range(i + 1, len(participant_ids)):
-                    rel = db.query(WrestlerRelationshipDB).filter(
-                        or_(
-                            (WrestlerRelationshipDB.wrestler1_id == participant_ids[i])
-                            & (WrestlerRelationshipDB.wrestler2_id == participant_ids[j]),
-                            (WrestlerRelationshipDB.wrestler1_id == participant_ids[j])
-                            & (WrestlerRelationshipDB.wrestler2_id == participant_ids[i]),
-                        ),
-                        WrestlerRelationshipDB.rivalry_heat > 30,
-                    ).first()
-                    if rel is not None:
+                    if frozenset((participant_ids[i], participant_ids[j])) in context.rivalry_pairs:
                         rivalry_bonus = True
                         break
                 if rivalry_bonus:
@@ -162,10 +213,9 @@ def calculate_card_draw(db: Session, show: ShowDB) -> float:
         from game_service.social_media_service import get_viral_buzz_bonus
         all_wrestler_ids = []
         for seg in match_segments:
-            match = db.query(MatchDB).filter(MatchDB.id == seg.match_id).first()
+            match = context.matches.get(seg.match_id)
             if match:
-                pids = [p.wrestler_id for p in db.query(MatchParticipantDB).filter(
-                    MatchParticipantDB.match_id == match.id).all()]
+                pids = [p.wrestler_id for p in context.participants[match.id]]
                 all_wrestler_ids.extend(pids)
         if all_wrestler_ids:
             buzz = get_viral_buzz_bonus(db, show.world_id, show.game_date, all_wrestler_ids)
@@ -180,7 +230,10 @@ def calculate_card_draw(db: Session, show: ShowDB) -> float:
 # 3. TV rating
 # ---------------------------------------------------------------------------
 
-def calculate_tv_rating(db: Session, show: ShowDB, fed: GameFederationDB) -> float:
+def calculate_tv_rating(
+    db: Session, show: ShowDB, fed: GameFederationDB,
+    context: ShowDrawContext = None,
+) -> float:
     """Calculate a realistic TV rating (roughly 0.3 - 5.0+).
 
     Components:
@@ -190,7 +243,7 @@ def calculate_tv_rating(db: Session, show: ShowDB, fed: GameFederationDB) -> flo
       - Recent show quality trend (last 4 shows)
       - Small random variance
     """
-    card_draw = calculate_card_draw(db, show)
+    card_draw = calculate_card_draw(db, show, context)
 
     base = fed.prestige / 35.0
     card_factor = (card_draw / 100.0) * 0.6

@@ -165,7 +165,8 @@ def simulate_show(
 
     # --- Viewership model ---
     vs = _get_viewership_service()
-    card_draw = vs.calculate_card_draw(db, show)
+    draw_context = vs.load_show_draw_context(db, show)
+    card_draw = vs.calculate_card_draw(db, show, draw_context)
 
     # Attendance & gate revenue
     attendance, ticket_price, gate = vs.calculate_attendance(
@@ -176,7 +177,7 @@ def simulate_show(
 
     # TV rating (weekly shows only)
     if show.show_type == "weekly" and fed:
-        show.tv_rating = vs.calculate_tv_rating(db, show, fed)
+        show.tv_rating = vs.calculate_tv_rating(db, show, fed, draw_context)
 
     # PPV buys
     if fed:
@@ -212,14 +213,10 @@ def simulate_show(
     # Update wrestler draw ratings for everyone on the card
     for seg in segments:
         if seg.segment_type == "match" and seg.match_id:
-            participants = db.query(MatchParticipantDB).filter(
-                MatchParticipantDB.match_id == seg.match_id
-            ).all()
+            participants = draw_context.participants[seg.match_id]
             for p in participants:
-                new_draw = vs.calculate_wrestler_draw(db, p.wrestler_id)
-                wrestler = db.query(GameWrestlerDB).filter(
-                    GameWrestlerDB.id == p.wrestler_id
-                ).first()
+                new_draw = vs.calculate_wrestler_draw(db, p.wrestler_id, draw_context)
+                wrestler = draw_context.wrestlers.get(p.wrestler_id)
                 if wrestler:
                     wrestler.draw_rating = round(new_draw, 1)
 
