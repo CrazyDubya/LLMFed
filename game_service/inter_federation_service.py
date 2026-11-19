@@ -62,15 +62,31 @@ def update_federation_momentum(db: Session, world: WorldDB, events: List[str],
         GameFederationDB.is_active,
     ).all()
 
+    fed_ids = [fed.id for fed in feds]
+    shows_by_fed = {}
+    for show in db.query(ShowDB).filter(
+        ShowDB.federation_id.in_(fed_ids),
+        ShowDB.is_completed,
+        ShowDB.game_date == game_date,
+    ).all():
+        shows_by_fed.setdefault(show.federation_id, show)
+
+    roster_ids = {fed.id: set() for fed in feds}
+    for contract in db.query(ContractDB).filter(
+        ContractDB.federation_id.in_(fed_ids),
+        ContractDB.status == "active",
+    ).all():
+        roster_ids[contract.federation_id].add(contract.wrestler_id)
+    wrestler_ids = {wid for roster in roster_ids.values() for wid in roster}
+    wrestlers_by_id = {w.id: w for w in db.query(GameWrestlerDB).filter(
+        GameWrestlerDB.id.in_(wrestler_ids),
+    ).all()}
+
     for fed in feds:
         momentum = fed.momentum or 50
 
         # Recent show quality (check last show)
-        last_show = db.query(ShowDB).filter(
-            ShowDB.federation_id == fed.id,
-            ShowDB.is_completed,
-            ShowDB.game_date == game_date,
-        ).first()
+        last_show = shows_by_fed.get(fed.id)
 
         if last_show and last_show.overall_rating:
             if last_show.overall_rating >= 4.0:
@@ -81,19 +97,12 @@ def update_federation_momentum(db: Session, world: WorldDB, events: List[str],
                 momentum -= 2
 
         # Roster morale check
-        contracts = db.query(ContractDB).filter(
-            ContractDB.federation_id == fed.id,
-            ContractDB.status == "active",
-        ).all()
-        if contracts:
-            wrestler_ids = [c.wrestler_id for c in contracts]
-            wrestlers = db.query(GameWrestlerDB).filter(
-                GameWrestlerDB.id.in_(wrestler_ids),
-            ).all()
-            if wrestlers:
-                avg_morale = sum(w.morale for w in wrestlers) / len(wrestlers)
-                if avg_morale < 40:
-                    momentum -= 3  # Scandal/low morale
+        wrestlers = [wrestlers_by_id[wid] for wid in roster_ids[fed.id]
+                     if wid in wrestlers_by_id]
+        if wrestlers:
+            avg_morale = sum(w.morale for w in wrestlers) / len(wrestlers)
+            if avg_morale < 40:
+                momentum -= 3  # Scandal/low morale
 
         # Natural regression toward 50
         if momentum > 50:

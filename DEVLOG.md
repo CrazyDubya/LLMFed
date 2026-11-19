@@ -4,6 +4,8 @@ Notable changes between commits. Supplement git history with a short note here w
 
 ---
 
+- **Federation momentum:** Batch daily show, contract and wrestler reads across federations while preserving first-show selection and de-duplicated roster morale.
+
 - **Daily social posts:** Load gimmicks, backstories, active contracts and federations once per daily tick, on the first post, instead of per posting wrestler; post content and RNG order are unchanged.
 
 - **Friday persona tick:** Batch persona reads for each world while preserving lazy backstory creation and the order of life-event effects and collision rolls.
