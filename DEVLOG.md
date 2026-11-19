@@ -4,6 +4,8 @@ Notable changes between commits. Supplement git history with a short note here w
 
 ---
 
+- **Snapshot restore:** Preserve all world-owned tables, scope child rows through their parents, and restore in foreign-key dependency order without silently swallowing serialization errors.
+
 - **Weekly conditioning:** Batch active-wrestler stats and recent match counts per world; retain standalone conditioning lookups. Added constant-query regression coverage and a seeded 28-day parity benchmark (`scripts/benchmark_weekly_conditioning.py`).
 
 - **Daily social posts:** Load gimmicks, backstories, active contracts and federations once per daily tick, on the first post, instead of per posting wrestler; post content and RNG order are unchanged.

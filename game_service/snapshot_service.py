@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
-from sqlalchemy import inspect
+from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -42,8 +42,6 @@ def _serialize_table(db: Session, model_cls, world_id: str) -> List[Dict[str, An
 
 def _world_scope(table, world_id: str):
     """Scope child tables through their owning parent, not incidental links."""
-    from sqlalchemy import select
-
     if "world_id" in table.c:
         return table.c.world_id == world_id
     parent_columns = {
@@ -54,6 +52,8 @@ def _world_scope(table, world_id: str):
         "match_events": "match_id", "championship_history": "championship_id",
         "storyline_participants": "storyline_id", "stable_members": "stable_id",
     }
+    if table.name not in parent_columns:
+        raise ValueError(f"No world-scoping parent configured for table '{table.name}'")
     column = table.c[parent_columns[table.name]]
     parent = next(iter(column.foreign_keys)).column
     return column.in_(select(parent).where(_world_scope(parent.table, world_id)))

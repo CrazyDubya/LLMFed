@@ -126,6 +126,14 @@ class TestRestoreSnapshot:
         with pytest.raises(RuntimeError, match="broken scope"):
             create_snapshot(db_session, world_with_data.id)
 
+    def test_unconfigured_child_scope_names_table(self):
+        from sqlalchemy import Column, Integer, MetaData, Table
+        from game_service.snapshot_service import _world_scope
+
+        table = Table("unconfigured_child", MetaData(), Column("id", Integer, primary_key=True))
+        with pytest.raises(ValueError, match="No world-scoping parent configured for table 'unconfigured_child'"):
+            _world_scope(table, "world-id")
+
     @pytest.mark.parametrize("branch", [True, False])
     def test_all_world_owned_tables_round_trip(self, db_session, world_with_data, branch):
         from sqlalchemy import Integer, Float, Boolean, String, DateTime
