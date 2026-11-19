@@ -261,7 +261,11 @@ def api_generate_promo(
     db: Session = Depends(get_db_sync),
 ):
     """Generate or submit a promo for a wrestler."""
-    world = get_world(db, world_id)
+    try:
+        world = get_world(db, world_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
     try:
         promo = svc_generate_promo(
             db, world_id, data.wrestler_id,
