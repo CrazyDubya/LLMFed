@@ -258,7 +258,7 @@ def fed_roster(federation_id: str = typer.Argument(..., help="Federation ID")):
         for w in wrestlers:
             table.add_row(
                 getattr(w, "real_name", "?"),
-                w.ring_name,
+                w.name,
                 getattr(w, "alignment", "?"),
                 str(getattr(w, "overall_rating", "?")),
             )

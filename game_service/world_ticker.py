@@ -953,7 +953,7 @@ class WorldTicker:
         )
         from game_service.wrestler_lifecycle_service import (
             update_locker_room_dynamics, auto_assign_mentors,
-            update_conditioning, update_public_perception,
+            update_conditioning, update_public_perception, load_conditioning_data,
         )
 
         wrestlers = get_active_wrestlers(self.db, self.world.id)
@@ -972,8 +972,9 @@ class WorldTicker:
             if fed.is_npc:
                 auto_assign_mentors(self.db, fed, game_date)
 
+        conditioning_data = load_conditioning_data(self.db, self.world.id, game_date)
         for w in wrestlers:
-            update_conditioning(self.db, w, game_date)
+            update_conditioning(self.db, w, game_date, conditioning_data=conditioning_data)
 
     def _lifecycle_daily_ring_rust(self, game_date: str):
         """Daily ring rust tracking — days since last booked."""

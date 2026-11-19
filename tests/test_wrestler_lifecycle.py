@@ -19,7 +19,7 @@ from models.game_models import (
     WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
     ContractDB, ChampionshipDB, ChampionshipHistoryDB,
     MatchDB, MatchParticipantDB, WrestlerPushDB, WrestlerGoalDB, WrestlerHistoryDB,
-    MentorshipDB, CareerHighlightDB,
+    MentorshipDB, CareerHighlightDB, ShowDB, ShowSegmentDB,
 )
 
 
@@ -628,6 +628,65 @@ class TestLegacy:
 # ===========================================================================
 
 class TestPhysicalIdentity:
+    @pytest.mark.parametrize("autoflush", [False, True])
+    @pytest.mark.parametrize("size", [0, 1, 12])
+    @pytest.mark.parametrize("game_date", ["2026-06-18", "invalid", None])
+    def test_conditioning_batch_matches_individual_with_two_selects(
+        self, db, world, federation, autoflush, size, game_date,
+    ):
+        from game_service.wrestler_lifecycle_service import load_conditioning_data, update_conditioning
+
+        wrestlers = [_make_wrestler(db, world, name=f"Worker {i}") for i in range(size)]
+        retired = _make_wrestler(db, world, is_active=False)
+        other_world = WorldDB(name="Other")
+        db.add(other_world)
+        db.flush()
+        outsider = _make_wrestler(db, other_world)
+        stats = {w.id: db.query(WrestlerStatsDB).filter_by(wrestler_id=w.id).one()
+                 for w in wrestlers}
+        for i, w in enumerate(wrestlers):
+            w.is_injured = i % 3 == 0
+            stats[w.id].conditioning_level = [0, 99, 1][i % 3]
+            for date, completed in [("2026-06-11", True), ("2026-06-18", True),
+                                    ("2026-06-10", True), ("2026-06-19", True),
+                                    ("2026-06-15", False)][:i % 6]:
+                show = ShowDB(world_id=world.id, federation_id=federation.id, name="Show", game_date=date)
+                match = MatchDB(world_id=world.id, is_completed=completed)
+                db.add_all([show, match])
+                db.flush()
+                db.add(MatchParticipantDB(match_id=match.id, wrestler_id=w.id))
+                # Preserve COUNT(*) semantics when a match is linked more than once.
+                db.add_all([ShowSegmentDB(show_id=show.id, match_id=match.id, position=n, segment_type="match")
+                            for n in range(2)])
+        if wrestlers:
+            db.delete(stats.pop(wrestlers[-1].id))
+        db.flush()
+        db.autoflush = autoflush
+        original = {key: row.conditioning_level for key, row in stats.items()}
+        for w in wrestlers:
+            update_conditioning(db, w, game_date)
+        expected = {key: row.conditioning_level for key, row in stats.items()}
+        for key, row in stats.items():
+            row.conditioning_level = original[key]
+        db.flush()
+        selects = []
+
+        def count_sql(conn, cursor, statement, parameters, context, executemany):
+            if statement.startswith("SELECT"):
+                selects.append(statement)
+
+        event.listen(db.bind, "before_cursor_execute", count_sql)
+        try:
+            data = load_conditioning_data(db, world.id, game_date)
+            for w in wrestlers:
+                update_conditioning(db, w, game_date, conditioning_data=data)
+        finally:
+            event.remove(db.bind, "before_cursor_execute", count_sql)
+        assert len(selects) == (2 if game_date == "2026-06-18" else 1)
+        assert {key: row.conditioning_level for key, row in stats.items()} == expected
+        assert retired.id not in data[0]
+        assert outsider.id not in data[0]
+
     def test_body_type_derived(self):
         from game_service.wrestler_lifecycle_service import derive_body_type
         assert derive_body_type(180, 75) == "cruiserweight"
