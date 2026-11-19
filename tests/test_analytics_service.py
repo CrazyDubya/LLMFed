@@ -74,6 +74,21 @@ def world_with_matches(db_session):
 
 
 class TestAnalyticsRoutes:
+    def test_federation_health_reports_budget_as_balance(self, analytics_client, db_session):
+        world = WorldDB(name="Analytics World")
+        db_session.add(world)
+        db_session.flush()
+        federation = GameFederationDB(world_id=world.id, name="Analytics Federation", budget=12345.67)
+        db_session.add(federation)
+        db_session.commit()
+
+        response = analytics_client.get(
+            f"/game/analytics/world/{world.id}/federation/{federation.id}"
+        )
+
+        assert response.status_code == 200
+        assert response.json()["balance"] == 12345.67
+
     def test_leaderboard_with_matches(self, analytics_client, world_with_matches):
         world, winner, loser, _ = world_with_matches
         response = analytics_client.get(f"/game/analytics/world/{world.id}/leaderboard")
