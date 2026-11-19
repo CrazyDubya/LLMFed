@@ -60,11 +60,14 @@ def main():
             phase = "outside"
 
     randint = random.randint
-    with patch("uuid.uuid4", side_effect=lambda: uuid.UUID(int=ids.getrandbits(128))), patch(
-        "game_service.world_service.random.randint",
-        side_effect=lambda a, b: 120 if (a, b) == (30, 50) else randint(a, b),
-    ), patch.object(WorldTicker, "_simulate_shows", shows):
-        world = create_world(db, "Profiling world")
+    with patch("uuid.uuid4", side_effect=lambda: uuid.UUID(int=ids.getrandbits(128))), patch.object(
+        WorldTicker, "_simulate_shows", shows,
+    ):
+        with patch(
+            "game_service.world_service.random.randint",
+            side_effect=lambda a, b: 120 if (a, b) == (30, 50) else randint(a, b),
+        ):
+            world = create_world(db, "Profiling world")
         ticker = WorldTicker(db, world.id)
         event.listen(engine, "before_cursor_execute", sql)
         start = time.perf_counter()
