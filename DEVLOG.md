@@ -4,6 +4,8 @@ Notable changes between commits. Supplement git history with a short note here w
 
 ---
 
+- **Locker room dynamics:** Batch roster stats in one query per federation, preserving missing-row skips and first-returned stats for duplicate rows.
+
 - **Engine debug endpoint:** Inspect database tables through an async connection so debug mode returns the schema and engine state instead of HTTP 500.
 
 - **Weekly conditioning:** Batch active-wrestler stats and recent match counts per world; retain standalone conditioning lookups. Added constant-query regression coverage and a seeded 28-day parity benchmark (`scripts/benchmark_weekly_conditioning.py`).

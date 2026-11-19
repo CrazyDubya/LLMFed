@@ -6,7 +6,7 @@ Extracted from wrestler_lifecycle_service.py.
 
 import logging
 import random
-from typing import List, Optional
+from typing import List
 
 from sqlalchemy.orm import Session
 
@@ -26,13 +26,6 @@ from game_service.lifecycle_constants import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _get_wrestler_stats(db: Session, wrestler_id: str) -> Optional[WrestlerStatsDB]:
-    """Fetch a wrestler's stats row (returns None if missing)."""
-    return db.query(WrestlerStatsDB).filter(
-        WrestlerStatsDB.wrestler_id == wrestler_id
-    ).first()
 
 
 def _active_roster_ids(db: Session, federation_id: str) -> List[str]:
@@ -67,12 +60,20 @@ def update_locker_room_dynamics(db: Session, federation: GameFederationDB, game_
         GameWrestlerDB.id.in_(wrestler_ids),
         GameWrestlerDB.is_active,
     ).all()
+    if not wrestlers:
+        return
+
+    stats_by_wrestler = {}
+    for stats in db.query(WrestlerStatsDB).filter(
+        WrestlerStatsDB.wrestler_id.in_([w.id for w in wrestlers]),
+    ).all():
+        stats_by_wrestler.setdefault(stats.wrestler_id, stats)
 
     leaders = []
     toxic_count = 0
 
     for w in wrestlers:
-        stats = _get_wrestler_stats(db, w.id)
+        stats = stats_by_wrestler.get(w.id)
         if not stats:
             continue
 
