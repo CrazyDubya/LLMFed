@@ -76,8 +76,7 @@ def api_list_storylines(
 
     results = []
     for sl in storylines:
-        sl_dict = StorylineResponse.model_validate(sl)
-        sl_dict.participants = [
+        participants = [
             {
                 "wrestler_id": p.wrestler_id,
                 "wrestler_name": names.get(p.wrestler_id, "Unknown"),
@@ -85,7 +84,18 @@ def api_list_storylines(
             }
             for p in parts_by_storyline.get(sl.id, [])
         ]
-        results.append(sl_dict)
+        results.append(StorylineResponse(
+            id=sl.id,
+            world_id=sl.world_id,
+            federation_id=sl.federation_id,
+            name=sl.name,
+            storyline_type=sl.storyline_type,
+            status=sl.status,
+            description=sl.description,
+            heat=sl.heat,
+            start_date=sl.start_date,
+            participants=participants,
+        ))
     return results
 
 
