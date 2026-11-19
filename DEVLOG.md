@@ -4,6 +4,8 @@ Notable changes between commits. Supplement git history with a short note here w
 
 ---
 
+- **Live feed:** Send Web UI heartbeats every 25 seconds and clear their timers on disconnect and cleanup; add fake-timer hook regression tests.
+
 - **Snapshot restore:** Preserve all world-owned tables, scope child rows through their parents, and restore in foreign-key dependency order without silently swallowing serialization errors.
 
 - **Locker room dynamics:** Batch roster stats in one query per federation, preserving missing-row skips and first-returned stats for duplicate rows.
