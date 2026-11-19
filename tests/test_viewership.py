@@ -6,7 +6,7 @@ and federation fanbase updates.
 """
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
@@ -111,6 +111,57 @@ def _create_show_with_card(db, fed, w1, w2, show_type="weekly", **kw):
 # =========================================================================
 # Wrestler Draw Rating
 # =========================================================================
+
+@pytest.mark.parametrize("match_count", [0, 1, 8])
+def test_show_draw_queries_are_bounded(db_session, match_count):
+    from game_service.viewership_service import (
+        calculate_card_draw, calculate_wrestler_draw, load_show_draw_context,
+    )
+
+    _create_world(db_session)
+    fed = _create_fed(db_session)
+    w1 = _create_wrestler(db_session, popularity=25, win_streak=3)
+    w2 = _create_wrestler(db_session, popularity=35, win_streak=-2)
+    outsider = _create_wrestler(db_session)
+    show, match = _create_show_with_card(db_session, fed, w1, w2)
+    db_session.query(ShowSegmentDB).filter_by(show_id=show.id).delete()
+    for position in range(match_count):
+        db_session.add(ShowSegmentDB(
+            show_id=show.id, match_id=match.id, segment_type="match", position=position,
+        ))
+    for active in (True, False):
+        db_session.add(ChampionshipDB(
+            world_id="world1", federation_id=fed.id, name="Title", is_active=active,
+            current_holder_id=w1.id,
+        ))
+    db_session.add_all([
+        WrestlerRelationshipDB(world_id="world1", wrestler1_id=w1.id,
+                              wrestler2_id=w2.id, rivalry_heat=40),
+        WrestlerRelationshipDB(world_id="world1", wrestler1_id=outsider.id,
+                              wrestler2_id=w1.id, rivalry_heat=60),
+    ])
+    db_session.flush()
+    expected = {w.id: calculate_wrestler_draw(db_session, w.id) for w in (w1, w2)}
+    queries = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        queries.append(statement)
+
+    event.listen(db_session.bind, "before_cursor_execute", record)
+    try:
+        context = load_show_draw_context(db_session, show)
+        draw = calculate_card_draw(db_session, show, context)
+        if match_count:
+            for wid, value in expected.items():
+                assert calculate_wrestler_draw(db_session, wid, context) == value
+            assert draw == (sum(expected.values()) / 2) * (match_count + 1) / match_count + 5
+        else:
+            assert draw == 0
+        assert calculate_wrestler_draw(db_session, "missing", context) == 0
+    finally:
+        event.remove(db_session.bind, "before_cursor_execute", record)
+    assert len(queries) <= 7
+
 
 class TestWrestlerDraw:
     def test_base_draw_equals_popularity(self, db_session):
