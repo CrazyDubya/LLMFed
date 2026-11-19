@@ -79,3 +79,7 @@ jobs:
       - name: Build web UI
         working-directory: web-ui
         run: npm run build
+
+      - name: Test web UI
+        working-directory: web-ui
+        run: npm test
