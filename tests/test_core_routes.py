@@ -258,3 +258,14 @@ class TestEngineRoutes:
     def test_engine_debug_disabled_by_default(self):
         resp = client.get("/engine/debug")
         assert resp.status_code == 404
+
+    def test_engine_debug_returns_tables_and_state_when_enabled(self, monkeypatch):
+        monkeypatch.setenv("DEBUG_MODE", "true")
+
+        resp = client.get("/engine/debug")
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert {"agents", "engine_requests"}.issubset(body["tables"])
+        assert body["engine_state"]["current_tick"] == app.state.engine.state.current_tick
+        assert isinstance(body["engine_state"]["pending_requests"], int)
