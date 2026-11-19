@@ -11,14 +11,14 @@ Group 6: Physical Identity, Match Specialization, Conditioning
 
 import random
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
     WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
     ContractDB, ChampionshipDB, ChampionshipHistoryDB,
-    MatchDB, MatchParticipantDB, WrestlerPushDB, WrestlerGoalDB,
+    MatchDB, MatchParticipantDB, WrestlerPushDB, WrestlerGoalDB, WrestlerHistoryDB,
     MentorshipDB, CareerHighlightDB,
 )
 
@@ -307,6 +307,58 @@ class TestCareerGoals:
         old_morale = w.morale
         evaluate_goals(db, w, "2026-06-15")
         assert w.morale < old_morale  # Low satisfaction drags morale
+
+    @pytest.mark.parametrize("autoflush", [False, True])
+    def test_thursday_loads_goals_once_without_changing_progress(self, db, world, autoflush):
+        from game_service.world_ticker import WorldTicker
+
+        veteran = _make_wrestler(
+            db, world, name="Veteran", popularity=65, morale=55,
+            career_goals=["earn_respect", "prove_myself"],
+        )
+        rookie = _make_wrestler(
+            db, world, name="Rookie", popularity=65, career_goals=["prove_myself"],
+        )
+        retired = _make_wrestler(db, world, is_active=False)
+        other_world = WorldDB(name="Other world")
+        db.add(other_world)
+        db.flush()
+        outsider = _make_wrestler(db, other_world)
+        blocked = WrestlerGoalDB(wrestler_id=rookie.id, goal_type="unmet", frustration=91)
+        excluded = [WrestlerGoalDB(wrestler_id=w.id, goal_type="unmet") for w in (retired, outsider)]
+        db.add_all([
+            WrestlerGoalDB(wrestler_id=veteran.id, goal_type="prove_myself"),
+            WrestlerGoalDB(wrestler_id=veteran.id, goal_type="earn_respect"),
+            WrestlerGoalDB(wrestler_id=rookie.id, goal_type="prove_myself", status="completed"),
+            blocked, *excluded,
+        ])
+        db.flush()
+        db.autoflush = autoflush
+        ticker = WorldTicker(db, world.id)
+        goal_selects = []
+
+        def count_goals(conn, cursor, statement, parameters, context, executemany):
+            if statement.startswith("SELECT") and "FROM wrestler_goals" in statement:
+                goal_selects.append(statement)
+
+        event.listen(db.bind, "before_cursor_execute", count_goals)
+        try:
+            ticker._lifecycle_weekly("2026-06-18")
+        finally:
+            event.remove(db.bind, "before_cursor_execute", count_goals)
+        db.flush()
+
+        expected = ["Veteran achieved: prove_myself", "Veteran achieved: earn_respect"]
+        if autoflush:
+            expected.append("Rookie achieved: prove_myself")
+        assert ticker.events == expected
+        assert db.query(WrestlerHistoryDB).filter_by(event_type="goal_completed").count() == len(expected)
+        assert (veteran.morale, veteran.satisfaction) == (76, 80)
+        assert blocked.frustration == 92
+        assert [goal.frustration for goal in excluded] == [0, 0]
+        new_goal = db.query(WrestlerGoalDB).filter_by(wrestler_id=rookie.id, set_date="2026-06-18").one()
+        assert new_goal.status == ("completed" if autoflush else "active")
+        assert len(goal_selects) == 1
 
 
 # ===========================================================================

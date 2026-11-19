@@ -5,6 +5,8 @@ Extracted from wrestler_lifecycle_service.py (Group 2).
 """
 
 import logging
+from collections import defaultdict
+
 from sqlalchemy.orm import Session, aliased
 
 from models.game_models import (
@@ -27,29 +29,51 @@ from game_service.lifecycle_constants import (
 logger = logging.getLogger(__name__)
 
 
-def create_wrestler_goals(db: Session, wrestler: GameWrestlerDB, game_date: str):
-    """Create structured goal records from the wrestler's career_goals JSON."""
-    goals = wrestler.career_goals or []
-    for goal_type in goals:
-        existing = db.query(WrestlerGoalDB).filter(
-            WrestlerGoalDB.wrestler_id == wrestler.id,
-            WrestlerGoalDB.goal_type == goal_type,
-            WrestlerGoalDB.status == "active",
-        ).first()
-        if not existing:
-            db.add(WrestlerGoalDB(
-                wrestler_id=wrestler.id,
-                goal_type=goal_type,
-                set_date=game_date,
-            ))
-
-
-def evaluate_goals(db: Session, wrestler: GameWrestlerDB, game_date: str):
-    """Check progress on all active goals. Returns list of completed goal types."""
-    active = db.query(WrestlerGoalDB).filter(
-        WrestlerGoalDB.wrestler_id == wrestler.id,
+def load_active_goals_by_wrestler(db: Session, world_id: str) -> dict[str, list[WrestlerGoalDB]]:
+    """Load active goals for the world's active wrestlers in creation order."""
+    rows = db.query(WrestlerGoalDB).join(GameWrestlerDB).filter(
+        GameWrestlerDB.world_id == world_id,
+        GameWrestlerDB.is_active,
         WrestlerGoalDB.status == "active",
-    ).all()
+    ).order_by(WrestlerGoalDB.id).all()
+    by_wrestler = defaultdict(list)
+    for goal in rows:
+        by_wrestler[goal.wrestler_id].append(goal)
+    return by_wrestler
+
+
+def create_wrestler_goals(db: Session, wrestler: GameWrestlerDB, game_date: str, *,
+                          active_goals: list[WrestlerGoalDB] | None = None):
+    """Create structured goal records from the wrestler's career_goals JSON."""
+    existing_types = {goal.goal_type for goal in (active_goals or [])}
+    for goal_type in wrestler.career_goals or []:
+        if active_goals is None:
+            if db.query(WrestlerGoalDB).filter(
+                WrestlerGoalDB.wrestler_id == wrestler.id,
+                WrestlerGoalDB.goal_type == goal_type,
+                WrestlerGoalDB.status == "active",
+            ).first():
+                continue
+        elif goal_type in existing_types:
+            continue
+
+        goal = WrestlerGoalDB(wrestler_id=wrestler.id, goal_type=goal_type, set_date=game_date)
+        db.add(goal)
+        # The old evaluation query saw newly added goals only with autoflush enabled.
+        if active_goals is not None and db.autoflush:
+            active_goals.append(goal)
+            existing_types.add(goal_type)
+
+
+def evaluate_goals(db: Session, wrestler: GameWrestlerDB, game_date: str, *,
+                   active_goals: list[WrestlerGoalDB] | None = None):
+    """Check progress on all active goals. Returns list of completed goal types."""
+    active = active_goals
+    if active is None:
+        active = db.query(WrestlerGoalDB).filter(
+            WrestlerGoalDB.wrestler_id == wrestler.id,
+            WrestlerGoalDB.status == "active",
+        ).order_by(WrestlerGoalDB.id).all()
 
     completed = []
     tier_progress_cache = {}
