@@ -9,6 +9,9 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 
+// Must stay below the server's 60-second heartbeat timeout.
+const HEARTBEAT_INTERVAL_MS = 25_000;
+
 export interface WorldEvent {
   type: string;
   world_id?: string;
@@ -63,7 +66,7 @@ export function useWorldSocket(worldId: string | null, options: UseWorldSocketOp
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: 'ping' }));
         }
-      }, 25000);
+      }, HEARTBEAT_INTERVAL_MS);
     };
 
     ws.onmessage = (e) => {
