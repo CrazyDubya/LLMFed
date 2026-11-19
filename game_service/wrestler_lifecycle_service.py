@@ -10,6 +10,7 @@ import random
 from datetime import datetime, timedelta
 from typing import Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models.game_models import (
@@ -457,9 +458,39 @@ def calculate_stipulation_bonus(stats: WrestlerStatsDB, stipulation: str) -> flo
     return 1.0 + (spec / LC.STIPULATION_BONUS_DIVISOR)
 
 
-def update_conditioning(db: Session, wrestler: GameWrestlerDB, game_date: str):
+def load_conditioning_data(db: Session, world_id: str, game_date: str):
+    """Load stats and recent workload once for a world's active wrestlers."""
+    stats = {
+        row.wrestler_id: row for row in db.query(WrestlerStatsDB)
+        .join(GameWrestlerDB, GameWrestlerDB.id == WrestlerStatsDB.wrestler_id)
+        .filter(GameWrestlerDB.world_id == world_id, GameWrestlerDB.is_active == True).all()
+    }
+    try:
+        week_ago = (datetime.strptime(game_date, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        return stats, {}
+
+    counts = dict(
+        db.query(MatchParticipantDB.wrestler_id, func.count())
+        .join(GameWrestlerDB, GameWrestlerDB.id == MatchParticipantDB.wrestler_id)
+        .join(MatchDB, MatchDB.id == MatchParticipantDB.match_id)
+        .join(ShowSegmentDB, ShowSegmentDB.match_id == MatchDB.id)
+        .join(ShowDB, ShowDB.id == ShowSegmentDB.show_id)
+        .filter(
+            GameWrestlerDB.world_id == world_id,
+            GameWrestlerDB.is_active == True,
+            MatchDB.is_completed,
+            ShowDB.game_date >= week_ago,
+            ShowDB.game_date <= game_date,
+        ).group_by(MatchParticipantDB.wrestler_id).all()
+    )
+    return stats, counts
+
+
+def update_conditioning(db: Session, wrestler: GameWrestlerDB, game_date: str, conditioning_data=None):
     """Update conditioning based on recent workload."""
-    stats = _get_wrestler_stats(db, wrestler.id)
+    stats = (_get_wrestler_stats(db, wrestler.id) if conditioning_data is None
+             else conditioning_data[0].get(wrestler.id))
     if not stats:
         return
 
@@ -468,7 +499,7 @@ def update_conditioning(db: Session, wrestler: GameWrestlerDB, game_date: str):
     except (ValueError, TypeError):
         return
 
-    matches_this_week = (
+    matches_this_week = conditioning_data[1].get(wrestler.id, 0) if conditioning_data is not None else (
         db.query(MatchParticipantDB)
         .join(MatchDB)
         .join(ShowSegmentDB, ShowSegmentDB.match_id == MatchDB.id)
