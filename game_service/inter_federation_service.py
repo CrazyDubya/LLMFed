@@ -68,7 +68,7 @@ def update_federation_momentum(db: Session, world: WorldDB, events: List[str],
         ShowDB.federation_id.in_(fed_ids),
         ShowDB.is_completed,
         ShowDB.game_date == game_date,
-    ).all():
+    ).order_by(ShowDB.created_at, ShowDB.id).all():
         shows_by_fed.setdefault(show.federation_id, show)
 
     roster_ids = {fed.id: set() for fed in feds}

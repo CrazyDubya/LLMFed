@@ -1,4 +1,5 @@
 """Daily momentum reads stay bounded and retain roster/show semantics."""
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -60,10 +61,12 @@ def test_momentum_show_order_and_roster_semantics(db):
                 contract('duplicate', 'happy'), contract('shared', 'sad'),
                 contract('shared', 'happy', 'expired'), contract('missing', 'absent'),
                 contract('boundary', 'boundary')])
-    for sid, fed, rating in [('z-first', 'first', 4.5), ('a-second', 'first', 1.0),
-                             ('z-zero', 'zero', 0.0), ('a-later', 'zero', 4.5),
-                             ('low', 'low', 1.0)]:
+    for index, (sid, fed, rating) in enumerate([
+        ('z-first', 'first', 4.5), ('a-second', 'first', 1.0),
+        ('z-zero', 'zero', 0.0), ('a-later', 'zero', 4.5), ('low', 'low', 1.0),
+    ]):
         db.add(ShowDB(id=sid, world_id='world', federation_id=fed, name=sid,
+                      created_at=datetime(2026, 1, 1) + timedelta(seconds=index),
                       game_date='2026-01-01', is_completed=True, overall_rating=rating))
     db.add_all([
         ShowDB(world_id='world', federation_id='empty', name='unfinished',
@@ -82,3 +85,18 @@ def test_momentum_show_order_and_roster_semantics(db):
                                     game_date='2026-01-01').first().id == 'z-first'
     update_federation_momentum(db, SimpleNamespace(id='world'), [], None, '2026-01-01')
     assert {f.id: f.momentum for f in db.query(GameFederationDB)} == expected
+
+
+@pytest.mark.parametrize('earlier_id,seconds', [('z-earlier', 1), ('a-earlier', 0)])
+def test_momentum_show_timestamp_order_and_id_tiebreak(db, earlier_id, seconds):
+    db.add(GameFederationDB(id='fed', world_id='world', name='Fed', momentum=50))
+    timestamp = datetime(2026, 1, 1)
+    db.add(ShowDB(id='m-later', world_id='world', federation_id='fed', name='Later',
+                  game_date='2026-01-01', is_completed=True, overall_rating=1,
+                  created_at=timestamp + timedelta(seconds=seconds)))
+    db.add(ShowDB(id=earlier_id, world_id='world', federation_id='fed', name='Earlier',
+                  game_date='2026-01-01', is_completed=True, overall_rating=4.5,
+                  created_at=timestamp))
+    db.flush()
+    update_federation_momentum(db, SimpleNamespace(id='world'), [], None, '2026-01-01')
+    assert db.get(GameFederationDB, 'fed').momentum == 52
