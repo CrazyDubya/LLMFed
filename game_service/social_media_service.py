@@ -107,7 +107,11 @@ def generate_social_post(db: Session, wrestler_id: str, world_id: str,
     return _create_social_post(db, wrestler, gimmick, backstory, fed, world_id, game_date)
 
 
-def _create_social_post(db, wrestler, gimmick, backstory, fed, world_id, game_date):
+def _create_social_post(
+    db: Session, wrestler: GameWrestlerDB, gimmick: GimmickHistoryDB | None,
+    backstory: WrestlerBackstoryDB | None, fed: GameFederationDB | None,
+    world_id: str, game_date: str,
+) -> SocialMediaPostDB:
     wrestler_id = wrestler.id
     policy = (fed.social_media_policy if fed else None) or "guided"
 
@@ -242,6 +246,34 @@ def _generate_post_content(wrestler, gimmick, backstory, post_type, db=None):
 # Daily tick
 # ---------------------------------------------------------------------------
 
+def _load_post_context(db: Session, wrestler_ids: list[str]) -> tuple[
+    dict[str, GimmickHistoryDB], dict[str, WrestlerBackstoryDB],
+    dict[str, ContractDB], dict[str, GameFederationDB],
+]:
+    """Batch post inputs, keeping the first matching row per wrestler."""
+    gimmicks: dict[str, GimmickHistoryDB] = {}
+    for row in db.query(GimmickHistoryDB).filter(
+        GimmickHistoryDB.wrestler_id.in_(wrestler_ids),
+        GimmickHistoryDB.is_active == True,
+    ).all():
+        gimmicks.setdefault(row.wrestler_id, row)
+    backstories: dict[str, WrestlerBackstoryDB] = {}
+    for row in db.query(WrestlerBackstoryDB).filter(
+        WrestlerBackstoryDB.wrestler_id.in_(wrestler_ids),
+    ).all():
+        backstories.setdefault(row.wrestler_id, row)
+    contracts: dict[str, ContractDB] = {}
+    for row in db.query(ContractDB).filter(
+        ContractDB.wrestler_id.in_(wrestler_ids),
+        ContractDB.status == "active",
+    ).all():
+        contracts.setdefault(row.wrestler_id, row)
+    federations = {row.id: row for row in db.query(GameFederationDB).filter(
+        GameFederationDB.id.in_([c.federation_id for c in contracts.values()]),
+    ).all()}
+    return gimmicks, backstories, contracts, federations
+
+
 def tick_social_media(db: Session, world_id: str, game_date: str):
     """Daily social media tick. Each wrestler has a chance to post."""
     wrestlers = db.query(GameWrestlerDB).filter(
@@ -266,26 +298,7 @@ def tick_social_media(db: Session, world_id: str, game_date: str):
 
         if random.random() < chance:
             if post_context is None:
-                wrestler_ids = [w.id for w in wrestlers]
-                gimmicks = {}
-                for row in db.query(GimmickHistoryDB).filter(
-                    GimmickHistoryDB.wrestler_id.in_(wrestler_ids),
-                    GimmickHistoryDB.is_active == True,
-                ).all():
-                    gimmicks.setdefault(row.wrestler_id, row)
-                backstories = {row.wrestler_id: row for row in db.query(WrestlerBackstoryDB).filter(
-                    WrestlerBackstoryDB.wrestler_id.in_(wrestler_ids),
-                ).all()}
-                contracts = {}
-                for row in db.query(ContractDB).filter(
-                    ContractDB.wrestler_id.in_(wrestler_ids),
-                    ContractDB.status == "active",
-                ).all():
-                    contracts.setdefault(row.wrestler_id, row)
-                federations = {row.id: row for row in db.query(GameFederationDB).filter(
-                    GameFederationDB.id.in_([c.federation_id for c in contracts.values()]),
-                ).all()}
-                post_context = (gimmicks, backstories, contracts, federations)
+                post_context = _load_post_context(db, [w.id for w in wrestlers])
             gimmicks, backstories, contracts, federations = post_context
             contract = contracts.get(wrestler.id)
             fed = federations.get(contract.federation_id) if contract else None
