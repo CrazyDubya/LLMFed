@@ -219,11 +219,13 @@ class TestSimulateMatchFromDB:
             ))
         db_session.flush()
         captured = []
+
         def simulate(self, participants):
             captured.extend(participants)
             return MatchResult()
         monkeypatch.setattr(MatchSimulator, "simulate", simulate)
         queries = []
+
         def count_inputs(conn, cursor, statement, parameters, context, executemany):
             if statement.startswith("SELECT") and any(
                 "FROM " + table in statement
@@ -258,10 +260,12 @@ class TestSimulateMatchFromDB:
             ))
         db_session.flush()
         captured = []
+
         def simulate(self, participants):
             captured.extend(participants)
             return MatchResult()
         monkeypatch.setattr(MatchSimulator, "simulate", simulate)
+
         def fail_inputs(conn, cursor, statement, parameters, context, executemany):
             if statement.startswith("SELECT") and "FROM wrestler_goals" in statement:
                 raise RuntimeError("Optional inputs unavailable")
