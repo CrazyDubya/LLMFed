@@ -16,9 +16,9 @@ from fastapi import Depends, HTTPException, status, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import bcrypt
 from agent_service.database import get_db
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from passlib.context import CryptContext
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -36,9 +36,6 @@ ROLE_HIERARCHY = {"admin": 4, "owner": 3, "player": 2, "viewer": 1}
 
 # Production safety
 _IS_PRODUCTION = os.getenv("ENV", "").lower() in ("production", "prod")
-
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # HTTP Bearer token scheme (auto_error=False allows optional auth)
 security = HTTPBearer(auto_error=False)
@@ -92,12 +89,18 @@ def validate_production_config() -> None:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(
+        plain_password.encode("utf-8"),
+        hashed_password.encode("utf-8")
+    )
 
 
 def get_password_hash(password: str) -> str:
     """Generate password hash."""
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(
+        password.encode("utf-8"),
+        bcrypt.gensalt()
+    ).decode("utf-8")
 
 
 # ---------------------------------------------------------------------------
