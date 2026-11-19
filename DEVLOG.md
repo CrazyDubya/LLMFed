@@ -4,6 +4,8 @@ Notable changes between commits. Supplement git history with a short note here w
 
 ---
 
+- **Manager bonds:** Return HTTP 404 instead of 400 when assigning a manager in a missing world, with HTTP regression coverage.
+
 - **Snapshot restore:** Preserve all world-owned tables, scope child rows through their parents, and restore in foreign-key dependency order without silently swallowing serialization errors.
 
 - **Locker room dynamics:** Batch roster stats in one query per federation, preserving missing-row skips and first-returned stats for duplicate rows.
