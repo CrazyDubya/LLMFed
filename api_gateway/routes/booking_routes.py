@@ -157,6 +157,10 @@ def api_book_match(
             planned_winner_id=data.planned_winner_id,
             planned_finish=data.planned_finish or "pinfall",
             position=data.segment_position,
+            planned_duration_minutes=(
+                data.planned_duration_minutes
+                if "planned_duration_minutes" in data.model_fields_set else None
+            ),
         )
         db.commit()
         db.refresh(seg)
