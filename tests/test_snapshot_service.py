@@ -5,6 +5,7 @@ import json
 import pytest
 import tempfile
 import os
+from datetime import datetime
 
 from game_service.snapshot_service import (
     create_snapshot,
@@ -14,7 +15,7 @@ from game_service.snapshot_service import (
     _serialize_row,
 )
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from models.db_models import Base
 from models.core_models import WorldDB
@@ -77,6 +78,100 @@ class TestCreateSnapshot:
 
 
 class TestRestoreSnapshot:
+    @pytest.mark.parametrize("branch", [True, False])
+    def test_restores_stats_segments_and_participants(self, db_session, world_with_data, branch):
+        from models.game_models import (
+            GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
+            ShowDB, ShowSegmentDB, MatchDB, MatchParticipantDB,
+        )
+
+        world_id = world_with_data.id
+        fed = GameFederationDB(world_id=world_id, name="Fed", short_name="F")
+        wrestler = GameWrestlerDB(world_id=world_id, name="Wrestler")
+        match = MatchDB(world_id=world_id)
+        db_session.add_all([fed, wrestler, match])
+        db_session.flush()
+        show = ShowDB(world_id=world_id, federation_id=fed.id, name="Show", game_date="2026-01-01")
+        db_session.add(show)
+        db_session.flush()
+        db_session.add_all([
+            WrestlerStatsDB(wrestler_id=wrestler.id, power=87),
+            ShowSegmentDB(show_id=show.id, match_id=match.id, position=1, segment_type="match"),
+            MatchParticipantDB(match_id=match.id, wrestler_id=wrestler.id),
+        ])
+        db_session.commit()
+
+        snapshot = create_snapshot(db_session, world_id)
+        result = restore_snapshot(db_session, snapshot["data"], create_new_world=branch)
+        restored_id = result["world_id"]
+        stats = db_session.query(WrestlerStatsDB).join(GameWrestlerDB).filter(
+            GameWrestlerDB.world_id == restored_id).all()
+        segments = db_session.query(ShowSegmentDB).join(ShowDB).filter(ShowDB.world_id == restored_id).all()
+        participants = db_session.query(MatchParticipantDB).join(MatchDB).filter(
+            MatchDB.world_id == restored_id).all()
+        assert (len(stats), len(segments), len(participants)) == (1, 1, 1)
+        assert stats[0].power == 87
+        assert participants[0].wrestler_id == stats[0].wrestler_id
+        assert participants[0].match_id == segments[0].match_id
+        if branch:
+            assert stats[0].wrestler_id != wrestler.id
+
+    def test_serialization_errors_propagate(self, db_session, world_with_data, monkeypatch):
+        from game_service import snapshot_service
+
+        def broken_scope(*args):
+            raise RuntimeError("broken scope")
+
+        monkeypatch.setattr(snapshot_service, "_world_scope", broken_scope)
+        with pytest.raises(RuntimeError, match="broken scope"):
+            create_snapshot(db_session, world_with_data.id)
+
+    @pytest.mark.parametrize("branch", [True, False])
+    def test_all_world_owned_tables_round_trip(self, db_session, world_with_data, branch):
+        from sqlalchemy import Integer, Float, Boolean, String, DateTime
+        from game_service.snapshot_service import _model_classes_by_table, _world_scope
+        from models.game_models import UserDB
+
+        db_session.execute(text("PRAGMA foreign_keys=ON"))
+        user = UserDB(email="test@example.com", username="test", password_hash="unused")
+        db_session.add(user)
+        db_session.flush()
+        models = _model_classes_by_table()
+        ids = {"worlds": world_with_data.id, "users": user.id}
+        for name, model in models.items():
+            if name == "worlds":
+                continue
+            values = {}
+            for col in model.__table__.columns:
+                if col.foreign_keys:
+                    parent = next(iter(col.foreign_keys)).column.table.name
+                    values[col.name] = ids[parent]
+                elif col.name == "world_id":
+                    values[col.name] = world_with_data.id
+                elif col.primary_key or col.nullable or col.default is not None:
+                    continue
+                elif isinstance(col.type, (Integer, Float, Boolean)):
+                    values[col.name] = 1
+                elif isinstance(col.type, String):
+                    values[col.name] = "test"
+                elif isinstance(col.type, DateTime):
+                    values[col.name] = datetime(2026, 1, 1)
+                else:
+                    values[col.name] = {}
+            row = model(**values)
+            db_session.add(row)
+            db_session.flush()
+            ids[name] = row.id
+        db_session.commit()
+        snapshot = create_snapshot(db_session, world_with_data.id)
+        assert all(count == 1 for count in snapshot["metadata"]["table_counts"].values())
+        result = restore_snapshot(db_session, snapshot["data"], create_new_world=branch)
+        for name, model in models.items():
+            if name != "worlds":
+                assert db_session.query(model).filter(
+                    _world_scope(model.__table__, result["world_id"])).count() == 1, name
+        assert db_session.query(UserDB).count() == 1
+
     def test_restore_creates_branch(self, db_session, world_with_data):
         snapshot = create_snapshot(db_session, world_with_data.id)
         result = restore_snapshot(db_session, snapshot["data"], create_new_world=True)
