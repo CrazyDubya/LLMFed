@@ -19,7 +19,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import DateTime, create_engine, event, select
 from sqlalchemy.orm import sessionmaker
 
-import models
 from models.db_models import Base
 from game_service.world_service import create_world
 from game_service.world_ticker import WorldTicker
