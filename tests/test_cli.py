@@ -61,3 +61,33 @@ class TestCLIBasics:
     def test_match_command_exists(self):
         result = runner.invoke(app, ["match", "--help"])
         assert result.exit_code == 0
+
+
+class TestFedList:
+    def test_shows_federation_budget(self, monkeypatch):
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from models.db_models import Base
+        from models.game_models import WorldDB, GameFederationDB
+        import cli.main as cli_main
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        session_factory = sessionmaker(bind=engine)
+        with session_factory() as db:
+            db.add(WorldDB(id="world-1", name="Test World"))
+            db.add(GameFederationDB(
+                id="fed-1", world_id="world-1", name="Apex Wrestling",
+                budget=437431.41, prestige=72,
+            ))
+            db.commit()
+        monkeypatch.setattr(cli_main, "_get_db", session_factory)
+
+        result = runner.invoke(app, ["fed", "list", "world-1"])
+
+        assert result.exit_code == 0
+        assert "Apex Wrestling" in result.stdout
+        assert "$437,431" in result.stdout
+        assert "72" in result.stdout
+        assert "$0" not in result.stdout
+        assert "?" not in result.stdout

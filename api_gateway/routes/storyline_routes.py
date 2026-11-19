@@ -108,7 +108,10 @@ def api_create_storyline(
 ):
     """Promoter creates a storyline between wrestlers."""
     from game_service.storyline_service import create_storyline as sl_create
-    world = get_world(db, world_id)
+    try:
+        world = get_world(db, world_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
     federation_id = data.federation_id
     if not federation_id:
