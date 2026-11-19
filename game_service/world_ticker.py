@@ -1021,21 +1021,20 @@ class WorldTicker:
                 # commitment. The relationship-based collisions here overlap
                 # with _tick_kayfabe's storyline triggers, so this is
                 # throttled to avoid repeating the same note every week.
-                from game_service.persona_service import detect_collision_events
-                for wrestler in get_active_wrestlers(self.db, self.world.id):
-                    for collision in detect_collision_events(self.db, wrestler, game_date):
-                        if random.random() > 0.15:
-                            continue
-                        self.db.add(GameNarrativeLogDB(
-                            world_id=self.world.id,
-                            game_date=game_date,
-                            tick=0,
-                            event_type="persona_collision",
-                            description=collision["description"],
-                            involved_entities=[wrestler.id],
-                            importance=min(10, collision["severity"]),
-                        ))
-                        self.events.append(collision["description"])
+                from game_service.persona_service import detect_world_collision_events
+                for wrestler, collision in detect_world_collision_events(self.db, self.world.id):
+                    if random.random() > 0.15:
+                        continue
+                    self.db.add(GameNarrativeLogDB(
+                        world_id=self.world.id,
+                        game_date=game_date,
+                        tick=0,
+                        event_type="persona_collision",
+                        description=collision["description"],
+                        involved_entities=[wrestler.id],
+                        importance=min(10, collision["severity"]),
+                    ))
+                    self.events.append(collision["description"])
 
             self._safe_tick("Persona tick", _tick_persona)
             self._safe_tick("Kayfabe collision check", _tick_kayfabe)

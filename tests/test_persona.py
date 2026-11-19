@@ -10,14 +10,14 @@ import random
 from unittest.mock import MagicMock
 
 # We test with in-memory SQLite
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
     GameWrestlerDB, WrestlerStatsDB, WrestlerBackstoryDB,
     GimmickHistoryDB, LifeEventDB, WrestlerRelationshipDB,
-    GameFederationDB, WorldDB,
+    GameFederationDB, GameNarrativeLogDB, WorldDB,
 )
 
 
@@ -419,6 +419,49 @@ class TestPersonaPromos:
 # ===================================================================
 
 class TestCollisionDetection:
+    def test_world_collisions_match_point_reads_in_order(self, db_session, world, wrestler, wrestler2):
+        from game_service.persona_service import detect_collision_events, detect_world_collision_events
+
+        inactive = GameWrestlerDB(world_id=world.id, name="Retired wrestler", is_active=False)
+        db_session.add(inactive)
+        db_session.flush()
+        # Insert the second-endpoint relation first so a naive grouping can reorder the rolls.
+        db_session.add_all([
+            WrestlerRelationshipDB(
+                world_id=world.id, wrestler1_id=inactive.id, wrestler2_id=wrestler.id,
+                real_relationship="friends", kayfabe_alignment="rivals",
+            ),
+            WrestlerRelationshipDB(
+                world_id=world.id, wrestler1_id=wrestler.id, wrestler2_id=wrestler2.id,
+                real_relationship="enemies", kayfabe_alignment="tag_partners",
+            ),
+        ])
+        db_session.flush()
+
+        expected = [
+            (w, collision)
+            for w in [wrestler, wrestler2]
+            for collision in detect_collision_events(db_session, w, "2026-03-06")
+        ]
+        assert len(expected) == 3
+        assert list(detect_world_collision_events(db_session, world.id)) == expected
+
+    def test_world_collision_reads_do_not_scale_with_roster_size(self, db_session, world):
+        from game_service.persona_service import detect_world_collision_events
+
+        db_session.add_all(
+            GameWrestlerDB(world_id=world.id, name=f"Wrestler {i}") for i in range(30)
+        )
+        db_session.flush()
+        statements = []
+
+        @event.listens_for(db_session.get_bind(), "before_cursor_execute")
+        def count_sql(*_):
+            statements.append(1)
+
+        assert not list(detect_world_collision_events(db_session, world.id))
+        assert len(statements) == 4
+
     def test_crisis_during_push(self, db_session, wrestler, world):
         from game_service.persona_service import (
             generate_backstory, detect_collision_events,
@@ -467,6 +510,60 @@ class TestCollisionDetection:
         collisions = detect_collision_events(db_session, wrestler, "2026-03-01")
         types = [c["type"] for c in collisions]
         assert "facade_cracking" in types
+
+
+def test_friday_persona_sees_lazy_backstories_and_new_events(db_session, world, wrestler, wrestler2, monkeypatch):
+    from game_service import persona_service
+    from game_service.world_ticker import WorldTicker
+
+    db_session.autoflush = False
+    friday = "2026-03-06"
+    wrestler.popularity = 80
+    wrestler.morale = 0
+    persona_service.generate_initial_gimmick(db_session, wrestler, "2026-03-01")
+    earlier_event = LifeEventDB(
+        world_id=world.id, wrestler_id=wrestler.id, game_date="2026-03-01",
+        event_type="personal_achievement", description="A career milestone",
+        severity=3, morale_impact=20,
+    )
+    other_world = WorldDB(name="Other world")
+    db_session.add_all([earlier_event, other_world])
+    db_session.flush()
+    outsider = GameWrestlerDB(world_id=other_world.id, name="Other-world wrestler")
+    db_session.add(outsider)
+    db_session.flush()
+
+    # Force a severe event on the wrestler who already has a gimmick.
+    monkeypatch.setattr(random, "random", lambda: 0.0)
+    monkeypatch.setattr(random, "choices", lambda population, **_: [
+        "death_in_family" if "death_in_family" in population else population[0]
+    ])
+    generate_backstory = persona_service.generate_backstory
+    initial_stability = {}
+
+    def record_backstory(db, w):
+        row = generate_backstory(db, w)
+        initial_stability[w.id] = row.personal_life_stability
+        return row
+
+    monkeypatch.setattr(persona_service, "generate_backstory", record_backstory)
+    ticker = WorldTicker(db_session, world.id)
+    ticker._persona_tick(friday)
+    db_session.flush()
+
+    backstories = {row.wrestler_id: row for row in db_session.query(WrestlerBackstoryDB)}
+    assert list(initial_stability) == [wrestler.id, wrestler2.id]
+    assert set(backstories) == {wrestler.id, wrestler2.id}
+    assert backstories[wrestler.id].personal_life_stability == initial_stability[wrestler.id] + 2 - 9
+    assert backstories[wrestler.id].personal_struggles == ["grief"]
+    assert backstories[wrestler2.id].personal_life_stability == initial_stability[wrestler2.id]
+    assert earlier_event.is_active is False
+    assert wrestler.morale == 0  # The earlier boost is applied before (not after) the new hit.
+    assert db_session.query(LifeEventDB).filter_by(is_active=True).one().wrestler_id == wrestler.id
+    assert db_session.query(GimmickHistoryDB).filter_by(wrestler_id=wrestler2.id).one().start_date == friday
+    collision = db_session.query(GameNarrativeLogDB).filter_by(event_type="persona_collision").one()
+    assert collision.involved_entities == [wrestler.id]
+    assert collision.description in ticker.events
 
 
 # ===================================================================

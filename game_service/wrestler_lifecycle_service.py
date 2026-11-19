@@ -18,10 +18,10 @@ from models.game_models import (
     ShowDB, ShowSegmentDB, WrestlerPushDB,
     GameNarrativeLogDB,
     MentorshipDB, CareerHighlightDB, HallOfFameDB,
-    WrestlerBackstoryDB, LifeEventDB,
+    LifeEventDB,
 )
 import game_service.lifecycle_constants as LC
-from game_service.ticker_query_helpers import get_active_gimmick
+from game_service.ticker_query_helpers import get_active_wrestlers
 
 # Re-exports so existing imports from this module keep working
 from game_service.goal_service import (          # noqa: F401
@@ -507,19 +507,16 @@ def tick_persona(db: Session, world_id: str, game_date: str):
     """Weekly persona tick: gimmick staleness, life events, gimmick evolution."""
     from game_service import persona_service
 
-    wrestlers = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.world_id == world_id,
-        GameWrestlerDB.is_active,
-    ).all()
+    wrestlers = get_active_wrestlers(db, world_id)
+    backstories = persona_service.load_world_backstories(db, world_id)
+    gimmicks = persona_service.load_world_active_gimmicks(db, world_id)
+    life_events = persona_service.load_world_active_life_events(db, world_id)
 
     for wrestler in wrestlers:
-        backstory = db.query(WrestlerBackstoryDB).filter(
-            WrestlerBackstoryDB.wrestler_id == wrestler.id,
-        ).first()
-        if not backstory:
+        if wrestler.id not in backstories:
             persona_service.generate_backstory(db, wrestler)
 
-        gimmick = get_active_gimmick(db, wrestler.id)
+        gimmick = gimmicks.get(wrestler.id)
         if not gimmick:
             persona_service.generate_initial_gimmick(db, wrestler, game_date)
             continue
@@ -534,12 +531,16 @@ def tick_persona(db: Session, world_id: str, game_date: str):
                     db, wrestler, game_date, pressure["reason"], gimmick
                 )
 
-        persona_service.generate_life_event(db, wrestler.id, world_id, game_date)
+        new_event = persona_service.generate_life_event(db, wrestler.id, world_id, game_date)
 
-        active_events = db.query(LifeEventDB).filter(
-            LifeEventDB.wrestler_id == wrestler.id,
-            LifeEventDB.is_active,
-        ).all()
+        active_events = life_events.get(wrestler.id, [])
+        if new_event is not None:
+            active_events.append(new_event)
+        if len(active_events) > 1:
+            # Morale and stability are clamped after each event; preserve their read order.
+            active_events = db.query(LifeEventDB).filter(
+                LifeEventDB.wrestler_id == wrestler.id, LifeEventDB.is_active,
+            ).all()
         for event in active_events:
             persona_service.process_life_event_effects(db, event)
 
