@@ -11,9 +11,11 @@ from models.game_models import (
 )
 
 
-@pytest.mark.parametrize("count", [0, 1, 12])
+@pytest.mark.parametrize("count,is_active,expected_selects", [
+    (0, True, 1), (1, True, 3), (12, True, 3), (12, False, 2),
+])
 @pytest.mark.parametrize("autoflush", [False, True])
-def test_locker_room_select_budget(count, autoflush):
+def test_locker_room_select_budget(count, is_active, expected_selects, autoflush):
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine, autoflush=autoflush) as db:
@@ -23,6 +25,7 @@ def test_locker_room_select_budget(count, autoflush):
             db.add(GameWrestlerDB(
                 id=f"w{i}", world_id="world", name=f"Wrestler {i}",
                 popularity=85, experience_years=10, morale=80,
+                is_active=is_active, creative_influence=17, locker_room_standing="neutral",
             ))
             db.add(ContractDB(
                 world_id="world", wrestler_id=f"w{i}", federation_id="fed",
@@ -41,11 +44,11 @@ def test_locker_room_select_budget(count, autoflush):
             update_locker_room_dynamics(db, federation, "2026-01-01")
         finally:
             event.remove(engine, "before_cursor_execute", record)
-        assert len(selects) == (3 if count else 1)
-        assert sum("FROM wrestler_stats" in sql for sql in selects) == bool(count)
+        assert len(selects) == expected_selects
+        assert sum("FROM wrestler_stats" in sql for sql in selects) == bool(count and is_active)
         for wrestler in db.query(GameWrestlerDB).all():
-            assert wrestler.locker_room_standing == "leader"
-            assert wrestler.creative_influence == 100
+            assert wrestler.locker_room_standing == ("leader" if is_active else "neutral")
+            assert wrestler.creative_influence == (100 if is_active else 17)
             assert wrestler.morale == 80
     engine.dispose()
 
