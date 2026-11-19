@@ -78,6 +78,38 @@ class TestCreateSnapshot:
 
 
 class TestRestoreSnapshot:
+    def test_branch_remaps_pending_action_json(self, db_session, world_with_data):
+        from models.game_models import UserDB, PlayerDB, PlayerActionDB, GameWrestlerDB
+
+        user = UserDB(email="action@example.com", username="action", password_hash="unused")
+        wrestler = GameWrestlerDB(world_id=world_with_data.id, name="Action Wrestler")
+        db_session.add_all([user, wrestler])
+        db_session.flush()
+        player = PlayerDB(user_id=user.id, world_id=world_with_data.id, player_type="wrestler")
+        db_session.add(player)
+        db_session.flush()
+        payload = {
+            "wrestler_id": wrestler.id,
+            "nested": [{"target": wrestler.id}, [], {}],
+            "amount": 3, "enabled": True, "optional": None, "label": "unchanged",
+        }
+        action = PlayerActionDB(
+            world_id=world_with_data.id, player_id=player.id,
+            action_type="train", action_data=payload,
+        )
+        db_session.add(action)
+        db_session.commit()
+        snapshot = create_snapshot(db_session, world_with_data.id)
+        result = restore_snapshot(db_session, snapshot["data"])
+        restored_wrestler = db_session.query(GameWrestlerDB).filter_by(world_id=result["world_id"]).one()
+        restored_action = db_session.query(PlayerActionDB).filter_by(world_id=result["world_id"]).one()
+        assert restored_wrestler.id != wrestler.id
+        assert restored_action.action_data == {
+            **payload, "wrestler_id": restored_wrestler.id,
+            "nested": [{"target": restored_wrestler.id}, [], {}],
+        }
+        assert action.action_data == payload
+
     @pytest.mark.parametrize("branch", [True, False])
     def test_restores_stats_segments_and_participants(self, db_session, world_with_data, branch):
         from models.game_models import (

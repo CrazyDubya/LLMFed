@@ -184,6 +184,10 @@ def restore_snapshot(
                 id_map[row["id"]] = str(uuid.uuid4())
 
     def _remap(value):
+        if isinstance(value, dict):
+            return {key: _remap(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [_remap(item) for item in value]
         if isinstance(value, str) and value in id_map:
             return id_map[value]
         return value
