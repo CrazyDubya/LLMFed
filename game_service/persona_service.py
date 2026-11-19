@@ -7,15 +7,49 @@ persona collision detection, and migration of existing wrestlers.
 
 import random
 import logging
+from collections import defaultdict
+
 from sqlalchemy.orm import Session
 
 from models.game_models import (
     GameWrestlerDB, WrestlerBackstoryDB, GimmickHistoryDB,
     LifeEventDB, WrestlerRelationshipDB,
 )
-from game_service.ticker_query_helpers import get_active_gimmick
+from game_service.ticker_query_helpers import get_active_gimmick, get_active_wrestlers
 
 logger = logging.getLogger(__name__)
+
+
+def _active_world_persona_rows(db: Session, model, world_id: str):
+    return db.query(model).join(
+        GameWrestlerDB, GameWrestlerDB.id == model.wrestler_id,
+    ).filter(GameWrestlerDB.world_id == world_id, GameWrestlerDB.is_active)
+
+
+def load_world_backstories(db: Session, world_id: str) -> dict[str, WrestlerBackstoryDB]:
+    return {row.wrestler_id: row for row in _active_world_persona_rows(db, WrestlerBackstoryDB, world_id)}
+
+
+def load_world_active_gimmicks(db: Session, world_id: str) -> dict[str, GimmickHistoryDB]:
+    gimmicks = {}
+    for row in _active_world_persona_rows(db, GimmickHistoryDB, world_id).filter(GimmickHistoryDB.is_active):
+        wrestler_id = row.wrestler_id
+        # Legacy data may have multiple active gimmicks; keep the point lookup's choice.
+        gimmicks[wrestler_id] = get_active_gimmick(db, wrestler_id) if wrestler_id in gimmicks else row
+    return gimmicks
+
+
+def load_world_active_life_events(
+    db: Session, world_id: str, *, min_severity: int | None = None,
+) -> dict[str, list[LifeEventDB]]:
+    query = _active_world_persona_rows(db, LifeEventDB, world_id).filter(LifeEventDB.is_active)
+    if min_severity is not None:
+        query = query.filter(LifeEventDB.severity >= min_severity)
+    events = defaultdict(list)
+    for row in query:
+        events[row.wrestler_id].append(row)
+    return events
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -654,19 +688,79 @@ def detect_collision_events(db: Session, wrestler: GameWrestlerDB,
 
     Returns list of collision dicts: {type, description, severity}.
     """
-    collisions = []
-
     backstory = db.query(WrestlerBackstoryDB).filter(
         WrestlerBackstoryDB.wrestler_id == wrestler.id,
     ).first()
 
-    # 1. Personal crisis during active push
     active_events = db.query(LifeEventDB).filter(
         LifeEventDB.wrestler_id == wrestler.id,
         LifeEventDB.is_active,
         LifeEventDB.severity >= 7,
     ).all()
 
+    def find_wrestler(wrestler_id):
+        return db.query(GameWrestlerDB).filter(GameWrestlerDB.id == wrestler_id).first()
+
+    return _detect_collisions(
+        wrestler, backstory, active_events, _wrestler_relationships(db, wrestler.id), find_wrestler,
+    )
+
+
+def _wrestler_relationships(db: Session, wrestler_id: str):
+    return db.query(WrestlerRelationshipDB).filter(
+        (WrestlerRelationshipDB.wrestler1_id == wrestler_id) |
+        (WrestlerRelationshipDB.wrestler2_id == wrestler_id),
+    ).all()
+
+
+def _relationship_collision(relationship: WrestlerRelationshipDB):
+    real, kayfabe = relationship.real_relationship, relationship.kayfabe_alignment
+    if real == "friends" and kayfabe == "rivals":
+        return "friends_as_rivals", "{wrestler} and {other} are real friends booked as enemies", 5
+    if real == "enemies" and kayfabe in ("allies", "tag_partners"):
+        return "enemies_as_allies", "{wrestler} and {other} actually dislike each other but are booked as allies", 7
+    return None
+
+
+def detect_world_collision_events(db: Session, world_id: str):
+    """Yield collision events in wrestler and legacy per-wrestler relationship order."""
+    wrestlers = get_active_wrestlers(db, world_id)
+    backstories = load_world_backstories(db, world_id)
+    events = load_world_active_life_events(db, world_id, min_severity=7)
+    rel = WrestlerRelationshipDB
+    candidate_relationships = defaultdict(list)
+    related_ids = set()
+    for wrestler_id, relationship in db.query(GameWrestlerDB.id, rel).join(
+        rel, (rel.wrestler1_id == GameWrestlerDB.id) | (rel.wrestler2_id == GameWrestlerDB.id),
+    ).filter(GameWrestlerDB.world_id == world_id, GameWrestlerDB.is_active):
+        if _relationship_collision(relationship):
+            candidate_relationships[wrestler_id].append(relationship)
+            related_ids.update((relationship.wrestler1_id, relationship.wrestler2_id))
+
+    wrestlers_by_id = {w.id: w for w in wrestlers}
+    missing_ids = related_ids.difference(wrestlers_by_id)
+    if missing_ids:
+        # Opponents can be inactive; they still appear in the active wrestler's collision.
+        wrestlers_by_id.update(
+            (w.id, w) for w in db.query(GameWrestlerDB).filter(GameWrestlerDB.id.in_(missing_ids))
+        )
+
+    for wrestler in wrestlers:
+        relationships = candidate_relationships.get(wrestler.id, ())
+        if len(relationships) > 1:
+            # Collision order determines which event gets each random roll in the ticker.
+            relationships = _wrestler_relationships(db, wrestler.id)
+        for collision in _detect_collisions(
+            wrestler, backstories.get(wrestler.id), events.get(wrestler.id, ()),
+            relationships, wrestlers_by_id.get,
+        ):
+            yield wrestler, collision
+
+
+def _detect_collisions(wrestler, backstory, active_events, relationships, find_wrestler):
+    collisions = []
+
+    # 1. Personal crisis during active push
     if active_events and wrestler.popularity > 60:
         collisions.append({
             "type": "crisis_during_push",
@@ -674,33 +768,20 @@ def detect_collision_events(db: Session, wrestler: GameWrestlerDB,
             "severity": max(e.severity for e in active_events),
         })
 
-    # 2. Real friends as kayfabe rivals
-    rels = db.query(WrestlerRelationshipDB).filter(
-        ((WrestlerRelationshipDB.wrestler1_id == wrestler.id) |
-         (WrestlerRelationshipDB.wrestler2_id == wrestler.id)),
-    ).all()
-
-    for rel in rels:
-        real = rel.real_relationship
-        kayfabe = rel.kayfabe_alignment
-        if real == "friends" and kayfabe == "rivals":
-            other_id = rel.wrestler2_id if rel.wrestler1_id == wrestler.id else rel.wrestler1_id
-            other = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == other_id).first()
-            if other:
-                collisions.append({
-                    "type": "friends_as_rivals",
-                    "description": f"{wrestler.name} and {other.name} are real friends booked as enemies",
-                    "severity": 5,
-                })
-        elif real == "enemies" and kayfabe in ("allies", "tag_partners"):
-            other_id = rel.wrestler2_id if rel.wrestler1_id == wrestler.id else rel.wrestler1_id
-            other = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == other_id).first()
-            if other:
-                collisions.append({
-                    "type": "enemies_as_allies",
-                    "description": f"{wrestler.name} and {other.name} actually dislike each other but are booked as allies",
-                    "severity": 7,
-                })
+    # 2. Real relationships conflicting with kayfabe
+    for rel in relationships:
+        collision = _relationship_collision(rel)
+        if not collision:
+            continue
+        kind, description, severity = collision
+        other_id = rel.wrestler2_id if rel.wrestler1_id == wrestler.id else rel.wrestler1_id
+        other = find_wrestler(other_id)
+        if other:
+            collisions.append({
+                "type": kind,
+                "description": description.format(wrestler=wrestler.name, other=other.name),
+                "severity": severity,
+            })
 
     # 3. Low personal stability + high kayfabe commitment = strain
     if backstory:
