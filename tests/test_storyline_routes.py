@@ -80,3 +80,12 @@ def test_list_storylines_invalid_limit(storyline_api):
     client, _, _ = storyline_api
     response = client.get("/game/worlds/story-world/storylines?limit=0")
     assert response.status_code == 422
+
+
+def test_create_storyline_missing_world(storyline_api):
+    client, _, _ = storyline_api
+    response = client.post("/game/worlds/missing-world/storylines", json={
+        "name": "Missing World Story", "wrestler_ids": ["hero", "villain"],
+    })
+    assert response.status_code == 404, response.text
+    assert response.json()["message"] == "World not found"

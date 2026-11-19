@@ -368,9 +368,10 @@ async def engine_debug(
     from agent_service.database import engine as db_engine
     from sqlalchemy import inspect
 
-    inspector = inspect(db_engine)
+    async with db_engine.connect() as conn:
+        tables = await conn.run_sync(lambda sync_conn: inspect(sync_conn).get_table_names())
     return {
-        "tables": inspector.get_table_names(),
+        "tables": tables,
         "engine_state": {
             "current_tick": eng.state.current_tick,
             "pending_requests": len(await eng.get_pending_requests()),

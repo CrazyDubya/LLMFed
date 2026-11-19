@@ -109,7 +109,8 @@ def book_match(db: Session, show_id: str, world_id: str,
                championship_id: str = None,
                planned_winner_id: str = None,
                planned_finish: str = "pinfall",
-               position: int = None) -> ShowSegmentDB:
+               position: int = None,
+               planned_duration_minutes: int | None = None) -> ShowSegmentDB:
     """Book a match segment on a show."""
     show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
     if not show:
@@ -156,12 +157,15 @@ def book_match(db: Session, show_id: str, world_id: str,
     if position is None:
         position = _get_next_segment_position(db, show_id)
 
+    if planned_duration_minutes is None:
+        planned_duration_minutes = 15 if match_type == "singles" else 20
+
     segment = ShowSegmentDB(
         show_id=show_id,
         position=position,
         segment_type="match",
         match_id=match.id,
-        planned_duration_minutes=15 if match_type == "singles" else 20,
+        planned_duration_minutes=planned_duration_minutes,
     )
     db.add(segment)
     db.flush()

@@ -219,14 +219,14 @@ def fed_list(world_id: str = typer.Argument(..., help="World ID")):
         table = Table(title="Federations")
         table.add_column("ID", style="cyan", max_width=12)
         table.add_column("Name", style="white")
-        table.add_column("Size", style="green")
-        table.add_column("Balance", justify="right")
+        table.add_column("Prestige", style="green", justify="right")
+        table.add_column("Budget", justify="right")
         for f in feds:
             table.add_row(
                 str(f.id)[:12],
                 f.name,
-                getattr(f, "size", "?"),
-                f"${getattr(f, 'balance', 0):,.0f}",
+                str(f.prestige),
+                f"${f.budget:,.0f}",
             )
         console.print(table)
     finally:
