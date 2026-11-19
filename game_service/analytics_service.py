@@ -66,7 +66,7 @@ def wrestler_performance(
 
     return {
         "wrestler_id": wrestler_id,
-        "name": wrestler.ring_name,
+        "name": wrestler.name,
         "total_matches": total,
         "wins": wins,
         "losses": total - wins,
@@ -260,7 +260,7 @@ def top_performers(
         avg_rating = round(sum(ratings) / len(ratings), 2) if ratings else 0.0
         leaderboard.append({
             "wrestler_id": w.id,
-            "name": w.ring_name,
+            "name": w.name,
             "total_matches": total,
             "wins": wins,
             "win_rate": round(wins / total, 3),

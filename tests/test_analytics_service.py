@@ -1,17 +1,30 @@
 """Tests for analytics service."""
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
+from agent_service.database import get_db_sync
+from api_gateway.main import app
+from api_gateway.security import get_current_user, TokenData
 from models.db_models import Base
 from models.core_models import WorldDB
+from models.wrestler_models import GameWrestlerDB
+from models.show_models import MatchDB, MatchParticipantDB
+from models.wrestler_models import ContractDB
+from models.federation_models import GameFederationDB
 from game_service.analytics_service import world_summary
 
 
 @pytest.fixture
 def db_session():
-    engine = create_engine("sqlite:///:memory:")
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     import models.core_models  # noqa
     import models.wrestler_models  # noqa
     import models.show_models  # noqa
@@ -22,6 +35,120 @@ def db_session():
     session = Session()
     yield session
     session.close()
+    engine.dispose()
+
+
+@pytest.fixture
+def analytics_client(db_session):
+    overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[get_db_sync] = lambda: db_session
+    app.dependency_overrides[get_current_user] = lambda: TokenData(user_id="analytics-user")
+    try:
+        yield TestClient(app, base_url="http://localhost")
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(overrides)
+
+
+@pytest.fixture
+def world_with_matches(db_session):
+    world = WorldDB(name="Analytics World")
+    db_session.add(world)
+    db_session.flush()
+    winner = GameWrestlerDB(world_id=world.id, name="The Champion")
+    loser = GameWrestlerDB(world_id=world.id, name="The Challenger")
+    db_session.add_all([winner, loser])
+    db_session.flush()
+    match = MatchDB(
+        world_id=world.id, winner_id=winner.id, is_completed=True,
+        match_rating=4.5, crowd_heat=85,
+    )
+    db_session.add(match)
+    db_session.flush()
+    db_session.add_all([
+        MatchParticipantDB(match_id=match.id, wrestler_id=winner.id, is_winner=True),
+        MatchParticipantDB(match_id=match.id, wrestler_id=loser.id),
+    ])
+    db_session.commit()
+    return world, winner, loser, match
+
+
+class TestAnalyticsRoutes:
+    def test_leaderboard_with_matches(self, analytics_client, world_with_matches):
+        world, winner, loser, _ = world_with_matches
+        response = analytics_client.get(f"/game/analytics/world/{world.id}/leaderboard")
+        assert response.status_code == 200
+        assert response.json() == [
+            {"wrestler_id": winner.id, "name": winner.name, "total_matches": 1,
+             "wins": 1, "win_rate": 1.0, "avg_match_rating": 4.5},
+            {"wrestler_id": loser.id, "name": loser.name, "total_matches": 1,
+             "wins": 0, "win_rate": 0.0, "avg_match_rating": 4.5},
+        ]
+
+    @pytest.mark.parametrize("result", ["win", "loss"])
+    def test_wrestler_with_matches(self, analytics_client, world_with_matches, result):
+        world, winner, loser, match = world_with_matches
+        wrestler = winner if result == "win" else loser
+        response = analytics_client.get(
+            f"/game/analytics/world/{world.id}/wrestler/{wrestler.id}"
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["name"] == wrestler.name
+        assert body["total_matches"] == 1
+        assert body["wins"] == (result == "win")
+        assert body["losses"] == (result == "loss")
+        assert body["avg_match_rating"] == 4.5
+        assert body["recent_matches"] == [{
+            "match_id": match.id, "match_type": "singles", "result": result,
+            "rating": 4.5, "crowd_heat": 85,
+        }]
+
+    def test_empty_leaderboard(self, analytics_client, db_session):
+        world = WorldDB(name="No matches")
+        db_session.add(world)
+        db_session.flush()
+        wrestler = GameWrestlerDB(world_id=world.id, name="Debutant")
+        db_session.add(wrestler)
+        db_session.commit()
+        response = analytics_client.get(f"/game/analytics/world/{world.id}/leaderboard")
+        assert response.status_code == 200
+        assert response.json() == []
+        response = analytics_client.get(
+            f"/game/analytics/world/{world.id}/wrestler/{wrestler.id}"
+        )
+        assert response.status_code == 200
+        assert response.json()["name"] == "Debutant"
+        assert response.json()["total_matches"] == 0
+        assert response.json()["recent_matches"] == []
+
+    def test_missing_wrestler(self, analytics_client):
+        response = analytics_client.get("/game/analytics/world/missing/wrestler/missing")
+        assert response.status_code == 200
+        assert response.json() == {"error": "Wrestler not found"}
+
+    def test_invalid_leaderboard_limit(self, analytics_client):
+        response = analytics_client.get("/game/analytics/world/missing/leaderboard?limit=0")
+        assert response.status_code == 422
+
+
+def test_fed_roster_uses_wrestler_name(db_session, world_with_matches, monkeypatch):
+    from typer.testing import CliRunner
+    from cli.main import app as cli_app
+
+    world, winner, _, _ = world_with_matches
+    federation = GameFederationDB(world_id=world.id, name="Analytics Federation")
+    db_session.add(federation)
+    db_session.flush()
+    db_session.add(ContractDB(
+        world_id=world.id, federation_id=federation.id, wrestler_id=winner.id,
+        start_date="2026-01-01", status="active",
+    ))
+    db_session.commit()
+    monkeypatch.setattr("cli.main._get_db", lambda: db_session)
+    result = CliRunner().invoke(cli_app, ["fed", "roster", federation.id])
+    assert result.exit_code == 0, result.exception
+    assert winner.name in result.stdout
 
 
 class TestWorldSummary:
