@@ -218,22 +218,34 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None):
 
     # Load frustration and morale for going-into-business checks
     try:
-        from models.game_models import WrestlerGoalDB
+        from models.game_models import WrestlerGoalDB, WrestlerBackstoryDB
+        participant_ids = [p_state.wrestler_id for p_state in participant_states]
+        frustration_by_id = {}
+        for goal in db.query(WrestlerGoalDB).filter(
+            WrestlerGoalDB.wrestler_id.in_(participant_ids),
+            WrestlerGoalDB.status == "active",
+        ).all():
+            wrestler_id = goal.wrestler_id
+            if wrestler_id not in frustration_by_id:
+                frustration_by_id[wrestler_id] = goal.frustration
+            else:
+                frustration_by_id[wrestler_id] = max(
+                    frustration_by_id[wrestler_id], goal.frustration
+                )
+        backstories_by_id = {
+            backstory.wrestler_id: backstory
+            for backstory in db.query(WrestlerBackstoryDB).filter(
+                WrestlerBackstoryDB.wrestler_id.in_(participant_ids),
+            ).all()
+        }
         for p_state in participant_states:
             wrestler = wrestlers_by_id.get(p_state.wrestler_id)
             if wrestler:
                 p_state._morale = wrestler.morale or 50
                 # Get max frustration from active goals
-                max_frust = db.query(WrestlerGoalDB).filter(
-                    WrestlerGoalDB.wrestler_id == p_state.wrestler_id,
-                    WrestlerGoalDB.status == "active",
-                ).all()
-                p_state._frustration = max((g.frustration for g in max_frust), default=0)
+                p_state._frustration = frustration_by_id.get(p_state.wrestler_id, 0)
                 # Get ego from backstory
-                from models.game_models import WrestlerBackstoryDB
-                backstory = db.query(WrestlerBackstoryDB).filter(
-                    WrestlerBackstoryDB.wrestler_id == p_state.wrestler_id
-                ).first()
+                backstory = backstories_by_id.get(p_state.wrestler_id)
                 if backstory and backstory.real_personality:
                     p_state.stats["ego"] = backstory.real_personality.get("ego", 50)
     except Exception:
