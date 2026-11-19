@@ -948,16 +948,20 @@ class WorldTicker:
         if get_day_of_week(game_date) != THURSDAY:
             return
 
+        from game_service.goal_service import (
+            create_wrestler_goals, evaluate_goals, load_active_goals_by_wrestler,
+        )
         from game_service.wrestler_lifecycle_service import (
-            evaluate_goals, create_wrestler_goals,
             update_locker_room_dynamics, auto_assign_mentors,
             update_conditioning, update_public_perception,
         )
 
         wrestlers = get_active_wrestlers(self.db, self.world.id)
+        goals_by_wrestler = load_active_goals_by_wrestler(self.db, self.world.id)
         for w in wrestlers:
-            create_wrestler_goals(self.db, w, game_date)
-            completed = evaluate_goals(self.db, w, game_date)
+            active_goals = goals_by_wrestler[w.id]
+            create_wrestler_goals(self.db, w, game_date, active_goals=active_goals)
+            completed = evaluate_goals(self.db, w, game_date, active_goals=active_goals)
             for g in completed:
                 self.events.append(f"{w.name} achieved: {g}")
             update_public_perception(w)
