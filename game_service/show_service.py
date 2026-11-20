@@ -238,13 +238,13 @@ def reorder_card(db: Session, show_id: str, segment_order: list):
 
     segment_order: list of segment IDs in desired order.
     """
+    segments = db.query(ShowSegmentDB).filter(ShowSegmentDB.show_id == show_id).all()
+    segments_by_id = {segment.id: segment for segment in segments}
+    if len(segment_order) != len(segments) or set(segment_order) != set(segments_by_id):
+        raise ValueError("Segment order must contain every show segment exactly once")
+
     for i, seg_id in enumerate(segment_order):
-        seg = db.query(ShowSegmentDB).filter(
-            ShowSegmentDB.id == seg_id,
-            ShowSegmentDB.show_id == show_id,
-        ).first()
-        if seg:
-            seg.position = i + 1
+        segments_by_id[seg_id].position = i + 1
 
 
 def get_show_card(db: Session, show_id: str) -> list:
