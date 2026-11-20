@@ -16,8 +16,8 @@ from api_gateway.security import create_access_token
 from core_engine import match_engine, tag_match_simulator
 from models.db_models import Base
 from models.game_models import (
-    GameFederationDB, GameWrestlerDB, MatchDB, MatchParticipantDB, PlayerDB, PromoDB, ShowDB, ShowSegmentDB,
-    UserDB, WorldDB, WrestlerStatsDB,
+    ChampionshipDB, GameFederationDB, GameWrestlerDB, MatchDB, MatchParticipantDB, PlayerDB, PromoDB,
+    ShowDB, ShowSegmentDB, UserDB, WorldDB, WrestlerHistoryDB, WrestlerStatsDB,
 )
 
 
@@ -47,6 +47,7 @@ async def booking_client(tmp_path, monkeypatch):
         db.flush()
         show_id = show.id
         world_id = world.id
+        federation_id = federation.id
         roster_ids = [wrestler.id for wrestler in wrestlers]
         outsider_id = outsider.id
         token = create_access_token({"sub": user.id})
@@ -65,6 +66,7 @@ async def booking_client(tmp_path, monkeypatch):
                         raise_server_exceptions=False)
     try:
         yield SimpleNamespace(client=client, sessions=sessions, show_id=show_id, world_id=world_id,
+                              federation_id=federation_id,
                               roster_ids=roster_ids, wrestler_ids=roster_ids[:2], bench_id=roster_ids[2],
                               outsider_id=outsider_id)
     finally:
@@ -92,6 +94,55 @@ def test_book_match_duration(booking_client, match_type, duration, expected):
     card = client.get(f"/game/shows/{show_id}/card")
     assert card.status_code == 200, card.text
     assert card.json()["segments"] == [segment]
+
+
+def test_tick_runs_show_booked_for_current_game_date(booking_client):
+    b = booking_client
+    shows_url = f"/game/federations/{b.federation_id}/shows"
+    response = b.client.post(shows_url, json={"name": "Same-day show", "game_date": "2026-01-04"})
+    assert response.status_code == 201, response.text
+    show = response.json()
+    assert not show["is_completed"]
+    card_url = f"/game/shows/{show['id']}/card"
+
+    with b.sessions.begin() as db:
+        title = ChampionshipDB(world_id=b.world_id, federation_id=b.federation_id, name="Vacant Title")
+        db.add(title)
+        db.flush()
+        title_id = title.id
+    match = b.client.post(f"/game/shows/{show['id']}/matches", json={
+        "participant_ids": b.wrestler_ids, "is_title_match": True, "championship_id": title_id,
+    })
+    assert match.status_code == 201, match.text
+
+    future = b.client.post(shows_url, json={"name": "Future show", "game_date": "2026-01-06"})
+    assert future.status_code == 201, future.text
+    future_id = future.json()["id"]
+
+    tick = b.client.post(f"/game/worlds/{b.world_id}/tick")
+    assert tick.status_code == 200, tick.text
+    card = b.client.get(card_url).json()
+    assert card["show"]["is_completed"]
+    assert card["show"]["game_date"] == "2026-01-04"
+    assert card["segments"][0]["is_completed"]
+    with b.sessions() as db:
+        title = db.get(ChampionshipDB, title_id)
+        assert [reign.reign_start for reign in title.history] == [show["game_date"]]
+        histories = db.query(WrestlerHistoryDB).filter(
+            WrestlerHistoryDB.wrestler_id.in_(b.wrestler_ids),
+            WrestlerHistoryDB.event_type.in_(("match_win", "match_loss")),
+        ).all()
+        assert sorted((entry.event_type, entry.game_date) for entry in histories) == [
+            ("match_loss", show["game_date"]), ("match_win", show["game_date"]),
+        ]
+    assert b.client.get(f"/game/shows/{b.show_id}/card").json()["show"]["is_completed"]
+    assert not b.client.get(f"/game/shows/{future_id}/card").json()["show"]["is_completed"]
+
+    next_tick = b.client.post(f"/game/worlds/{b.world_id}/tick")
+    assert next_tick.status_code == 200, next_tick.text
+    events = next_tick.json()["events_today"]
+    assert not any(event.startswith("Show completed: Booking Show (") for event in events)
+    assert b.client.get(f"/game/shows/{future_id}/card").json()["show"]["is_completed"]
 
 
 @pytest.mark.parametrize(

@@ -149,8 +149,8 @@ class WorldTicker:
         # 2. NPC AI decisions
         self._npc_decisions()
 
-        # 3. Simulate any shows scheduled for today
-        self._simulate_shows(new_date)
+        # 3. Simulate shows scheduled for the outgoing or incoming day.
+        self._simulate_shows(old_date, new_date)
 
         # 4. Advance storylines
         self._advance_storylines()
@@ -419,13 +419,13 @@ class WorldTicker:
     # Phase 3: Simulate shows
     # ------------------------------------------------------------------
 
-    def _simulate_shows(self, game_date: str):
-        """Simulate all shows scheduled for today."""
+    def _simulate_shows(self, old_date: str, new_date: str):
+        """Simulate pending shows on either date of this tick."""
         shows = self.db.query(ShowDB).filter(
             ShowDB.world_id == self.world.id,
-            ShowDB.game_date == game_date,
+            ShowDB.game_date.in_((old_date, new_date)),
             ShowDB.is_completed.is_(False),
-        ).all()
+        ).order_by(ShowDB.game_date).all()
 
         for show in shows:
             result = simulate_show(self.db, show, self.world, self._log_event)
