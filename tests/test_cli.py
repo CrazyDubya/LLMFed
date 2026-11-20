@@ -2,6 +2,8 @@
 
 import os
 
+import pytest
+
 # Typer's rich-based --help renderer force-enables terminal colors whenever
 # GITHUB_ACTIONS is set (true on every GitHub Actions runner), regardless of
 # whether stdout is a real TTY. With color on, its option-name highlighter
@@ -18,6 +20,81 @@ from typer.testing import CliRunner
 from cli.main import app
 
 runner = CliRunner()
+
+
+@pytest.fixture
+def replay_db(monkeypatch):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from models.db_models import Base
+    from models.game_models import WorldDB
+    from models.show_models import MatchDB
+    import cli.main as cli_main
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    with session_factory() as db:
+        db.add(WorldDB(id="replay-world", name="Replay World"))
+        db.add(MatchDB(id="replay-match", world_id="replay-world"))
+        db.commit()
+    monkeypatch.setattr(cli_main, "_get_db", session_factory)
+    yield session_factory
+    engine.dispose()
+
+
+class TestMatchReplay:
+    def test_events_in_tick_and_id_order(self, replay_db):
+        from models.show_models import MatchEventDB
+
+        with replay_db() as db:
+            db.add_all([
+                MatchEventDB(id=3, match_id="replay-match", tick=8,
+                             event_type="finish", description="Winning pinfall."),
+                MatchEventDB(id=2, match_id="replay-match", tick=2,
+                             event_type="move", description="Follow-up suplex."),
+                MatchEventDB(id=1, match_id="replay-match", tick=2,
+                             event_type="move", description="Opening lockup."),
+            ])
+            db.commit()
+
+        result = runner.invoke(app, ["match", "replay-match"])
+
+        assert result.exit_code == 0
+        assert "Play-by-Play:" in result.stdout
+        assert "[  2] Opening lockup." in result.stdout
+        assert "[  2] Follow-up suplex." in result.stdout
+        assert "[  8] Winning pinfall." in result.stdout
+        assert result.stdout.index("Opening lockup.") < result.stdout.index("Follow-up suplex.")
+        assert result.stdout.index("Follow-up suplex.") < result.stdout.index("Winning pinfall.")
+
+    def test_no_events(self, replay_db):
+        result = runner.invoke(app, ["match", "replay-match"])
+
+        assert result.exit_code == 0
+        assert "Match Details" in result.stdout
+        assert "Play-by-Play:" not in result.stdout
+
+    def test_missing_match(self, replay_db):
+        result = runner.invoke(app, ["match", "missing-match"])
+
+        assert result.exit_code == 0
+        assert "Match 'missing-match' not found." in result.stdout
+
+    def test_query_error_is_not_hidden(self, replay_db, monkeypatch):
+        from sqlalchemy.orm import Query
+        from sqlalchemy.exc import OperationalError
+
+        def fail_query(self):
+            raise OperationalError("SELECT match_events", {}, RuntimeError("query failed"))
+
+        monkeypatch.setattr(Query, "all", fail_query)
+
+        result = runner.invoke(app, ["match", "replay-match"])
+
+        assert result.exit_code != 0
+        assert isinstance(result.exception, OperationalError)
+        assert "No detailed play-by-play available." not in result.stdout
 
 
 class TestCLIBasics:
