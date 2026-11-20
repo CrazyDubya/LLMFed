@@ -129,6 +129,15 @@ class MatchParticipantDB(Base):
     match = relationship("MatchDB", back_populates="participants")
     wrestler = relationship("GameWrestlerDB", back_populates="match_participations")
 
+    @property
+    def booked_team(self):
+        """Team as booked; older unplayed tag bookings stored each wrestler's input position (0-3)."""
+        match = self.match
+        if (match.match_type == "tag_team" and not match.is_completed and len(match.participants) == 4
+                and {p.team for p in match.participants} == {0, 1, 2, 3}):
+            return self.team // 2
+        return self.team
+
 
 class MatchEventDB(Base):
     """A single event within a match (move, reversal, highspot, etc.)."""

@@ -2,8 +2,8 @@
 Pydantic schemas for the game API - request/response models.
 """
 
-from pydantic import AfterValidator, AliasPath, BaseModel, Field, ConfigDict
-from typing import Annotated, List, Optional, Dict, Any
+from pydantic import AliasPath, BaseModel, Field, ConfigDict
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 
@@ -369,20 +369,9 @@ class MatchParticipantSummary(BaseModel):
     wrestler_id: str
     name: str = Field(validation_alias=AliasPath("wrestler", "name"))
     role: str
-    team: Optional[int]
+    team: Optional[int] = Field(validation_alias="booked_team")
 
     model_config = ConfigDict(from_attributes=True)
-
-
-def _pair_legacy_tag_teams(participants: List[MatchParticipantSummary]) -> List[MatchParticipantSummary]:
-    """Older tag bookings stored each wrestler's input position (0-3) as its team."""
-    if len(participants) == 4 and {p.team for p in participants} == {0, 1, 2, 3}:
-        for p in participants:
-            p.team //= 2
-    return participants
-
-
-MatchParticipantList = Annotated[List[MatchParticipantSummary], AfterValidator(_pair_legacy_tag_teams)]
 
 
 class ShowSegmentResponse(BaseModel):
@@ -397,7 +386,7 @@ class ShowSegmentResponse(BaseModel):
     rating: Optional[float]
     crowd_reaction: Optional[str]
     is_completed: bool
-    participants: MatchParticipantList = Field(
+    participants: List[MatchParticipantSummary] = Field(
         default=[], validation_alias=AliasPath("match", "participants"),
     )
 
@@ -416,7 +405,7 @@ class MatchResultResponse(BaseModel):
     crowd_heat: int
     duration_minutes: Optional[int]
     is_completed: bool
-    participants: MatchParticipantList = []
+    participants: List[MatchParticipantSummary] = []
 
     model_config = ConfigDict(from_attributes=True)
 
