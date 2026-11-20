@@ -76,6 +76,10 @@ def api_create_manager(
     db: Session = Depends(get_db_sync),
 ):
     """Create a new manager character."""
+    try:
+        get_world(db, world_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     _require_federation_owner_if_any(db, current_user.user_id, federation_id)
     try:
         mgr = manager_service.create_manager(
