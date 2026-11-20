@@ -97,7 +97,7 @@ def benchmark(args, before, after, baseline):
         for metric in ["seconds", "npc_seconds"]:
             values = [row[metric] for row in rows]
             print(label, metric, dict(min=min(values), median=statistics.median(values),
-                                      max=max(values), sd=statistics.stdev(values)))
+                                      max=max(values), sd=statistics.stdev(values) if len(values) > 1 else 0.0))
         print(label, "calls", len(rows[0]["npc_calls"]), "selects", rows[0]["npc_selects"])
     for key in ["tick_hash", "state_hash"]:
         hashes = {row[key] for rows in results.values() for row in rows}
