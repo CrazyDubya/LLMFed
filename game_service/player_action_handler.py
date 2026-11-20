@@ -111,9 +111,9 @@ class PlayerActionHandler:
         }
 
         handler = dispatch.get(action_type)
-        if handler:
-            return handler(data)
-        return {"message": f"Action '{action_type}' acknowledged"}
+        if handler is None:
+            raise ValueError(f"Unsupported action type: {action_type}")
+        return handler(data)
 
     # ---- individual action handlers ------------------------------
 
