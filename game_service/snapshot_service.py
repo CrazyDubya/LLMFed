@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
-from sqlalchemy import inspect
+from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -36,12 +36,27 @@ def _serialize_row(row) -> Dict[str, Any]:
 
 def _serialize_table(db: Session, model_cls, world_id: str) -> List[Dict[str, Any]]:
     """Serialize all rows for a world from a given model."""
-    try:
-        rows = db.query(model_cls).filter(model_cls.world_id == world_id).all()
-        return [_serialize_row(r) for r in rows]
-    except Exception as e:
-        logger.debug("Could not serialize %s: %s", model_cls.__tablename__, e)
-        return []
+    rows = db.query(model_cls).filter(_world_scope(model_cls.__table__, world_id)).all()
+    return [_serialize_row(r) for r in rows]
+
+
+def _world_scope(table, world_id: str):
+    """Scope child tables through their owning parent, not incidental links."""
+    if "world_id" in table.c:
+        return table.c.world_id == world_id
+    parent_columns = {
+        "wrestler_stats": "wrestler_id", "wrestler_history": "wrestler_id",
+        "wrestler_goals": "wrestler_id", "wrestler_backstories": "wrestler_id",
+        "gimmick_history": "wrestler_id", "career_highlights": "wrestler_id",
+        "show_segments": "show_id", "match_participants": "match_id",
+        "match_events": "match_id", "championship_history": "championship_id",
+        "storyline_participants": "storyline_id", "stable_members": "stable_id",
+    }
+    if table.name not in parent_columns:
+        raise ValueError(f"No world-scoping parent configured for table '{table.name}'")
+    column = table.c[parent_columns[table.name]]
+    parent = next(iter(column.foreign_keys)).column
+    return column.in_(select(parent).where(_world_scope(parent.table, world_id)))
 
 
 def create_snapshot(
@@ -54,26 +69,14 @@ def create_snapshot(
 
     Returns a dict with snapshot metadata and the compressed data blob.
     """
-    from models.game_models import (
-        WorldDB, GameFederationDB, GameWrestlerDB, ContractDB,
-    )
-    from models.show_models import (
-        ShowDB, MatchDB, MatchParticipantDB, GameNarrativeLogDB, WorldNewsDB,
-    )
-    from models.social_models import (
-        StorylineDB, ChampionshipDB, WrestlerRelationshipDB,
-    )
+    from models.game_models import WorldDB
 
     world = db.query(WorldDB).filter(WorldDB.id == world_id).first()
     if world is None:
         raise ValueError(f"World '{world_id}' not found")
 
     # Collect all related data
-    tables_to_serialize = [
-        GameFederationDB, GameWrestlerDB, ContractDB,
-        ShowDB, MatchDB, MatchParticipantDB, GameNarrativeLogDB,
-        StorylineDB, ChampionshipDB, WrestlerRelationshipDB, WorldNewsDB,
-    ]
+    tables_to_serialize = [cls for cls in _model_classes_by_table().values() if cls is not WorldDB]
 
     state = {
         "world": _serialize_row(world),
@@ -119,22 +122,20 @@ def create_snapshot(
 
 
 def _model_classes_by_table() -> Dict[str, Any]:
-    """Map each serialized table name to its ORM class."""
-    from models.game_models import (
-        WorldDB, GameFederationDB, GameWrestlerDB, ContractDB,
-    )
-    from models.show_models import (
-        ShowDB, MatchDB, MatchParticipantDB, GameNarrativeLogDB, WorldNewsDB,
-    )
-    from models.social_models import (
-        StorylineDB, ChampionshipDB, WrestlerRelationshipDB,
-    )
-    classes = [
-        WorldDB, GameFederationDB, GameWrestlerDB, ContractDB,
-        ShowDB, MatchDB, MatchParticipantDB, GameNarrativeLogDB,
-        StorylineDB, ChampionshipDB, WrestlerRelationshipDB, WorldNewsDB,
-    ]
-    return {cls.__tablename__: cls for cls in classes}
+    """World-owned models in dependency order; exclude global users/legacy data."""
+    from models.game_models import Base, WorldDB
+
+    classes = {mapper.local_table.name: mapper.class_ for mapper in Base.registry.mappers}
+    owned = {WorldDB.__tablename__}
+    result = {}
+    for table in Base.metadata.sorted_tables:
+        if table.name in {"players", "player_actions"}:
+            continue
+        if (table.name in owned or "world_id" in table.c
+                or any(fk.column.table.name in owned for fk in table.foreign_keys)):
+            owned.add(table.name)
+            result[table.name] = classes[table.name]
+    return result
 
 
 def restore_snapshot(
@@ -159,6 +160,9 @@ def restore_snapshot(
     old_world_id = world_data.get("id")
     tables = state.get("tables", {})
     model_by_table = _model_classes_by_table()
+    unknown_tables = tables.keys() - model_by_table.keys()
+    if unknown_tables:
+        raise ValueError(f"Unknown snapshot tables: {sorted(unknown_tables)}")
 
     if create_new_world:
         new_world_id = str(uuid.uuid4())
@@ -182,6 +186,10 @@ def restore_snapshot(
                 id_map[row["id"]] = str(uuid.uuid4())
 
     def _remap(value):
+        if isinstance(value, dict):
+            return {_remap(key): _remap(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [_remap(item) for item in value]
         if isinstance(value, str) and value in id_map:
             return id_map[value]
         return value
@@ -193,18 +201,17 @@ def restore_snapshot(
     if not create_new_world:
         _delete_existing_world_data(db, new_world_id, model_by_table)
     _upsert_world_row(db, model_by_table["worlds"], world_data, DateTimeType)
+    db.flush()
 
-    for table_name, rows in tables.items():
-        model_cls = model_by_table.get(table_name)
-        if model_cls is None:
-            logger.warning("No model registered for snapshot table '%s' — skipped", table_name)
-            continue
+    for table_name, model_cls in model_by_table.items():
+        rows = tables.get(table_name, [])
         pk_is_string = isinstance(model_cls.id.type, StringType)
         for row in rows:
             row = {k: _remap(v) for k, v in row.items()}
             if not pk_is_string:
                 row.pop("id", None)  # let autoincrement assign
             _insert_row(db, model_cls, row, DateTimeType)
+        db.flush()
 
     db.commit()
 
@@ -265,19 +272,11 @@ def _delete_existing_world_data(db: Session, world_id: str, model_by_table: dict
     updates it rather than deleting and recreating it.
     """
     from models.core_models import WorldDB
-    from models.show_models import MatchDB, MatchParticipantDB
 
-    # MatchParticipantDB has no direct world_id — it's scoped via its match.
-    match_ids = [m.id for m in db.query(MatchDB.id).filter(MatchDB.world_id == world_id).all()]
-    if match_ids:
-        db.query(MatchParticipantDB).filter(
-            MatchParticipantDB.match_id.in_(match_ids)
-        ).delete(synchronize_session=False)
-
-    for table_name, model_cls in model_by_table.items():
-        if model_cls in (WorldDB, MatchParticipantDB):
+    for model_cls in reversed(list(model_by_table.values())):
+        if model_cls is WorldDB:
             continue
-        db.query(model_cls).filter(model_cls.world_id == world_id).delete(synchronize_session=False)
+        db.query(model_cls).filter(_world_scope(model_cls.__table__, world_id)).delete(synchronize_session=False)
     db.flush()
 
 

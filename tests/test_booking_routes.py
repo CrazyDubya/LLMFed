@@ -1,4 +1,4 @@
-"""HTTP regression tests for match booking."""
+"""HTTP regression tests for show booking."""
 
 from types import SimpleNamespace
 
@@ -14,7 +14,8 @@ from api_gateway.main import app
 from api_gateway.security import create_access_token
 from models.db_models import Base
 from models.game_models import (
-    GameFederationDB, GameWrestlerDB, MatchDB, MatchParticipantDB, PlayerDB, ShowDB, UserDB, WorldDB,
+    GameFederationDB, GameWrestlerDB, MatchDB, MatchParticipantDB, PlayerDB, PromoDB, ShowDB, ShowSegmentDB,
+    UserDB, WorldDB,
 )
 
 
@@ -57,7 +58,8 @@ async def booking_client(tmp_path, monkeypatch):
 
     monkeypatch.setitem(app.dependency_overrides, get_db_sync, override_db_sync)
     monkeypatch.setitem(app.dependency_overrides, get_db, override_db)
-    client = TestClient(app, base_url="http://localhost", headers={"Authorization": f"Bearer {token}"})
+    client = TestClient(app, base_url="http://localhost", headers={"Authorization": f"Bearer {token}"},
+                        raise_server_exceptions=False)
     try:
         yield SimpleNamespace(client=client, sessions=sessions, show_id=show_id, wrestler_ids=wrestler_ids,
                               bench_id=bench_id, outsider_id=outsider_id)
@@ -118,3 +120,24 @@ def test_book_match_rejects_invalid_participants(booking_client, case, message):
     with b.sessions() as db:
         assert db.query(MatchDB).count() == 0
         assert db.query(MatchParticipantDB).count() == 0
+
+
+@pytest.mark.parametrize("promo_type", ["worked_shoot", None], ids=["requested-type", "default-type"])
+def test_book_promo(booking_client, promo_type):
+    b = booking_client
+    params = {"wrestler_id": b.wrestler_ids[0]}
+    if promo_type is not None:
+        params["promo_type"] = promo_type
+
+    response = b.client.post(f"/game/shows/{b.show_id}/promos", params=params)
+    assert response.status_code == 201, response.json()["message"]
+    segment = response.json()
+
+    with b.sessions() as db:
+        show = db.get(ShowDB, b.show_id)
+        stored_segment = db.get(ShowSegmentDB, segment["id"])
+        promo = db.get(PromoDB, stored_segment.promo_id)
+        assert segment["description"] == "Promo segment"
+        assert segment["description"] != show.world_id
+        assert promo.promo_type == (promo_type or "in_ring")
+        assert promo.world_id == show.world_id

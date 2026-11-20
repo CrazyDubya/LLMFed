@@ -6,6 +6,7 @@ every persisted table, excluding wall-clock DateTime columns.
 
 import argparse
 from collections import Counter
+import hashlib
 import json
 from pathlib import Path
 import random
@@ -22,6 +23,7 @@ from sqlalchemy.orm import sessionmaker
 from models.db_models import Base
 from game_service.world_service import create_world
 from game_service.world_ticker import WorldTicker
+from game_service import inter_federation_service
 
 
 def main():
@@ -39,6 +41,10 @@ def main():
 
     def sql(conn, cursor, statement, parameters, context, executemany):
         counts["sql"] += 1
+        if statement.startswith("SELECT"):
+            counts["selects"] += 1
+            if phase == "momentum":
+                counts["momentum_selects"] += 1
         if phase == "show":
             counts["show_sql"] += 1
         if "count(" in statement and "championships" in statement:
@@ -48,6 +54,19 @@ def main():
 
     original_show = WorldTicker._simulate_shows
     show_seconds = 0.0
+    original_momentum = inter_federation_service.update_federation_momentum
+    momentum_seconds = 0.0
+
+    def momentum(*a, **kw):
+        nonlocal phase, momentum_seconds
+        previous_phase = phase
+        phase = "momentum"
+        start = time.perf_counter()
+        try:
+            return original_momentum(*a, **kw)
+        finally:
+            momentum_seconds += time.perf_counter() - start
+            phase = previous_phase
 
     def shows(self, *a, **kw):
         nonlocal phase, show_seconds
@@ -62,6 +81,8 @@ def main():
     randint = random.randint
     with patch("uuid.uuid4", side_effect=lambda: uuid.UUID(int=ids.getrandbits(128))), patch.object(
         WorldTicker, "_simulate_shows", shows,
+    ), patch.object(
+        inter_federation_service, "update_federation_momentum", momentum,
     ):
         with patch(
             "game_service.world_service.random.randint",
@@ -71,13 +92,14 @@ def main():
         ticker = WorldTicker(db, world.id)
         event.listen(engine, "before_cursor_execute", sql)
         start = time.perf_counter()
-        ticker.tick(days=28)
+        tick_results = ticker.tick(days=28)
         seconds = time.perf_counter() - start
         event.remove(engine, "before_cursor_execute", sql)
-        result = dict(seconds=seconds, show_seconds=show_seconds, **counts)
+        result = dict(seconds=seconds, show_seconds=show_seconds,
+                      momentum_seconds=momentum_seconds, **counts)
         print(json.dumps(result, sort_keys=True), flush=True)
         (args.output / "results.json").write_text(json.dumps(result, indent=2))
-        fingerprint = {}
+        fingerprint = {"tick_results": tick_results}
         for table in Base.metadata.sorted_tables:
             columns = [c for c in table.c if not isinstance(c.type, DateTime)]
             rows = [dict(row) for row in db.execute(select(*columns)).mappings()]
@@ -85,6 +107,9 @@ def main():
         (args.output / "fingerprint.json").write_text(
             json.dumps(fingerprint, sort_keys=True, indent=2, default=str) + "\n"
         )
+        digest = hashlib.sha256((args.output / "fingerprint.json").read_bytes()).hexdigest()
+        (args.output / "sha256.txt").write_text(digest + "\n")
+        print("sha256=" + digest, flush=True)
     db.close()
     engine.dispose()
 

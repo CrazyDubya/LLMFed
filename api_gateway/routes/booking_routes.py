@@ -187,7 +187,7 @@ def api_book_promo(
     _require_show_owner(db, current_user.user_id, show)
     try:
         seg = svc_book_promo_segment(
-            db, show_id, show.world_id,
+            db, show_id, world_id=show.world_id,
             wrestler_id=wrestler_id,
             target_wrestler_id=target_wrestler_id,
             promo_type=promo_type,
