@@ -23,7 +23,7 @@ dependencies = [
     "websockets",
     "rich",
     "PyJWT>=2.10,<3",
-    "passlib[bcrypt]",
+    "bcrypt",
     "python-multipart",
     "slowapi",
     "aiosqlite>=0.22.1",
@@ -43,6 +43,9 @@ dev = [
     "flake8",
     "mypy",
 ]
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "session"
 
 [tool.setuptools.packages.find]
 where = ["."]
