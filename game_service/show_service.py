@@ -121,7 +121,16 @@ def book_match(db: Session, show_id: str, world_id: str,
                position: int = None,
                planned_duration_minutes: int | None = None) -> ShowSegmentDB:
     """Book a match segment on a show."""
-    _require_bookable_show(db, show_id)
+    show = _require_bookable_show(db, show_id)
+    if championship_id:
+        championship = db.query(ChampionshipDB).filter(
+            ChampionshipDB.id == championship_id,
+            ChampionshipDB.world_id == show.world_id,
+            ChampionshipDB.federation_id == show.federation_id,
+            ChampionshipDB.is_active.is_(True),
+        ).first()
+        if not championship:
+            raise ValueError("Championship must be active and belong to the show's world and federation")
 
     is_tag_match = match_type == "tag_team"
     if is_tag_match and len(wrestler_ids) != 4:

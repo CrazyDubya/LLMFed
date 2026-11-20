@@ -17,7 +17,7 @@ from core_engine import match_engine, tag_match_simulator
 from models.db_models import Base
 from models.game_models import (
     GameFederationDB, GameWrestlerDB, MatchDB, MatchParticipantDB, PlayerDB, PromoDB, ShowDB, ShowSegmentDB,
-    UserDB, WorldDB, WrestlerStatsDB,
+    UserDB, WorldDB, WrestlerStatsDB, ChampionshipDB,
 )
 
 
@@ -71,6 +71,58 @@ async def booking_client(tmp_path, monkeypatch):
         client.close()
         await async_engine.dispose()
         engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "scope", ["other-world", "other-federation", "inactive", "missing", "valid", "none"],
+)
+@pytest.mark.parametrize("via_http", [False, True], ids=["service", "http"])
+def test_championship_booking_scope(booking_client, scope, via_http):
+    from game_service.show_service import book_match
+
+    b = booking_client
+    with b.sessions() as db:
+        show = db.get(ShowDB, b.show_id)
+        title_id = None
+        if scope == "missing":
+            title_id = "missing-title"
+        elif scope != "none":
+            world_id, federation_id = show.world_id, show.federation_id
+            if scope == "other-world":
+                world_id = db.query(WorldDB).filter(WorldDB.id != show.world_id).first().id
+            if scope == "other-federation":
+                fed = GameFederationDB(world_id=world_id, name="Other Federation")
+                db.add(fed)
+                db.flush()
+                federation_id = fed.id
+            title = ChampionshipDB(world_id=world_id, federation_id=federation_id,
+                                   name="Test Title", is_active=scope != "inactive")
+            db.add(title)
+            db.commit()
+            title_id = title.id
+
+    valid = scope in {"valid", "none"}
+    message = "Championship must be active and belong to the show's world and federation"
+    if via_http:
+        response = b.client.post(f"/game/shows/{b.show_id}/matches", json={
+            "participant_ids": b.wrestler_ids, "is_title_match": True, "championship_id": title_id,
+        })
+        assert response.status_code == (201 if valid else 400), response.text
+        if not valid:
+            assert response.json()["message"] == message
+    else:
+        with b.sessions() as db:
+            if valid:
+                book_match(db, b.show_id, b.world_id, b.wrestler_ids,
+                           is_title_match=True, championship_id=title_id)
+                db.commit()
+            else:
+                with pytest.raises(ValueError, match=message):
+                    book_match(db, b.show_id, b.world_id, b.wrestler_ids,
+                               is_title_match=True, championship_id=title_id)
+    with b.sessions() as db:
+        assert db.query(MatchDB).count() == int(valid)
+        assert db.query(ShowSegmentDB).count() == int(valid)
 
 
 @pytest.mark.parametrize(

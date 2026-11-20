@@ -190,7 +190,8 @@ def _handle_title_result(db: Session, match: MatchDB,
                          winners: list, losers: list, game_date: str):
     """Handle championship title change or successful defense."""
     champ = db.query(ChampionshipDB).filter(
-        ChampionshipDB.id == match.championship_id
+        ChampionshipDB.id == match.championship_id,
+        ChampionshipDB.world_id == match.world_id,
     ).first()
     if not champ:
         return

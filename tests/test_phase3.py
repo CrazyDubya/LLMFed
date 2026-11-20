@@ -161,6 +161,29 @@ class TestMatchAftermath:
         assert len(logs) == 1
         assert "NEW CHAMPION" in logs[0].description
 
+    def test_other_world_title_is_unchanged(self, db_session):
+        _create_world(db_session)
+        fed = _create_fed(db_session)
+        winner = _create_wrestler(db_session, name="Winner")
+        loser = _create_wrestler(db_session, name="Loser")
+        db_session.add(WorldDB(id="world2", name="Other World"))
+        title = ChampionshipDB(world_id="world2", federation_id=fed.id,
+                               name="Other Title", defenses=3)
+        db_session.add(title)
+        db_session.flush()
+        match = _create_completed_match(
+            db_session, "world1", winner.id, loser.id, winner.id,
+            is_title_match=True, championship_id=title.id,
+        )
+        from core_engine.match_aftermath import process_match_aftermath
+        process_match_aftermath(db_session, match, "2026-01-15")
+        db_session.refresh(title)
+        assert title.current_holder_id is None
+        assert title.defenses == 3
+        assert db_session.query(GameNarrativeLogDB).filter(
+            GameNarrativeLogDB.event_type.in_(["title_change", "title_defense"])
+        ).count() == 0
+
     def test_title_defense(self, db_session):
         _create_world(db_session)
         fed = _create_fed(db_session)
