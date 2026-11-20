@@ -178,7 +178,8 @@ def book_promo_segment(db: Session, show_id: str,
                        wrestler_id: str = None,
                        target_wrestler_id: str = None,
                        world_id: str = None,
-                       game_date: str = None) -> ShowSegmentDB:
+                       game_date: str = None,
+                       promo_type: str = "in_ring") -> ShowSegmentDB:
     """Book a promo segment, creating a PromoDB record when a wrestler is identified."""
     if position is None:
         position = _get_next_segment_position(db, show_id)
@@ -195,7 +196,7 @@ def book_promo_segment(db: Session, show_id: str,
             wrestler_id=wrestler_id,
             target_wrestler_id=target_wrestler_id,
             content=description,
-            promo_type="in_ring",
+            promo_type=promo_type,
             game_date=game_date,
         )
         db.add(promo)

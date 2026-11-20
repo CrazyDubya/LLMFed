@@ -6,6 +6,8 @@ Notable changes between commits. Supplement git history with a short note here w
 
 - **Federation momentum:** Batch daily show, contract and wrestler reads across federations while preserving first-show selection and de-duplicated roster morale.
 
+- **Snapshot restore:** Preserve all world-owned tables, scope child rows through their parents, and restore in foreign-key dependency order without silently swallowing serialization errors.
+
 - **Locker room dynamics:** Batch roster stats in one query per federation, preserving missing-row skips and first-returned stats for duplicate rows.
 
 - **Engine debug endpoint:** Inspect database tables through an async connection so debug mode returns the schema and engine state instead of HTTP 500.

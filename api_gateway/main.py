@@ -18,7 +18,7 @@ from slowapi.util import get_remote_address
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry import trace
@@ -202,7 +202,7 @@ app.include_router(metrics_router)
 # WebSocket
 # ---------------------------------------------------------------------------
 @app.websocket("/ws/{world_id}")
-async def ws_world_feed(websocket, world_id: str):
+async def ws_world_feed(websocket: WebSocket, world_id: str):
     await websocket_endpoint(websocket, world_id)
 
 
