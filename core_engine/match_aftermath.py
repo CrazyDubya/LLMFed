@@ -202,9 +202,20 @@ def _handle_title_result(db: Session, match: MatchDB,
     winner = _get_wrestler(db, winner_id)
     winner_name = winner.name if winner else "Unknown"
 
-    if champ.current_holder_id == winner_id:
+    old_holder_id = champ.current_holder_id
+    active_reign = None
+    if old_holder_id:
+        active_reign = db.query(ChampionshipHistoryDB).filter(
+            ChampionshipHistoryDB.championship_id == champ.id,
+            ChampionshipHistoryDB.wrestler_id == old_holder_id,
+            ChampionshipHistoryDB.reign_end.is_(None),
+        ).first()
+
+    if old_holder_id == winner_id:
         # Successful title defense
         champ.defenses += 1
+        if active_reign:
+            active_reign.defenses = champ.defenses
         db.add(GameNarrativeLogDB(
             world_id=match.world_id,
             game_date=game_date, tick=0,
@@ -215,19 +226,13 @@ def _handle_title_result(db: Session, match: MatchDB,
         ))
     else:
         # Title change!
-        old_holder_id = champ.current_holder_id
         old_holder = _get_wrestler(db, old_holder_id) if old_holder_id else None
 
         # End old reign
-        if old_holder_id:
-            old_reign = db.query(ChampionshipHistoryDB).filter(
-                ChampionshipHistoryDB.championship_id == champ.id,
-                ChampionshipHistoryDB.wrestler_id == old_holder_id,
-                ChampionshipHistoryDB.reign_end == None,
-            ).first()
-            if old_reign:
-                old_reign.reign_end = game_date
-                old_reign.how_lost = match.finish_type or "pinfall"
+        if active_reign:
+            active_reign.defenses = champ.defenses
+            active_reign.reign_end = game_date
+            active_reign.how_lost = match.finish_type or "pinfall"
 
         # Start new reign
         db.add(ChampionshipHistoryDB(
