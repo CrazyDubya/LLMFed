@@ -12,6 +12,7 @@ export default function WrestlerDashboard() {
   const navigate = useNavigate();
 
   const [wrestler, setWrestler] = useState<any>(null);
+  const [career, setCareer] = useState<any>(null);
   const [stats, setStats] = useState<any>(null);
   const [worldData, setWorldData] = useState<World | null>(null);
   const [narrative, setNarrative] = useState<any[]>([]);
@@ -36,6 +37,7 @@ export default function WrestlerDashboard() {
       ]);
       setWorldData(wd);
       setWrestler(wData.wrestler);
+      setCareer(wData);
       setStats(wData.stats);
       setNarrative(narr);
       setFederations(feds);
@@ -292,8 +294,8 @@ export default function WrestlerDashboard() {
               </div>
             </div>
             <div className="space-y-2 text-sm">
-              <p className="text-gray-400">Contract: <span className="text-gray-300">{wrestler?.current_federation ? 'Signed' : 'Free Agent'}</span></p>
-              <p className="text-gray-400">Championships: <span className="text-gray-300">{wrestler?.current_championships?.length || 0}</span></p>
+              <p className="text-gray-400">Contract: <span className="text-gray-300">{career?.current_federation ? 'Signed' : 'Free Agent'}</span></p>
+              <p className="text-gray-400">Championships: <span className="text-gray-300">{career?.current_championships?.length || 0}</span></p>
             </div>
           </div>
         )}

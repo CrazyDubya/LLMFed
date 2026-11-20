@@ -8,14 +8,14 @@ Goals: goal_service.py | Politics: politics_service.py | Data: lifecycle_constan
 import logging
 import random
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import List, Optional, Tuple
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models.game_models import (
     GameWrestlerDB, WrestlerStatsDB, GameFederationDB, ContractDB,
-    ChampionshipHistoryDB, MatchParticipantDB, MatchDB,
+    ChampionshipDB, ChampionshipHistoryDB, MatchParticipantDB, MatchDB,
     ShowDB, ShowSegmentDB, WrestlerPushDB,
     GameNarrativeLogDB,
     MentorshipDB, CareerHighlightDB, HallOfFameDB,
@@ -123,6 +123,44 @@ def calculate_retirement_pressure(wrestler: GameWrestlerDB) -> int:
         pressure += rp["old_age_bonus"]
 
     return pressure
+
+
+def retire_wrestler(
+    db: Session, wrestler: GameWrestlerDB, game_date: str,
+) -> Tuple[List[ContractDB], List[ChampionshipDB]]:
+    """Retire a wrestler, ending their active contracts and vacating their titles.
+
+    Returns the terminated contracts and the vacated championships.
+    """
+    wrestler.is_active = False
+    wrestler.retirement_date = game_date
+
+    contracts = db.query(ContractDB).filter(
+        ContractDB.wrestler_id == wrestler.id,
+        ContractDB.status == "active",
+    ).all()
+    for contract in contracts:
+        contract.status = "terminated"
+        contract.end_date = game_date
+
+    open_reigns = db.query(ChampionshipHistoryDB).filter(
+        ChampionshipHistoryDB.wrestler_id == wrestler.id,
+        ChampionshipHistoryDB.reign_end.is_(None),
+    ).all()
+    for reign in open_reigns:
+        reign.reign_end = game_date
+        reign.how_lost = "retired"
+
+    titles = db.query(ChampionshipDB).filter(
+        ChampionshipDB.current_holder_id == wrestler.id,
+    ).all()
+    for title in titles:
+        title.current_holder_id = None
+        title.current_reign_start = None
+        title.defenses = 0
+
+    db.flush()
+    return contracts, titles
 
 
 def calculate_ring_rust_modifier(wrestler: GameWrestlerDB) -> float:

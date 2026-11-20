@@ -110,6 +110,28 @@ class TestManagerCRUD:
     def test_remove_nonexistent_bond(self, db):
         assert remove_manager(db, "fake-id") is False
 
+    def test_reactivate_manager_bond(self, db, world, federation, wrestlers):
+        mgr = create_manager(db, world.id, "The Advocate", federation_id=federation.id)
+        bond = assign_manager(db, world.id, mgr.id, wrestlers[0].id, game_date="2026-01-01")
+        bond_id = bond.id
+        remove_manager(db, bond_id, game_date="2026-02-01")
+        assert get_wrestler_manager(db, wrestlers[0].id) == {}
+        assert list_manager_bonds(db, world.id) == []
+
+        bond = assign_manager(
+            db, world.id, mgr.id, wrestlers[0].id, role="valet",
+            specialization="promo_boost", game_date="2026-03-01",
+        )
+        assert bond.id == bond_id
+        assert bond.is_active is True
+        assert bond.contract_started == "2026-03-01"
+        assert bond.contract_ended is None
+        assert bond.role == "valet"
+        assert bond.specialization == "promo_boost"
+        assert bond.effectiveness == 50
+        assert get_wrestler_manager(db, wrestlers[0].id)["bond"].id == bond_id
+        assert len(list_manager_bonds(db, world.id, active_only=False)) == 1
+
     def test_get_manager_clients(self, db, world, federation, wrestlers):
         mgr = create_manager(db, world.id, "The Agent", federation_id=federation.id)
         assign_manager(db, world.id, mgr.id, wrestlers[0].id)

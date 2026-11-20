@@ -138,6 +138,15 @@ def _book_match(db: Session, show: ShowDB, world_id: str,
                 position: int = None,
                 planned_duration_minutes: int | None = None) -> ShowSegmentDB:
     show_id = show.id
+    if championship_id:
+        championship = db.query(ChampionshipDB).filter(
+            ChampionshipDB.id == championship_id,
+            ChampionshipDB.world_id == show.world_id,
+            ChampionshipDB.federation_id == show.federation_id,
+            ChampionshipDB.is_active.is_(True),
+        ).first()
+        if not championship:
+            raise ValueError("Championship must be active and belong to the show's world and federation")
 
     is_tag_match = match_type == "tag_team"
     if is_tag_match and len(wrestler_ids) != 4:
@@ -523,27 +532,29 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
                 candidates = [w for w in wrestlers if w.id not in used and w.id != pw_id and not w.is_injured]
                 opp = random.choice(candidates) if candidates else None
 
-            if opp:
-                seg = _book_match(
-                    db, show, show.world_id,
-                    position=next_position + len(segments),
-                    wrestler_ids=[pw.id, opp.id],
-                    match_type="singles",
-                    planned_winner_id=pw.id if random.random() < PLAYER_MATCH_WIN_RATE else opp.id,
-                    planned_finish="pinfall",
-                )
-                segments.append(seg)
-                card_priority[seg.id] = 1  # Opening match — gets the player on TV
-                used.add(pw.id)
-                used.add(opp.id)
-                player_match_booked = True
+            if not opp:
+                continue
+
+            seg = _book_match(
+                db, show, show.world_id,
+                position=next_position + len(segments),
+                wrestler_ids=[pw.id, opp.id],
+                match_type="singles",
+                planned_winner_id=pw.id if random.random() < PLAYER_MATCH_WIN_RATE else opp.id,
+                planned_finish="pinfall",
+            )
+            segments.append(seg)
+            card_priority[seg.id] = 1  # Opening match — gets the player on TV
+            used.add(pw.id)
+            used.add(opp.id)
+            player_match_booked = True
 
             # Remove fulfilled request
             pending_requests = [r for r in pending_requests if r.get("wrestler_id") != pw_id]
             break  # One player match per show
 
         # Update metadata
-        meta = world.world_config or {}
+        meta = dict(world.world_config or {})
         meta["pending_match_requests"] = pending_requests
         world.world_config = meta
 

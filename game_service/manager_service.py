@@ -130,6 +130,10 @@ MANAGER_PROMO_TEMPLATES = {
 # CRUD — Create / Read / Bond / Unbond
 # ---------------------------------------------------------------------------
 
+class WrestlerNotFoundError(ValueError):
+    pass
+
+
 def create_manager(
     db: Session,
     world_id: str,
@@ -173,14 +177,20 @@ def assign_manager(
     specialization: str = "all_around",
     game_date: str = None,
 ) -> ManagerClientDB:
-    """Create a persistent manager-to-client bond."""
+    """Create or reactivate a persistent manager-to-client bond."""
     manager = db.query(ManagerDB).filter_by(id=manager_id).first()
-    wrestler = db.query(GameWrestlerDB).filter_by(id=client_wrestler_id).first()
+    wrestler = db.query(GameWrestlerDB).filter_by(id=client_wrestler_id, world_id=world_id).first()
+    if wrestler is None:
+        raise WrestlerNotFoundError("Wrestler not found in this world")
 
     # Calculate initial bonuses based on manager stats and specialization
     charisma_bonus, heat_bonus = _calculate_bonuses(manager, specialization)
 
-    bond = ManagerClientDB(
+    bond = db.query(ManagerClientDB).filter_by(
+        world_id=world_id, manager_id=manager_id,
+        client_wrestler_id=client_wrestler_id, is_active=False,
+    ).first()
+    bond_values = dict(
         world_id=world_id,
         manager_id=manager_id,
         client_wrestler_id=client_wrestler_id,
@@ -190,10 +200,17 @@ def assign_manager(
         charisma_bonus=charisma_bonus,
         heat_bonus=heat_bonus,
         contract_started=game_date,
+        contract_ended=None,
+        is_active=True,
     )
-    db.add(bond)
+    if bond:
+        for key, value in bond_values.items():
+            setattr(bond, key, value)
+    else:
+        bond = ManagerClientDB(**bond_values)
+        db.add(bond)
 
-    if manager and wrestler:
+    if manager:
         db.add(GameNarrativeLogDB(
             world_id=world_id,
             game_date=game_date or "",
@@ -206,7 +223,7 @@ def assign_manager(
     db.commit()
     logger.info("Manager '%s' assigned to wrestler '%s'",
                 manager.name if manager else manager_id,
-                wrestler.name if wrestler else client_wrestler_id)
+                wrestler.name)
     return bond
 
 

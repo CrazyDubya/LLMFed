@@ -96,6 +96,27 @@ class TestWorldTicker:
         db_session.refresh(action)
         assert action.status == "completed"
 
+    @pytest.mark.parametrize(
+        "action_type",
+        ["request_release", "accept_contract", "create_championship", "not_a_real_action"],
+    )
+    def test_tick_fails_unsupported_action(self, db_session, world_with_player, action_type):
+        world, player = world_with_player
+        action = PlayerActionDB(
+            world_id=world.id,
+            player_id=player.id,
+            action_type=action_type,
+            action_data={},
+        )
+        db_session.add(action)
+        db_session.commit()
+
+        WorldTicker(db_session, world.id).tick(1)
+
+        db_session.refresh(action)
+        assert action.status == "failed"
+        assert action.result == {"error": f"Unsupported action type: {action_type}"}
+
     def test_tick_train_action(self, db_session):
         """Test wrestler training action."""
         world = create_world(db_session, "Train World")

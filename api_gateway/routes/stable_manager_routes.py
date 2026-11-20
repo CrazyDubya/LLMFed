@@ -138,6 +138,8 @@ def api_assign_manager(
             game_date=world.current_game_date,
         )
         return ManagerClientResponse.model_validate(bond)
+    except manager_service.WrestlerNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
         _handle_value_error(e)
 

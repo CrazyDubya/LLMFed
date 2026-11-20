@@ -103,7 +103,7 @@ def simulate_show(
     show : ShowDB
         The show to simulate (must not yet be completed).
     world : WorldDB
-        The current world (used for game date, tick, world id).
+        The current world.
     log_event : callable
         ``log_event(event_type, description, involved, importance)`` callback
         for recording narrative events.
@@ -313,9 +313,7 @@ def _simulate_match_segment(
             show_momentum = max(30, show_momentum - 5)
 
         # Process post-match consequences
-        aftermath.process_match_aftermath(
-            db, match, world.current_game_date
-        )
+        aftermath.process_match_aftermath(db, match, show.game_date)
 
         # Character reactions — LLM-driven wrestlers react to match results
         if USE_LLM:
@@ -349,7 +347,7 @@ def _simulate_match_segment(
             for loser_id in losers:
                 stable_svc.process_match_result_for_stables(
                     db, result.winner_id, loser_id,
-                    world.id, world.current_game_date,
+                    world.id, show.game_date,
                 )
         except (ValueError, AttributeError) as e:
             logger.debug("Stable match processing skipped: %s", e)
@@ -366,9 +364,7 @@ def _simulate_match_segment(
             show_momentum = min(85, show_momentum + 8)  # Angles are hot
 
         # Check for storyline triggers from match result
-        sl_svc.check_match_storyline_triggers(
-            db, match, world.current_game_date
-        )
+        sl_svc.check_match_storyline_triggers(db, match, show.game_date)
     except Exception as e:
         # Leave the segment genuinely incomplete rather than inventing a
         # plausible-looking rating — a fabricated number here would silently

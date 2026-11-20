@@ -1,5 +1,6 @@
 """HTTP tests for manager bond assignment."""
 
+import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -23,11 +24,16 @@ async def bond_client(tmp_path, monkeypatch):
     Base.metadata.create_all(engine)
     with sessions.begin() as db:
         user = UserDB(username="bond-player", email="bond@example.test", password_hash="unused")
-        db.add_all([user, WorldDB(id="bond-world", name="Bond World", current_game_date="2026-01-10")])
+        db.add_all([
+            user,
+            WorldDB(id="bond-world", name="Bond World", current_game_date="2026-01-10"),
+            WorldDB(id="other-world", name="Other World", current_game_date="2026-01-10"),
+        ])
         db.flush()
         db.add_all([
             ManagerDB(id="bond-manager", world_id="bond-world", name="The Advocate"),
             GameWrestlerDB(id="bond-wrestler", world_id="bond-world", name="The Hero"),
+            GameWrestlerDB(id="other-wrestler", world_id="other-world", name="The Outsider"),
         ])
         token = create_access_token({"sub": user.id})
 
@@ -77,6 +83,48 @@ def test_assign_manager_missing_manager(bond_client):
     assert response.json()["message"] == "Manager not found"
 
 
+@pytest.mark.parametrize("wrestler_id", ["other-wrestler", "missing-wrestler"])
+def test_assign_manager_requires_wrestler_in_world(bond_client, wrestler_id):
+    endpoint = "/game/worlds/bond-world/manager-bonds"
+    response = bond_client.post(endpoint, json={
+        "manager_id": "bond-manager", "client_wrestler_id": wrestler_id,
+    })
+    assert response.status_code == 404, response.text
+    assert response.json()["message"] == "Wrestler not found in this world"
+
+    bonds = bond_client.get(endpoint)
+    assert bonds.status_code == 200, bonds.text
+    assert bonds.json() == []
+
+
 def test_assign_manager_empty_payload(bond_client):
     response = bond_client.post("/game/worlds/bond-world/manager-bonds", json={})
     assert response.status_code == 422, response.text
+
+
+def test_readd_removed_manager(bond_client):
+    url = "/game/worlds/bond-world/manager-bonds"
+    payload = {"manager_id": "bond-manager", "client_wrestler_id": "bond-wrestler"}
+    added = bond_client.post(url, json=payload)
+    assert added.status_code == 201, added.text
+    bond_id = added.json()["id"]
+    active_duplicate = bond_client.post(url, json=payload)
+    removed = bond_client.delete(f"/game/manager-bonds/{bond_id}")
+    readded = bond_client.post(url, json={**payload, "role": "valet", "specialization": "promo_boost"})
+    duplicate = bond_client.post(url, json=payload)
+    for label, response in [("add", added), ("remove", removed),
+                            ("re-add", readded), ("duplicate-active add", active_duplicate),
+                            ("duplicate after re-add", duplicate)]:
+        print(f"HTTP {label}: {response.status_code} {response.text}")
+    assert active_duplicate.status_code == 409, active_duplicate.text
+    assert removed.status_code == 204, removed.text
+    assert readded.status_code == 201, readded.text
+    assert readded.json()["id"] == bond_id
+    assert readded.json()["is_active"] is True
+    assert readded.json()["role"] == "valet"
+    assert readded.json()["specialization"] == "promo_boost"
+    assert duplicate.status_code == 409, duplicate.text
+    assert duplicate.json()["message"] == "Database constraint violation"
+    bonds = bond_client.get(url).json()
+    assert len(bonds) == 1
+    assert bonds[0]["id"] == bond_id
