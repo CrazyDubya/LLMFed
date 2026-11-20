@@ -23,6 +23,7 @@ def storyline_api():
     with sessions() as db:
         db.add(WorldDB(id="story-world", name="Story World"))
         db.add(GameWrestlerDB(id="hero", world_id="story-world", name="The Hero"))
+        db.add(GameWrestlerDB(id="villain", world_id="story-world", name="The Villain"))
         db.commit()
 
     def get_db():
@@ -89,3 +90,48 @@ def test_create_storyline_missing_world(storyline_api):
     })
     assert response.status_code == 404, response.text
     assert response.json()["message"] == "World not found"
+
+
+def test_create_storyline_returns_saved_body(storyline_api):
+    client, sessions, _ = storyline_api
+    response = client.post("/game/worlds/story-world/storylines", json={
+        "name": "Bad Blood", "description": "A rivalry", "wrestler_ids": ["hero", "villain"],
+    })
+    with sessions() as db:
+        saved = db.query(StorylineDB).one()
+        saved_id = saved.id
+        assert saved.name == "Bad Blood"
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["id"] == saved_id
+    assert body["name"] == "Bad Blood"
+    assert body["status"] == "brewing"
+    assert body["participants"] == [
+        {"wrestler_id": "hero", "wrestler_name": "The Hero", "role": "protagonist"},
+        {"wrestler_id": "villain", "wrestler_name": "The Villain", "role": "antagonist"},
+    ]
+
+
+@pytest.mark.parametrize("with_participants", [False, True])
+def test_update_storyline_returns_saved_status(storyline_api, with_participants):
+    client, sessions, _ = storyline_api
+    with sessions() as db:
+        db.add(StorylineDB(id="story", world_id="story-world", name="Bad Blood"))
+        if with_participants:
+            db.add(StorylineParticipantDB(storyline_id="story", wrestler_id="hero", role="protagonist"))
+        db.commit()
+    response = client.patch("/game/storylines/story", json={"status": "climax"})
+    with sessions() as db:
+        assert db.get(StorylineDB, "story").status == "climax"
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "climax"
+    assert response.json()["participants"] == ([{
+        "wrestler_id": "hero", "wrestler_name": "The Hero", "role": "protagonist",
+    }] if with_participants else [])
+
+
+def test_update_storyline_missing(storyline_api):
+    client, _, _ = storyline_api
+    response = client.patch("/game/storylines/missing", json={"status": "climax"})
+    assert response.status_code == 404
+    assert response.json()["message"] == "Storyline not found"

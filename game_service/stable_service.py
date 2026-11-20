@@ -143,6 +143,9 @@ def remove_member(
     was_leader = member.role == "leader"
     member.is_active = False
     member.left_date = game_date
+    # Sessions run with autoflush off; flush so the queries below no longer
+    # see the departing member as active.
+    db.flush()
 
     stable = db.query(StableDB).filter_by(id=stable_id).first()
     if stable:
@@ -158,16 +161,13 @@ def remove_member(
             importance=7,
         ))
 
-        # If leader left, promote the highest-influence remaining member
-        if was_leader:
-            _auto_promote_leader(db, stable, game_date)
-
-        # Check if the stable still has enough active members
         active_count = db.query(StableMemberDB).filter_by(
             stable_id=stable_id, is_active=True
         ).count()
         if active_count < 2:
             dissolve_stable(db, stable_id, game_date, reason="too few members")
+        elif was_leader:
+            _auto_promote_leader(db, stable, game_date)
 
     db.commit()
     return True

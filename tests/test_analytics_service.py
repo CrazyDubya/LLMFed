@@ -12,7 +12,7 @@ from api_gateway.security import get_current_user, TokenData
 from models.db_models import Base
 from models.core_models import WorldDB
 from models.wrestler_models import GameWrestlerDB
-from models.show_models import MatchDB, MatchParticipantDB
+from models.show_models import MatchDB, MatchParticipantDB, ShowDB
 from models.wrestler_models import ContractDB
 from models.federation_models import GameFederationDB
 from game_service.analytics_service import world_summary
@@ -75,12 +75,23 @@ def world_with_matches(db_session):
 
 
 class TestAnalyticsRoutes:
-    def test_federation_health_reports_budget_as_balance(self, analytics_client, db_session):
-        world = WorldDB(name="Analytics World")
-        db_session.add(world)
-        db_session.flush()
+    def test_federation_health_uses_world_scoped_metrics(self, analytics_client, db_session, world_with_matches):
+        world, wrestler, _, _ = world_with_matches
+        other_world = WorldDB(name="Other World")
         federation = GameFederationDB(world_id=world.id, name="Analytics Federation", budget=12345.67)
-        db_session.add(federation)
+        db_session.add_all([other_world, federation])
+        db_session.flush()
+        for data_world in (world, other_world):
+            db_session.add_all([
+                ContractDB(
+                    world_id=data_world.id, federation_id=federation.id, wrestler_id=wrestler.id,
+                    start_date="2026-01-01", status="active",
+                ),
+                ShowDB(
+                    world_id=data_world.id, federation_id=federation.id, name="Weekly Show",
+                    game_date="2026-01-01", is_completed=True, gate_revenue=1000,
+                ),
+            ])
         db_session.commit()
 
         response = analytics_client.get(
@@ -89,6 +100,27 @@ class TestAnalyticsRoutes:
 
         assert response.status_code == 200
         assert response.json()["balance"] == 12345.67
+        assert response.json()["roster_count"] == 1
+        assert response.json()["shows_completed"] == 1
+        assert response.json()["total_gate_revenue"] == 1000
+
+    @pytest.mark.parametrize(("resource", "model"), [
+        ("wrestler", GameWrestlerDB),
+        ("federation", GameFederationDB),
+    ])
+    def test_analytics_rejects_cross_world_resource(self, analytics_client, db_session, resource, model):
+        owner = WorldDB(name="Owner World")
+        other = WorldDB(name="Other World")
+        db_session.add_all([owner, other])
+        db_session.flush()
+        entity = model(world_id=owner.id, name="Owner World Entity")
+        db_session.add(entity)
+        db_session.commit()
+
+        response = analytics_client.get(f"/game/analytics/world/{other.id}/{resource}/{entity.id}")
+
+        assert response.status_code == 404
+        assert response.json()["message"] == f"{resource.title()} not found"
 
     def test_leaderboard_with_matches(self, analytics_client, world_with_matches):
         world, winner, loser, _ = world_with_matches
@@ -171,10 +203,12 @@ class TestAnalyticsRoutes:
                 (winner.id, 1, 1), (loser.id, 0, 1),
             ]
 
-    def test_missing_wrestler(self, analytics_client):
-        response = analytics_client.get("/game/analytics/world/missing/wrestler/missing")
-        assert response.status_code == 200
-        assert response.json() == {"error": "Wrestler not found"}
+    @pytest.mark.parametrize("resource", ["wrestler", "federation"])
+    def test_analytics_rejects_missing_resource(self, analytics_client, world_with_matches, resource):
+        world, _, _, _ = world_with_matches
+        response = analytics_client.get(f"/game/analytics/world/{world.id}/{resource}/missing")
+        assert response.status_code == 404
+        assert response.json()["message"] == f"{resource.title()} not found"
 
     def test_invalid_leaderboard_limit(self, analytics_client):
         response = analytics_client.get("/game/analytics/world/missing/leaderboard?limit=0")

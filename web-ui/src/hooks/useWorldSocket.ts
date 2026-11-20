@@ -9,6 +9,9 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 
+// Must stay below the server's 60-second heartbeat timeout.
+const HEARTBEAT_INTERVAL_MS = 25_000;
+
 export interface WorldEvent {
   type: string;
   world_id?: string;
@@ -37,6 +40,7 @@ export function useWorldSocket(worldId: string | null, options: UseWorldSocketOp
   const [eventLog, setEventLog] = useState<WorldEvent[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const heartbeatCleanup = useRef<(() => void) | undefined>(undefined);
   const retryCount = useRef(0);
   const optionsRef = useRef(options);
   optionsRef.current = options;
@@ -51,10 +55,18 @@ export function useWorldSocket(worldId: string | null, options: UseWorldSocketOp
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
+    let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+    const stopHeartbeat = () => clearInterval(heartbeatTimer);
+    heartbeatCleanup.current = stopHeartbeat;
 
     ws.onopen = () => {
       setConnected(true);
       retryCount.current = 0;
+      heartbeatTimer = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping' }));
+        }
+      }, HEARTBEAT_INTERVAL_MS);
     };
 
     ws.onmessage = (e) => {
@@ -77,6 +89,7 @@ export function useWorldSocket(worldId: string | null, options: UseWorldSocketOp
     };
 
     ws.onclose = () => {
+      stopHeartbeat();
       setConnected(false);
       wsRef.current = null;
 
@@ -88,6 +101,7 @@ export function useWorldSocket(worldId: string | null, options: UseWorldSocketOp
     };
 
     ws.onerror = () => {
+      stopHeartbeat();
       ws.close();
     };
   }, [worldId]);
@@ -95,8 +109,10 @@ export function useWorldSocket(worldId: string | null, options: UseWorldSocketOp
   useEffect(() => {
     connect();
     return () => {
+      heartbeatCleanup.current?.();
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       if (wsRef.current) {
+        wsRef.current.onopen = null;
         wsRef.current.onclose = null; // prevent reconnect on intentional close
         wsRef.current.close();
       }

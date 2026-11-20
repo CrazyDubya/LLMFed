@@ -20,16 +20,17 @@ def wrestler_performance(
     world_id: str,
     wrestler_id: str,
     limit: int = 50,
-) -> Dict[str, Any]:
+) -> Optional[Dict[str, Any]]:
     """Get a wrestler's performance over time (recent matches, win rate, ratings)."""
     from models.show_models import MatchDB, MatchParticipantDB
     from models.game_models import GameWrestlerDB
 
     wrestler = db.query(GameWrestlerDB).filter(
-        GameWrestlerDB.id == wrestler_id
+        GameWrestlerDB.id == wrestler_id,
+        GameWrestlerDB.world_id == world_id,
     ).first()
     if not wrestler:
-        return {"error": "Wrestler not found"}
+        return None
 
     # Recent match history
     participations = (
@@ -82,26 +83,29 @@ def federation_health(
     db: Session,
     world_id: str,
     federation_id: str,
-) -> Dict[str, Any]:
+) -> Optional[Dict[str, Any]]:
     """Get federation health metrics: roster size, show quality, finances."""
     from models.game_models import GameFederationDB, ContractDB
     from models.show_models import ShowDB
 
     fed = db.query(GameFederationDB).filter(
-        GameFederationDB.id == federation_id
+        GameFederationDB.id == federation_id,
+        GameFederationDB.world_id == world_id,
     ).first()
     if not fed:
-        return {"error": "Federation not found"}
+        return None
 
     # Roster size
     roster_count = db.query(func.count(ContractDB.id)).filter(
         ContractDB.federation_id == federation_id,
+        ContractDB.world_id == world_id,
         ContractDB.status == "active",
     ).scalar() or 0
 
     # Show stats
     shows = db.query(ShowDB).filter(
         ShowDB.federation_id == federation_id,
+        ShowDB.world_id == world_id,
         ShowDB.is_completed,
     ).order_by(ShowDB.game_date.desc()).limit(20).all()
 
