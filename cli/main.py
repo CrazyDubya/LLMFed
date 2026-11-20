@@ -366,16 +366,13 @@ def match_replay(match_id: str = typer.Argument(..., help="Match ID")):
         ))
 
         # Show events if available
-        try:
-            events = db.query(MatchEventDB).filter(
-                MatchEventDB.match_id == match_id
-            ).order_by(MatchEventDB.sequence).all()
-            if events:
-                console.print("\n[bold]Play-by-Play:[/bold]")
-                for ev in events:
-                    console.print(f"  [{ev.sequence:3d}] {ev.description}")
-        except Exception:
-            console.print("[dim]No detailed play-by-play available.[/dim]")
+        events = db.query(MatchEventDB).filter(
+            MatchEventDB.match_id == match_id
+        ).order_by(MatchEventDB.tick, MatchEventDB.id).all()
+        if events:
+            console.print("\n[bold]Play-by-Play:[/bold]")
+            for ev in events:
+                console.print(f"  [{ev.tick:3d}] {ev.description}")
     finally:
         db.close()
 
