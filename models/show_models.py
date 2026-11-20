@@ -108,7 +108,7 @@ class MatchDB(Base):
     updated_at = Column(DateTime, default=_utc_now, onupdate=_utc_now)
 
     participants = relationship("MatchParticipantDB", back_populates="match",
-                                cascade="all, delete-orphan")
+                                order_by="MatchParticipantDB.id", cascade="all, delete-orphan")
     events = relationship("MatchEventDB", back_populates="match",
                           order_by="MatchEventDB.tick", cascade="all, delete-orphan")
     segment = relationship("ShowSegmentDB", back_populates="match", uselist=False)

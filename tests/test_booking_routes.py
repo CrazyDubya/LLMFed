@@ -255,3 +255,37 @@ def test_reorder_card_full_permutation(booking_client, count):
     with b.sessions() as db:
         assert [(s.id, s.position) for s in db.query(ShowSegmentDB).filter_by(show_id=b.show_id)
                 .order_by(ShowSegmentDB.position)] == expected
+
+
+@pytest.mark.parametrize(
+    "match_type, count, teams",
+    [("singles", 2, [None, None]), ("tag_team", 4, [0, 0, 1, 1])],
+    ids=["singles", "tag-team"],
+)
+def test_booked_match_lists_participants(booking_client, match_type, count, teams):
+    b = booking_client
+    booked_ids = list(reversed(b.roster_ids[:count]))
+    response = b.client.post(f"/game/shows/{b.show_id}/matches",
+                             json={"participant_ids": booked_ids, "match_type": match_type})
+    assert response.status_code == 201, response.text
+    segment = response.json()
+    with b.sessions() as db:
+        names = {w.id: w.name for w in db.query(GameWrestlerDB)}
+    expected = [{"wrestler_id": wid, "name": names[wid], "role": "competitor", "team": team}
+                for wid, team in zip(booked_ids, teams)]
+    assert segment["participants"] == expected
+
+    card = b.client.get(f"/game/shows/{b.show_id}/card")
+    assert card.status_code == 200, card.text
+    assert card.json()["segments"] == [segment]
+
+    match = b.client.get(f"/game/matches/{segment['match_id']}")
+    assert match.status_code == 200, match.text
+    assert match.json()["participants"] == expected
+
+
+def test_promo_segment_has_no_participants(booking_client):
+    b = booking_client
+    response = b.client.post(f"/game/shows/{b.show_id}/promos", params={"wrestler_id": b.bench_id})
+    assert response.status_code == 201, response.text
+    assert response.json()["participants"] == []

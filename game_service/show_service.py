@@ -11,7 +11,7 @@ A promoter can:
 
 import random
 import logging
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from models.game_models import (
     ShowDB, ShowSegmentDB, MatchDB, MatchParticipantDB,
@@ -253,7 +253,11 @@ def reorder_card(db: Session, show_id: str, segment_order: list):
 
 def get_show_card(db: Session, show_id: str) -> list:
     """Get all segments for a show in order."""
-    return db.query(ShowSegmentDB).filter(
+    return db.query(ShowSegmentDB).options(
+        selectinload(ShowSegmentDB.match)
+        .selectinload(MatchDB.participants)
+        .selectinload(MatchParticipantDB.wrestler),
+    ).filter(
         ShowSegmentDB.show_id == show_id,
     ).order_by(ShowSegmentDB.position).all()
 
