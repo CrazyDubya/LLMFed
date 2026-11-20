@@ -10,8 +10,10 @@ from sqlalchemy.orm import sessionmaker
 from models.db_models import Base
 from models.game_models import (
     WorldDB, GameFederationDB, GameWrestlerDB, StableMemberDB,
-    ContractDB, StorylineDB,
+    ContractDB, StorylineDB, MatchDB, MatchParticipantDB, ShowDB, ShowSegmentDB,
 )
+from core_engine.match_aftermath import process_match_aftermath
+from game_service.wrestler_lifecycle_service import load_conditioning_data
 from game_service.stable_service import (
     create_stable, add_member, remove_member, promote_member,
     dissolve_stable, get_stable_with_members, list_stables,
@@ -125,6 +127,69 @@ def test_match_result_empty_participants(db):
 def test_match_result_missing_participants(db):
     process_match_result_for_stables(db, "missing-winner", "missing-loser", "missing")
     assert not db.dirty
+
+
+def test_draw_flushes_results_for_conditioning(db, world, federation, wrestlers):
+    world_id, federation_id = world.id, federation.id
+    wrestler_ids = [w.id for w in wrestlers[:2]]
+    game_date = "2026-01-01"
+    show = ShowDB(
+        id="draw-show", world_id=world_id, federation_id=federation_id,
+        name="Thursday Show", game_date=game_date,
+    )
+    match = MatchDB(id="draw-match", world_id=world_id)
+    participants = [
+        MatchParticipantDB(match_id=match.id, wrestler_id=wid)
+        for wid in wrestler_ids
+    ]
+    db.add_all([show, match, *participants, ShowSegmentDB(
+        show_id=show.id, match_id=match.id, position=0, segment_type="match",
+    )])
+    db.commit()
+
+    match.is_completed = True
+    match.winner_id = None
+    match.finish_type = "draw"
+    for participant in participants:
+        participant.performance_rating = 3.5
+    process_match_aftermath(db, match, game_date)
+    assert match in db.dirty
+    assert load_conditioning_data(db, world_id, game_date)[1] == {}
+
+    losers = db.query(MatchParticipantDB).filter(
+        MatchParticipantDB.match_id == match.id,
+        MatchParticipantDB.is_winner.is_(False),
+    ).all()
+    assert len(losers) == 2
+    for loser in losers:
+        process_match_result_for_stables(db, None, loser.wrestler_id, world_id, game_date)
+
+    assert load_conditioning_data(db, world_id, game_date)[1] == {
+        wid: 1 for wid in wrestler_ids
+    }
+    assert db.query(MatchParticipantDB.performance_rating).filter(
+        MatchParticipantDB.match_id == match.id,
+    ).all() == [(3.5,), (3.5,)]
+
+
+@pytest.mark.parametrize("inactive_stable", [False, True])
+def test_match_result_flushes_without_stable_changes(db, world, federation, wrestlers, inactive_stable):
+    world_id = world.id
+    winner_id = None
+    if inactive_stable:
+        winner_id = wrestlers[0].id
+        stable = create_stable(
+            db, world_id, federation.id, "The Pack", leader_id=winner_id,
+            founding_member_ids=[w.id for w in wrestlers[:3]],
+        )
+        stable.is_active = False
+        db.commit()
+    world.name = "Pending change"
+
+    process_match_result_for_stables(db, winner_id, None, world_id)
+
+    assert db.query(WorldDB.name).filter_by(id=world_id).scalar() == "Pending change"
+    assert db.in_transaction()
 
 
 class TestStableCRUD:

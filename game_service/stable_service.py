@@ -395,12 +395,14 @@ def process_match_result_for_stables(
     """
     participant_ids = sorted({wid for wid in (winner_id, loser_id) if wid})
     if not participant_ids:
+        db.flush()
         return
     members = db.query(StableMemberDB).filter(
         StableMemberDB.wrestler_id.in_(participant_ids),
         StableMemberDB.is_active == True,
     ).order_by(StableMemberDB.id).all()
     if not members:
+        db.flush()
         return
     memberships = {}
     for member in members:
@@ -439,6 +441,8 @@ def process_match_result_for_stables(
 
     if changed:
         db.commit()
+    else:
+        db.flush()
 
 
 # ---------------------------------------------------------------------------
