@@ -2,7 +2,7 @@
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from agent_service.database import get_db_sync
@@ -34,7 +34,10 @@ def api_wrestler_performance(
 ):
     """Get wrestler performance analytics."""
     from game_service.analytics_service import wrestler_performance
-    return wrestler_performance(db, world_id, wrestler_id, limit)
+    performance = wrestler_performance(db, world_id, wrestler_id, limit)
+    if performance is None:
+        raise HTTPException(status_code=404, detail="Wrestler not found")
+    return performance
 
 
 @router.get("/world/{world_id}/federation/{federation_id}")
@@ -46,7 +49,10 @@ def api_federation_health(
 ):
     """Get federation health metrics."""
     from game_service.analytics_service import federation_health
-    return federation_health(db, world_id, federation_id)
+    health = federation_health(db, world_id, federation_id)
+    if health is None:
+        raise HTTPException(status_code=404, detail="Federation not found")
+    return health
 
 
 @router.get("/world/{world_id}/match-quality")

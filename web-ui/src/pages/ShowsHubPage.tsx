@@ -8,27 +8,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { api, type ShowSummary } from '../api/client';
 import { useGame } from '../context/GameContext';
 import { useWorldSocket } from '../hooks/useWorldSocket';
 import LiveFeed from '../components/LiveFeed';
 import SchedulerControls from '../components/SchedulerControls';
-
-interface ShowSummary {
-  id: string;
-  name: string;
-  show_type: string;
-  venue: string | null;
-  capacity: number;
-  attendance: number | null;
-  game_date: string;
-  is_completed: boolean;
-  overall_rating: number | null;
-  tv_rating: number | null;
-  gate_revenue: number | null;
-  ppv_buys: number | null;
-  federation_id: string;
-  federation_name: string;
-}
+import { getErrorMessage } from '../utils/errors';
 
 const typeColors: Record<string, string> = {
   weekly:  'bg-blue-900/50 text-blue-300',
@@ -48,16 +33,18 @@ export default function ShowsHubPage() {
   const [shows, setShows] = useState<ShowSummary[]>([]);
   const [filter, setFilter] = useState<'all' | 'completed' | 'upcoming'>('all');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const loadShows = useCallback(async () => {
     if (!worldId) return;
     try {
-      const res = await fetch(`/worlds/${worldId}/shows?limit=100`);
-      if (res.ok) {
-        setShows(await res.json());
-      }
-    } catch { /* ignore */ }
-    setLoading(false);
+      setShows(await api.getWorldShows(worldId, 100));
+      setError(null);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
   }, [worldId]);
 
   useEffect(() => { loadShows(); }, [loadShows]);
@@ -111,7 +98,7 @@ export default function ShowsHubPage() {
           {/* Main content */}
           <div className="lg:col-span-3">
             {/* Filters */}
-            <div className="flex gap-2 mb-4">
+            <div className="flex gap-2 mb-4" hidden={error !== null}>
               {(['all', 'completed', 'upcoming'] as const).map(f => (
                 <button
                   key={f}
@@ -133,7 +120,11 @@ export default function ShowsHubPage() {
             </div>
 
             {/* Shows grid */}
-            {filtered.length === 0 ? (
+            {error !== null ? (
+              <div role="alert" className="rounded-lg border border-red-800/50 bg-red-900/20 p-4 text-sm text-red-400">
+                Could not load shows: {error}
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="text-center text-gray-500 py-12 bg-[#1a1a24] rounded-lg border border-gray-800">
                 No shows found.
               </div>

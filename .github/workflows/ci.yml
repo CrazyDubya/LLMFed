@@ -68,6 +68,10 @@ jobs:
         working-directory: web-ui
         run: npm ci
 
+      - name: Test web UI
+        working-directory: web-ui
+        run: npm test
+
       - name: Audit web UI dependencies
         working-directory: web-ui
         run: npm audit --audit-level=high
@@ -79,7 +83,3 @@ jobs:
       - name: Build web UI
         working-directory: web-ui
         run: npm run build
-
-      - name: Test web UI
-        working-directory: web-ui
-        run: npm test
