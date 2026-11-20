@@ -130,6 +130,10 @@ MANAGER_PROMO_TEMPLATES = {
 # CRUD — Create / Read / Bond / Unbond
 # ---------------------------------------------------------------------------
 
+class WrestlerNotFoundError(ValueError):
+    pass
+
+
 def create_manager(
     db: Session,
     world_id: str,
@@ -175,7 +179,9 @@ def assign_manager(
 ) -> ManagerClientDB:
     """Create a persistent manager-to-client bond."""
     manager = db.query(ManagerDB).filter_by(id=manager_id).first()
-    wrestler = db.query(GameWrestlerDB).filter_by(id=client_wrestler_id).first()
+    wrestler = db.query(GameWrestlerDB).filter_by(id=client_wrestler_id, world_id=world_id).first()
+    if wrestler is None:
+        raise WrestlerNotFoundError("Wrestler not found in this world")
 
     # Calculate initial bonuses based on manager stats and specialization
     charisma_bonus, heat_bonus = _calculate_bonuses(manager, specialization)
@@ -193,7 +199,7 @@ def assign_manager(
     )
     db.add(bond)
 
-    if manager and wrestler:
+    if manager:
         db.add(GameNarrativeLogDB(
             world_id=world_id,
             game_date=game_date or "",
@@ -206,7 +212,7 @@ def assign_manager(
     db.commit()
     logger.info("Manager '%s' assigned to wrestler '%s'",
                 manager.name if manager else manager_id,
-                wrestler.name if wrestler else client_wrestler_id)
+                wrestler.name)
     return bond
 
 
