@@ -97,6 +97,41 @@ class TestMatchReplay:
         assert "No detailed play-by-play available." not in result.stdout
 
 
+class TestFedRoster:
+    def test_shows_wrestler_popularity(self, monkeypatch):
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from models.db_models import Base
+        from models.game_models import ContractDB, GameFederationDB, GameWrestlerDB, WorldDB
+        import cli.main as cli_main
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        session_factory = sessionmaker(bind=engine)
+        with session_factory() as db:
+            world = WorldDB(name="Test World")
+            federation = GameFederationDB(id="fed-1", world=world, name="Apex Wrestling")
+            wrestler = GameWrestlerDB(
+                world=world, name="Rook", real_name="Casey Vale", alignment="face", popularity=73,
+            )
+            db.add_all([federation, wrestler])
+            db.flush()
+            db.add(ContractDB(
+                world_id=world.id, federation=federation, wrestler=wrestler, start_date="2026-01-01",
+            ))
+            db.commit()
+        monkeypatch.setattr(cli_main, "_get_db", session_factory)
+
+        result = runner.invoke(app, ["fed", "roster", "fed-1"], env={"COLUMNS": "100"})
+        engine.dispose()
+
+        assert result.exit_code == 0
+        assert "Popularity" in result.stdout
+        assert "Overall" not in result.stdout
+        row = next(line for line in result.stdout.splitlines() if "Rook" in line)
+        assert [cell.strip() for cell in row.split("│")[1:-1]] == ["Casey Vale", "Rook", "face", "73"]
+
+
 class TestCLIBasics:
     def test_help(self):
         result = runner.invoke(app, ["--help"])
