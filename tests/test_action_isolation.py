@@ -2,7 +2,7 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -69,6 +69,8 @@ CASES = [
 
 @pytest.mark.parametrize("kind,data", CASES)
 def test_handler_rejects_foreign_targets(action_db, kind, data):
+    if kind in ("train", "cut_promo", "request_match", "open_challenge"):
+        action_db.get(PlayerDB, "player").player_type = "wrestler"
     handler = PlayerActionHandler(action_db, action_db.get(WorldDB, "b"), lambda *a, **kw: None)
     with pytest.raises(ValueError, match="not found in this world"):
         handler.execute(PlayerActionDB(world_id="b", player_id="player", action_type=kind, action_data=data))
@@ -78,6 +80,7 @@ def test_handler_rejects_foreign_targets(action_db, kind, data):
 
 @pytest.mark.parametrize("target", ["w-a", "missing"])
 def test_http_rejects_foreign_or_missing_train(action_db, monkeypatch, target):
+    action_db.get(PlayerDB, "player").player_type = "wrestler"
     monkeypatch.setitem(app.dependency_overrides, get_db_sync, lambda: action_db)
     monkeypatch.setitem(app.dependency_overrides, get_current_user, lambda: TokenData(user_id="user"))
     with TestClient(app, base_url="http://localhost") as client:
@@ -117,6 +120,8 @@ def test_empty_train_rejected(action_db):
 
 @pytest.mark.parametrize("kind,data", CASES[:2])
 def test_legacy_queued_actions_fail_without_mutation(action_db, kind, data):
+    if kind == "train":
+        action_db.get(PlayerDB, "player").player_type = "wrestler"
     action = PlayerActionDB(world_id="b", player_id="player", action_type=kind, action_data=data)
     action_db.add(action)
     action_db.commit()
@@ -184,3 +189,46 @@ def test_promo_only_heats_storyline_in_action_world(action_db, local_storyline):
         assert local.heat == 30 + result["storyline_heat_boost"]
     else:
         assert "storyline_heat_boost" not in result
+
+
+@pytest.mark.parametrize("field,kind", [("wrestler_ids", "create_storyline"), ("founding_member_ids", "form_stable")])
+@pytest.mark.parametrize("ids", [[], ["w-b"] * 100, ["w-b", "missing"], ["w-b", "w-a"]])
+def test_list_validation_uses_single_scoped_query(action_db, field, kind, ids):
+    handler = PlayerActionHandler(action_db, action_db.get(WorldDB, "b"), lambda *a: None)
+    statements = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("SELECT") and "FROM game_wrestlers" in statement:
+            statements.append((statement, parameters))
+
+    event.listen(action_db.bind, "before_cursor_execute", record)
+    try:
+        action = PlayerActionDB(world_id="b", player_id="player", action_type=kind, action_data={field: ids})
+        if "missing" in ids or "w-a" in ids:
+            with pytest.raises(ValueError, match="Wrestler not found in this world"):
+                handler.validate(action)
+        else:
+            handler.validate(action)
+    finally:
+        event.remove(action_db.bind, "before_cursor_execute", record)
+    assert len(statements) == (1 if ids else 0)
+    if ids:
+        assert "world_id =" in statements[0][0]
+        assert statements[0][1].count("w-b") == 1
+
+
+def test_invalid_role_rejected_before_loading_targets(action_db):
+    handler = PlayerActionHandler(action_db, action_db.get(WorldDB, "b"), lambda *a: None)
+    statements = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(action_db.bind, "before_cursor_execute", record)
+    try:
+        with pytest.raises(ValueError, match="control this wrestler"):
+            handler.validate(PlayerActionDB(world_id="b", player_id="player", action_type="train",
+                                            action_data={"wrestler_id": "w-b"}))
+    finally:
+        event.remove(action_db.bind, "before_cursor_execute", record)
+    assert not any("FROM game_wrestlers" in statement for statement in statements)

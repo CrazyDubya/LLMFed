@@ -115,6 +115,17 @@ class PlayerActionHandler:
         }.get(action.action_type)
         if fields is None:
             return
+        personal_actions = ("train", "cut_promo", "request_match", "open_challenge")
+        player = None
+        if action.player_id is not None:
+            player = self.db.query(PlayerDB).filter_by(id=action.player_id, world_id=self.world.id).first()
+            if player is None:
+                raise ValueError("Player not found in this world")
+            if action.action_type in personal_actions:
+                if player.player_type != "wrestler":
+                    raise ValueError("You do not control this wrestler")
+            elif player.player_type != "promoter":
+                raise ValueError("You do not control this federation")
         models = {
             "wrestler_id": (GameWrestlerDB, "Wrestler"),
             "target_wrestler_id": (GameWrestlerDB, "Wrestler"),
@@ -134,21 +145,15 @@ class PlayerActionHandler:
             if value is None:
                 continue
             model, label = models[field]
-            ids = value if field in ("founding_member_ids", "wrestler_ids") else [value]
-            entities[field] = []
-            for entity_id in ids:
-                entity = self.db.query(model).filter_by(id=entity_id, world_id=self.world.id).first()
-                if entity is None:
-                    raise ValueError(f"{label} not found in this world")
-                entities[field].append(entity)
+            ids = set(value) if field in ("founding_member_ids", "wrestler_ids") else {value}
+            targets = self.db.query(model).filter(model.id.in_(ids), model.world_id == self.world.id).all() if ids else []
+            if len(targets) != len(ids):
+                raise ValueError(f"{label} not found in this world")
+            entities[field] = targets
 
         # Calls without a player are also used by trusted in-process services.
-        if action.player_id is None:
-            return
-        player = self.db.query(PlayerDB).filter_by(id=action.player_id, world_id=self.world.id).first()
         if player is None:
-            raise ValueError("Player not found in this world")
-        personal_actions = ("train", "cut_promo", "request_match", "open_challenge")
+            return
         if action.action_type in personal_actions:
             wrestler_id = data.get("wrestler_id")
             if player.player_type != "wrestler" or player.wrestler_id != wrestler_id:
@@ -160,6 +165,7 @@ class PlayerActionHandler:
             ):
                 raise ValueError("Wrestler already under contract")
             federation_ids = set()
+            roster_ids = set()
             for field, targets in entities.items():
                 for target in targets:
                     if field == "federation_id":
@@ -175,9 +181,14 @@ class PlayerActionHandler:
                         if manager.federation_id:
                             federation_ids.add(manager.federation_id)
                     elif isinstance(target, GameWrestlerDB) and action.action_type != "sign_wrestler":
-                        contract = get_active_contract(self.db, target.id, self.world.id)
-                        if contract:
-                            federation_ids.add(contract.federation_id)
+                        roster_ids.add(target.id)
+            if roster_ids:
+                contracts = self.db.query(ContractDB).filter(
+                    ContractDB.wrestler_id.in_(roster_ids),
+                    ContractDB.world_id == self.world.id,
+                    ContractDB.status == "active",
+                ).all()
+                federation_ids.update(contract.federation_id for contract in contracts)
             if player.player_type != "promoter" or any(fed != player.federation_id for fed in federation_ids):
                 raise ValueError("You do not control this federation")
 
