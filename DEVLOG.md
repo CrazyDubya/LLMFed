@@ -4,6 +4,8 @@ Notable changes between commits. Supplement git history with a short note here w
 
 ---
 
+- **Analytics:** Scope wrestler and federation analytics to the requested world and return 404 for missing or out-of-world IDs.
+
 - **Shows Hub:** Authenticate show listing and auto-ticker controls, and display API failures instead of misleading empty or stopped states.
 
 - **Federation momentum:** Batch daily show, contract and wrestler reads across federations while preserving first-show selection and de-duplicated roster morale.
