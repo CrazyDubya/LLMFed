@@ -574,7 +574,10 @@ class WorldTicker:
 
     def _random_retirement(self, game_date: str):
         """Pressure-based retirement (replaces flat random)."""
-        from game_service.wrestler_lifecycle_service import calculate_retirement_pressure
+        from game_service.audit_service import record_change
+        from game_service.wrestler_lifecycle_service import (
+            calculate_retirement_pressure, retire_wrestler,
+        )
 
         wrestlers = self.db.query(GameWrestlerDB).filter(
             GameWrestlerDB.world_id == self.world.id,
@@ -585,8 +588,7 @@ class WorldTicker:
         for w in wrestlers:
             pressure = calculate_retirement_pressure(w)
             if pressure > 0 and random.random() < pressure / 1000:
-                w.is_active = False
-                w.retirement_date = game_date
+                contracts, titles = retire_wrestler(self.db, w, game_date)
                 self._log_event(
                     "retirement",
                     f"{w.name} announces retirement after {w.experience_years} years",
@@ -594,14 +596,30 @@ class WorldTicker:
                     importance=8,
                 )
                 self.events.append(f"RETIREMENT: {w.name}")
-
-                from game_service.audit_service import record_change
                 record_change(
                     self.db, entity_type="wrestler", entity_id=w.id,
                     field_name="is_active", old_value=True, new_value=False,
                     action="retire", actor_type="system", world_id=self.world.id,
                     reason=f"retirement_pressure={pressure}",
                 )
+
+                for contract in contracts:
+                    record_change(
+                        self.db, entity_type="contract", entity_id=contract.id,
+                        field_name="status", old_value="active", new_value="terminated",
+                        action="terminate", actor_type="system", world_id=self.world.id,
+                        reason="wrestler_retired",
+                    )
+                    self._adapt_vision_for_departure(w.id, contract.federation_id, game_date)
+
+                for title in titles:
+                    self._log_event(
+                        "title_vacated",
+                        f"The {title.name} is vacated after {w.name}'s retirement",
+                        [w.id, title.id],
+                        importance=7,
+                    )
+                    self.events.append(f"TITLE VACATED: {title.name}")
 
                 break  # One retirement per day max
 
@@ -644,16 +662,20 @@ class WorldTicker:
                     reason="end_date_reached",
                 )
 
-                def _tick_vision_departure(wrestler_id=wrestler.id, federation_id=contract.federation_id):
-                    from models.game_models import BookingVisionDB
-                    from game_service.booking_vision_service import adapt_vision_for_departure
-                    vision = self.db.query(BookingVisionDB).filter(
-                        BookingVisionDB.federation_id == federation_id,
-                    ).first()
-                    if vision:
-                        adapt_vision_for_departure(self.db, vision, wrestler_id, game_date)
+                self._adapt_vision_for_departure(wrestler.id, contract.federation_id, game_date)
 
-                self._safe_tick("Vision adaptation for departure", _tick_vision_departure)
+    def _adapt_vision_for_departure(self, wrestler_id: str, federation_id: str, game_date: str):
+        """Drop a departing wrestler from the federation's booking vision."""
+        def _tick_vision_departure():
+            from models.game_models import BookingVisionDB
+            from game_service.booking_vision_service import adapt_vision_for_departure
+            vision = self.db.query(BookingVisionDB).filter(
+                BookingVisionDB.federation_id == federation_id,
+            ).first()
+            if vision:
+                adapt_vision_for_departure(self.db, vision, wrestler_id, game_date)
+
+        self._safe_tick("Vision adaptation for departure", _tick_vision_departure)
 
     # ------------------------------------------------------------------
     # Phase 8: Recovery
