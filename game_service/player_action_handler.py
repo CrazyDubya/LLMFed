@@ -285,7 +285,7 @@ class PlayerActionHandler:
             raise ValueError("Wrestler has no active contract")
 
         # Store the request in world metadata for the show booking phase to pick up
-        meta = self.world.world_config or {}
+        meta = dict(self.world.world_config or {})
         match_requests = meta.get("pending_match_requests", [])
 
         # Check cooldown -- only 1 request per 7 days
@@ -363,7 +363,7 @@ class PlayerActionHandler:
         opponent = random.choice(candidates)
 
         # Store in metadata for show booking
-        meta = self.world.world_config or {}
+        meta = dict(self.world.world_config or {})
         match_requests = meta.get("pending_match_requests", [])
         match_requests = [r for r in match_requests if r.get("wrestler_id") != wrestler_id]
         match_requests.append({
