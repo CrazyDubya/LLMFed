@@ -116,6 +116,20 @@ def book_match(db: Session, show_id: str, world_id: str,
     if not show:
         raise ValueError("Show not found")
 
+    if len(set(wrestler_ids)) != len(wrestler_ids):
+        raise ValueError("Match participants must be distinct")
+    wrestlers = {
+        w.id: w for w in db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.id.in_(wrestler_ids),
+            GameWrestlerDB.world_id == world_id,
+        )
+    }
+    missing = [wid for wid in wrestler_ids if wid not in wrestlers]
+    if missing:
+        raise ValueError(f"Wrestlers not found in this world: {', '.join(missing)}")
+    if planned_winner_id and planned_winner_id not in wrestlers:
+        raise ValueError("Planned winner must be a match participant")
+
     # Creative control: a high-influence veteran booked to take a clean
     # loss may refuse it, forcing a non-decisive finish instead.
     if planned_winner_id:
@@ -123,10 +137,7 @@ def book_match(db: Session, show_id: str, world_id: str,
         for loser_id in wrestler_ids:
             if loser_id == planned_winner_id:
                 continue
-            loser = db.query(GameWrestlerDB).filter(GameWrestlerDB.id == loser_id).first()
-            if not loser:
-                continue
-            adjusted = apply_politics_to_booking(db, loser, planned_finish)
+            adjusted = apply_politics_to_booking(db, wrestlers[loser_id], planned_finish)
             if adjusted != planned_finish:
                 planned_finish = adjusted
                 break
