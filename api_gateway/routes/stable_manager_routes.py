@@ -127,8 +127,10 @@ def api_assign_manager(
     _require_federation_owner_if_any(db, current_user.user_id, mgr.federation_id)
     try:
         world = get_world(db, world_id)
-        if not world:
-            raise HTTPException(status_code=404, detail="World not found")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    try:
         bond = manager_service.assign_manager(
             db, world_id, manager_id=data.manager_id,
             client_wrestler_id=data.client_wrestler_id,
