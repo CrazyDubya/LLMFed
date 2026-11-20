@@ -312,7 +312,11 @@ def api_promote_stable_member(
     """Change a stable member's role (e.g. promote to leader)."""
     stable = _get_active_stable_or_404(db, stable_id)
     _require_federation_owner_if_any(db, current_user.user_id, stable.federation_id)
-    if not stable_service.promote_member(db, stable_id, wrestler_id, data.new_role):
+    try:
+        promoted = stable_service.promote_member(db, stable_id, wrestler_id, data.new_role)
+    except ValueError as e:
+        _handle_value_error(e)
+    if not promoted:
         raise HTTPException(status_code=404, detail="Member not found")
     return {"wrestler_id": wrestler_id, "role": data.new_role}
 
