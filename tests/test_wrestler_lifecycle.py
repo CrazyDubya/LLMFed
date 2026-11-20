@@ -166,6 +166,37 @@ class TestRetirement:
         pressure = calculate_retirement_pressure(w)
         assert pressure == 0
 
+    def test_retirement_ends_contract_and_vacates_title(self, db, world, federation, monkeypatch):
+        import game_service.world_ticker as ticker_module
+        from game_service.world_ticker import WorldTicker
+        champion = _make_wrestler(db, world, name="Old Champ", age=41,
+                                  career_phase="declining", morale=10)
+        contract = ContractDB(world_id=world.id, wrestler_id=champion.id,
+                              federation_id=federation.id, salary_weekly=5000,
+                              start_date="2025-01-01")
+        belt = ChampionshipDB(world_id=world.id, federation_id=federation.id,
+                              name="World Title", current_holder_id=champion.id,
+                              current_reign_start="2026-01-01", defenses=4)
+        db.add_all([contract, belt])
+        db.flush()
+        reign = ChampionshipHistoryDB(championship_id=belt.id, wrestler_id=champion.id,
+                                      reign_start="2026-01-01", defenses=4)
+        db.add(reign)
+        db.flush()
+        monkeypatch.setattr(ticker_module.random, "random", lambda: 0.0)
+        monkeypatch.setattr(ticker_module.random, "uniform", lambda a, b: 0.0)
+        ticker = WorldTicker(db, world.id)
+
+        ticker._random_retirement("2026-06-14")
+        world.current_game_date = "2026-06-14"  # Sunday: weekly payroll
+        ticker._economy_tick()
+
+        assert champion.is_active is False
+        assert (contract.status, contract.end_date) == ("terminated", "2026-06-14")
+        assert federation.weekly_expenses == 0
+        assert (belt.current_holder_id, belt.current_reign_start, belt.defenses) == (None, None, 0)
+        assert (reign.reign_end, reign.how_lost) == ("2026-06-14", "retired")
+
 
 class TestRingRust:
     def test_ring_rust_modifier_no_rust(self, db, world):
