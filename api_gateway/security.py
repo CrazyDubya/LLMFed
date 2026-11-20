@@ -16,7 +16,7 @@ from fastapi import Depends, HTTPException, Header, Query, WebSocketException, s
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agent_service.database import get_db
+from agent_service.database import AsyncSessionLocal, get_db
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from passlib.context import CryptContext
 from pydantic import BaseModel
@@ -228,21 +228,23 @@ async def get_websocket_user(
     token: Optional[str] = Query(None),
     authorization: Optional[str] = Header(None),
     x_api_key: Optional[str] = Header(None),
-    db: AsyncSession = Depends(get_db),
 ) -> TokenData:
     """Authenticate a WebSocket handshake with the same credentials as the REST API.
 
     Browsers cannot set headers on a WebSocket handshake, so the JWT may also be
     passed as the ``token`` query parameter. Rejects with close code 1008.
+    Uses its own short-lived session so an open socket doesn't hold a pooled
+    connection for its whole lifetime.
     """
     scheme, _, bearer = (authorization or "").partition(" ")
     if scheme.lower() == "bearer" and bearer:
         token = bearer
     try:
-        if token is not None:
-            return await _authenticate_token_user(decode_token(token), db)
-        if x_api_key is not None:
-            return await _authenticate_api_key(x_api_key, db)
+        async with AsyncSessionLocal() as db:
+            if token is not None:
+                return await _authenticate_token_user(decode_token(token), db)
+            if x_api_key is not None:
+                return await _authenticate_api_key(x_api_key, db)
     except HTTPException as exc:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason=exc.detail)
     raise WebSocketException(
