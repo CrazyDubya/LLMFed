@@ -4,64 +4,52 @@
  * Start/stop the auto-ticker and configure its interval.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { api, type SchedulerStatus } from '../api/client';
+import { getErrorMessage } from '../utils/errors';
 
-interface SchedulerStatus {
-  running: boolean;
-  interval_seconds: number;
-  ticks_completed: number;
-  last_tick_at: string | null;
-  paused_worlds: string[];
-  recent_errors: string[];
-}
+const actionErrors = {
+  refresh: 'Could not load auto-ticker status',
+  start: 'Could not start auto-tick',
+  stop: 'Could not stop auto-tick',
+};
 
-async function fetchStatus(): Promise<SchedulerStatus> {
-  const res = await fetch('/scheduler/status');
-  return res.json();
-}
-
-async function startScheduler(interval: number): Promise<SchedulerStatus> {
-  const res = await fetch('/scheduler/start', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ interval_seconds: interval }),
-  });
-  return res.json();
-}
-
-async function stopScheduler(): Promise<SchedulerStatus> {
-  const res = await fetch('/scheduler/stop', { method: 'POST' });
-  return res.json();
-}
+type Action = keyof typeof actionErrors;
 
 export default function SchedulerControls() {
   const [status, setStatus] = useState<SchedulerStatus | null>(null);
   const [interval, setInterval_] = useState(60);
-  const [loading, setLoading] = useState(false);
+  const [pending, setPending] = useState<Action | null>('refresh');
+  const [error, setError] = useState<string | null>(null);
 
-  const refresh = async () => {
+  const updateStatus = useCallback(async (
+    action: Action,
+    request: () => Promise<SchedulerStatus>,
+    signal?: AbortSignal,
+  ) => {
     try {
-      setStatus(await fetchStatus());
-    } catch { /* ignore */ }
+      const nextStatus = await request();
+      if (!signal?.aborted) setStatus(nextStatus);
+    } catch (err) {
+      if (!signal?.aborted) setError(`${actionErrors[action]}: ${getErrorMessage(err)}`);
+    } finally {
+      if (!signal?.aborted) setPending(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    updateStatus('refresh', () => api.getSchedulerStatus(controller.signal), controller.signal);
+    return () => controller.abort();
+  }, [updateStatus]);
+
+  const runAction = (action: Action, request: () => Promise<SchedulerStatus>) => {
+    setPending(action);
+    setError(null);
+    void updateStatus(action, request);
   };
 
-  useEffect(() => { refresh(); }, []);
-
-  const handleStart = async () => {
-    setLoading(true);
-    try {
-      setStatus(await startScheduler(interval));
-    } catch { /* ignore */ }
-    setLoading(false);
-  };
-
-  const handleStop = async () => {
-    setLoading(true);
-    try {
-      setStatus(await stopScheduler());
-    } catch { /* ignore */ }
-    setLoading(false);
-  };
+  const statusLabel = status ? (status.running ? 'Running' : 'Stopped') : (pending ? 'Checking...' : 'Unknown');
 
   return (
     <div className="bg-[#12121a] border border-gray-800 rounded-lg p-4">
@@ -73,7 +61,7 @@ export default function SchedulerControls() {
           <span className={`w-2 h-2 rounded-full ${
             status?.running ? 'bg-green-500 animate-pulse' : 'bg-gray-600'
           }`} />
-          {status?.running ? 'Running' : 'Stopped'}
+          {statusLabel}
         </span>
       </div>
 
@@ -92,28 +80,35 @@ export default function SchedulerControls() {
       <div className="flex gap-2">
         {!status?.running ? (
           <button
-            onClick={handleStart}
-            disabled={loading}
+            onClick={() => runAction('start', () => api.startScheduler(interval))}
+            disabled={pending !== null}
             className="flex-1 px-3 py-1.5 bg-green-800 hover:bg-green-700 text-green-200 text-sm rounded transition disabled:opacity-50"
           >
-            {loading ? 'Starting...' : 'Start Auto-Tick'}
+            {pending === 'start' ? 'Starting...' : 'Start Auto-Tick'}
           </button>
         ) : (
           <button
-            onClick={handleStop}
-            disabled={loading}
+            onClick={() => runAction('stop', api.stopScheduler)}
+            disabled={pending !== null}
             className="flex-1 px-3 py-1.5 bg-red-900 hover:bg-red-800 text-red-200 text-sm rounded transition disabled:opacity-50"
           >
-            {loading ? 'Stopping...' : 'Stop Auto-Tick'}
+            {pending === 'stop' ? 'Stopping...' : 'Stop Auto-Tick'}
           </button>
         )}
         <button
-          onClick={refresh}
-          className="px-3 py-1.5 border border-gray-700 text-gray-400 hover:text-gray-200 text-sm rounded transition"
+          onClick={() => runAction('refresh', api.getSchedulerStatus)}
+          disabled={pending !== null}
+          className="px-3 py-1.5 border border-gray-700 text-gray-400 hover:text-gray-200 text-sm rounded transition disabled:opacity-50"
         >
           Refresh
         </button>
       </div>
+
+      {error && (
+        <div role="alert" className="mt-2 p-2 bg-red-900/20 border border-red-800/50 rounded text-xs text-red-400">
+          {error}
+        </div>
+      )}
 
       {status && status.ticks_completed > 0 && (
         <div className="mt-3 text-xs text-gray-500">

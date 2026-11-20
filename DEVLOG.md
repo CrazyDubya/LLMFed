@@ -6,6 +6,10 @@ Notable changes between commits. Supplement git history with a short note here w
 
 - **Manager bonds:** Return HTTP 404 instead of 400 when assigning a manager in a missing world, with HTTP regression coverage.
 
+- **Analytics:** Scope wrestler and federation analytics to the requested world and return 404 for missing or out-of-world IDs.
+
+- **Shows Hub:** Authenticate show listing and auto-ticker controls, and display API failures instead of misleading empty or stopped states.
+
 - **Federation momentum:** Batch daily show, contract and wrestler reads across federations while preserving first-show selection and de-duplicated roster morale.
 
 - **Snapshot restore:** Preserve all world-owned tables, scope child rows through their parents, and restore in foreign-key dependency order without silently swallowing serialization errors.

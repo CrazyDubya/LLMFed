@@ -38,13 +38,39 @@ export interface PlayerCreateData {
   wrestler_style?: string;
 }
 
+export interface ShowSummary {
+  id: string;
+  name: string;
+  show_type: string;
+  venue: string | null;
+  capacity: number;
+  attendance: number | null;
+  game_date: string;
+  is_completed: boolean;
+  overall_rating: number | null;
+  tv_rating: number | null;
+  gate_revenue: number | null;
+  ppv_buys: number | null;
+  federation_id: string;
+  federation_name: string;
+}
+
+export interface SchedulerStatus {
+  running: boolean;
+  interval_seconds: number;
+  ticks_completed: number;
+  last_tick_at: string | null;
+  paused_worlds: string[];
+  recent_errors: string[];
+}
+
 const API_BASE = '/game';
 
 function getToken(): string | null {
   return localStorage.getItem('token');
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function requestJson<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -54,15 +80,21 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const res = await fetch(path, { ...options, headers });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(body.detail || `HTTP ${res.status}`);
+    const body: { detail?: unknown; message?: unknown } | null = await res.json().catch(() => null);
+    const message = [body?.detail, body?.message, res.statusText]
+      .find((value): value is string => typeof value === 'string' && value.length > 0);
+    throw new Error(message || `HTTP ${res.status}`);
   }
 
   if (res.status === 204) return undefined as T;
   return res.json();
+}
+
+function request<T>(path: string, options?: RequestInit): Promise<T> {
+  return requestJson<T>(`${API_BASE}${path}`, options);
 }
 
 // Auth
@@ -108,6 +140,21 @@ export const api = {
 
   getShows: (fedId: string, limit = 20) =>
     request<any[]>(`/federations/${fedId}/shows?limit=${limit}`),
+
+  getWorldShows: (worldId: string, limit: number) =>
+    requestJson<ShowSummary[]>(`/worlds/${worldId}/shows?limit=${limit}`),
+
+  // Auto-ticker
+  getSchedulerStatus: (signal?: AbortSignal) =>
+    requestJson<SchedulerStatus>('/scheduler/status', { signal }),
+
+  startScheduler: (interval: number) =>
+    requestJson<SchedulerStatus>('/scheduler/start', {
+      method: 'POST', body: JSON.stringify({ interval_seconds: interval }),
+    }),
+
+  stopScheduler: () =>
+    requestJson<SchedulerStatus>('/scheduler/stop', { method: 'POST' }),
 
   // Wrestlers
   listWrestlers: (worldId: string, limit = 100) =>
