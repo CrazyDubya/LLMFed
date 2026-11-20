@@ -98,15 +98,18 @@ def add_member(
 ) -> StableMemberDB:
     """Add a wrestler to an existing stable.  New members start as recruits
     with modest loyalty — they need to prove themselves."""
-    member = StableMemberDB(
-        stable_id=stable_id,
-        wrestler_id=wrestler_id,
-        role=role,
-        loyalty=50 if role == "recruit" else 65,
-        influence=15 if role == "recruit" else 30,
-        joined_date=game_date,
-    )
-    db.add(member)
+    member = db.query(StableMemberDB).filter_by(
+        stable_id=stable_id, wrestler_id=wrestler_id, is_active=False,
+    ).first()
+    if member is None:
+        member = StableMemberDB(stable_id=stable_id, wrestler_id=wrestler_id)
+        db.add(member)
+    member.role = role
+    member.loyalty = 50 if role == "recruit" else 65
+    member.influence = 15 if role == "recruit" else 30
+    member.joined_date = game_date
+    member.left_date = None
+    member.is_active = True
 
     stable = db.query(StableDB).filter_by(id=stable_id).first()
     if stable:
