@@ -76,6 +76,12 @@ def simulate_match_from_db(db: Session, match: MatchDB, game_date: str = None):
     if len(participants_db) < 2:
         return MatchResult(narrative_summary="Not enough competitors")
 
+    # Older tag bookings stored the input position in the team column.
+    if (match.match_type == "tag_team" and not match.is_completed
+            and len(participants_db) == 4 and {p.team for p in participants_db} == {0, 1, 2, 3}):
+        for participant in participants_db:
+            participant.team //= 2
+
     from game_service.wrestler_lifecycle_service import calculate_stipulation_bonus
 
     # Fetch each participant's wrestler row once and reuse it below, rather
