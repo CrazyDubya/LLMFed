@@ -6,6 +6,8 @@ Notable changes between commits. Supplement git history with a short note here w
 
 - **Show booking:** Reject match and promo segments on completed shows at the service layer.
 
+- **Manager bonds:** Return HTTP 404 instead of 400 when assigning a manager in a missing world, with HTTP regression coverage.
+
 - **Live feed:** Send Web UI heartbeats every 25 seconds and clear their timers on disconnect and cleanup; add fake-timer hook regression tests.
 
 - **Analytics:** Scope wrestler and federation analytics to the requested world and return 404 for missing or out-of-world IDs.
