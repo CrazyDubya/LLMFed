@@ -175,3 +175,66 @@ def test_booked_request_is_consumed_before_later_show(match_client, monkeypatch)
         assert shows[1].is_completed
         assert not has_requested_pair(db, shows[1])
         assert db.get(WorldDB, "world").world_config == persisted
+
+
+def test_open_challenge_waits_for_injured_opponent(match_client, monkeypatch):
+    client, sessions = match_client
+    monkeypatch.setattr(show_service.random, "random", lambda: 0.99)
+    path = "/game/worlds/world"
+    accepted = client.post(f"{path}/actions", json={
+        "action_type": "open_challenge",
+        "action_data": {"wrestler_id": "wrestler"},
+    })
+    assert accepted.status_code == 202, accepted.text
+    tick = client.post(f"{path}/tick")
+    assert tick.status_code == 200, tick.text
+    actions = client.get(f"{path}/actions")
+    assert actions.status_code == 200, actions.text
+    action = actions.json()[0]
+    assert action["status"] == "completed"
+    assert action["result"]["opponent_id"] == "opponent"
+    print(f"POST {path}/actions -> {accepted.status_code}; GET {path}/actions -> {actions.status_code} "
+          f"{action['result']['message']}")
+
+    show_date = datetime(2026, 1, 5) + timedelta(days=zlib.crc32(b"fed") % 7)
+    with sessions.begin() as db:
+        world = db.get(WorldDB, "world")
+        pending = world.world_config["pending_match_requests"]
+        world.current_game_date = (show_date - timedelta(days=1)).strftime("%Y-%m-%d")
+        db.get(GameFederationDB, "fed").is_npc = True
+        opponent = db.get(GameWrestlerDB, "opponent")
+        opponent.is_injured = True
+        opponent.injury_return_date = (show_date + timedelta(days=1)).strftime("%Y-%m-%d")
+        opponent.popularity = 90
+        db.add_all(GameWrestlerDB(id=wid, world_id="world", name=wid, popularity=pop)
+                   for wid, pop in [("middle-low", 50), ("middle-high", 65)])
+        db.flush()
+        db.add_all(ContractDB(world_id="world", federation_id="fed", wrestler_id=wid,
+                              start_date="2026-01-01") for wid in ["middle-low", "middle-high"])
+
+    def show_matches(db, date):
+        show = db.query(ShowDB).filter_by(world_id="world", game_date=date).one()
+        assert show.is_completed
+        return [{p.wrestler_id for p in db.query(MatchParticipantDB).filter_by(match_id=segment.match_id)}
+                for segment in show.segments if segment.match_id]
+
+    tick = client.post(f"{path}/tick")
+    assert tick.status_code == 200, tick.text
+    with sessions() as db:
+        matches = show_matches(db, tick.json()["current_game_date"])
+        assert matches and all("opponent" not in pair for pair in matches)
+        retained = db.get(WorldDB, "world").world_config["pending_match_requests"]
+    print(f"POST {path}/tick -> {tick.status_code} {tick.json()['current_game_date']}; "
+          f"matches={list(map(sorted, matches))}; pending={retained}")
+
+    tick = client.post(f"{path}/tick?days=7")
+    assert tick.status_code == 200, tick.text
+    with sessions() as db:
+        assert not db.get(GameWrestlerDB, "opponent").is_injured
+        matches = show_matches(db, tick.json()["current_game_date"])
+        remaining = db.get(WorldDB, "world").world_config["pending_match_requests"]
+    print(f"POST {path}/tick?days=7 -> {tick.status_code} {tick.json()['current_game_date']}; "
+          f"matches={list(map(sorted, matches))}; pending={remaining}")
+    assert retained == pending
+    assert {"wrestler", "opponent"} in matches
+    assert remaining == []
