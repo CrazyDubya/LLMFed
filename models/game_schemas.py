@@ -2,7 +2,7 @@
 Pydantic schemas for the game API - request/response models.
 """
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import AliasPath, BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -365,6 +365,15 @@ class WorldTickStatus(BaseModel):
 # Show Card / Match Results
 # ---------------------------------------------------------------------------
 
+class MatchParticipantSummary(BaseModel):
+    wrestler_id: str
+    name: str = Field(validation_alias=AliasPath("wrestler", "name"))
+    role: str
+    team: Optional[int] = Field(validation_alias="booked_team")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ShowSegmentResponse(BaseModel):
     id: str
     show_id: str
@@ -377,6 +386,9 @@ class ShowSegmentResponse(BaseModel):
     rating: Optional[float]
     crowd_reaction: Optional[str]
     is_completed: bool
+    participants: List[MatchParticipantSummary] = Field(
+        default=[], validation_alias=AliasPath("match", "participants"),
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -393,6 +405,7 @@ class MatchResultResponse(BaseModel):
     crowd_heat: int
     duration_minutes: Optional[int]
     is_completed: bool
+    participants: List[MatchParticipantSummary] = []
 
     model_config = ConfigDict(from_attributes=True)
 

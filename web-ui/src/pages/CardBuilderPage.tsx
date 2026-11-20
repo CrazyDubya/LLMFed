@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
 import { api } from '../api/client';
 import { getErrorMessage } from '../utils/errors';
+import { formatMatchup, type MatchParticipant } from '../utils/matchup';
 
 interface Wrestler {
   id: string;
@@ -20,8 +21,7 @@ interface Segment {
   match_id: string | null;
   description: string | null;
   is_completed: boolean;
-  participants?: Array<{ wrestler_id?: string }>;
-  match_participants?: Array<{ wrestler_id?: string }>;
+  participants: MatchParticipant[];
 }
 
 export default function CardBuilderPage() {
@@ -113,21 +113,7 @@ export default function CardBuilderPage() {
     }
   };
 
-  // Wrestlers already booked on this show — extract from segment participant lists
-  const bookedIds = new Set<string>();
-  for (const seg of segments) {
-    if (seg.participants) {
-      for (const p of seg.participants) {
-        if (p.wrestler_id) bookedIds.add(p.wrestler_id);
-      }
-    }
-    // Also check match_participants if available in segment data
-    if (seg.match_id && seg.match_participants) {
-      for (const mp of seg.match_participants) {
-        if (mp.wrestler_id) bookedIds.add(mp.wrestler_id);
-      }
-    }
-  }
+  const bookedIds = new Set(segments.flatMap(seg => seg.participants.map(p => p.wrestler_id)));
 
   const availableRoster = roster.filter(w => !bookedIds.has(w.id));
   const selectedNames = selectedWrestlers
@@ -205,7 +191,7 @@ export default function CardBuilderPage() {
                       {seg.segment_type}
                     </span>
                     <span className="text-gray-300 text-sm">
-                      {seg.description || (seg.match_id ? 'Match' : seg.segment_type)}
+                      {formatMatchup(seg.participants) || seg.description || (seg.match_id ? 'Match' : seg.segment_type)}
                     </span>
                   </div>
                   {seg.is_completed && (
