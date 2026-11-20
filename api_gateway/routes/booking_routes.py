@@ -121,7 +121,10 @@ def api_reorder_card(
     show = _get_show_or_404(db, show_id)
     _require_show_owner(db, current_user.user_id, show)
 
-    svc_reorder_card(db, show_id, data.segment_order)
+    try:
+        svc_reorder_card(db, show_id, data.segment_order)
+    except ValueError as e:
+        _handle_value_error(e)
     db.commit()
 
     segments = get_show_card(db, show_id)

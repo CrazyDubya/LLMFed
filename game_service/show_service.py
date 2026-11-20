@@ -116,6 +116,10 @@ def book_match(db: Session, show_id: str, world_id: str,
     if not show:
         raise ValueError("Show not found")
 
+    is_tag_match = match_type == "tag_team"
+    if is_tag_match and len(wrestler_ids) != 4:
+        raise ValueError("Tag team matches require exactly four wrestlers")
+
     if len(set(wrestler_ids)) != len(wrestler_ids):
         raise ValueError("Match participants must be distinct")
     wrestlers = {
@@ -161,7 +165,7 @@ def book_match(db: Session, show_id: str, world_id: str,
             match_id=match.id,
             wrestler_id=wid,
             role="competitor",
-            team=i if match_type in ("tag_team",) else None,
+            team=i // 2 if is_tag_match else None,
         ))
 
     # Determine position
@@ -232,13 +236,13 @@ def reorder_card(db: Session, show_id: str, segment_order: list):
 
     segment_order: list of segment IDs in desired order.
     """
+    segments = db.query(ShowSegmentDB).filter(ShowSegmentDB.show_id == show_id).all()
+    segments_by_id = {segment.id: segment for segment in segments}
+    if len(segment_order) != len(segments) or set(segment_order) != set(segments_by_id):
+        raise ValueError("Segment order must contain every show segment exactly once")
+
     for i, seg_id in enumerate(segment_order):
-        seg = db.query(ShowSegmentDB).filter(
-            ShowSegmentDB.id == seg_id,
-            ShowSegmentDB.show_id == show_id,
-        ).first()
-        if seg:
-            seg.position = i + 1
+        segments_by_id[seg_id].position = i + 1
 
 
 def get_show_card(db: Session, show_id: str) -> list:
@@ -648,29 +652,31 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
     wrestler_map = {w.id: w for w in wrestlers}
     position = 1
 
-    # Book planned undercard matches first
-    for planned in (ppv_event.planned_matches or []):
+    def available_wrestlers(planned):
         wids = planned.get("wrestler_ids", [])
         available = [wid for wid in wids if wid in wrestler_map and wid not in used
                      and not wrestler_map[wid].is_injured]
+        if planned.get("match_type") == "tag_team":
+            return available if len(wids) == len(set(available)) == 4 else []
+        return available[:2]
+
+    def pick_winner(wids):
+        return max((wrestler_map[wid] for wid in wids), key=lambda w: _calculate_wrestler_score(w, push_map, PUSH_TIERS))
+
+    # Book planned undercard matches first
+    for planned in (ppv_event.planned_matches or []):
+        available = available_wrestlers(planned)
         if len(available) < 2:
             continue
-
-        w1, w2 = wrestler_map[available[0]], wrestler_map[available[1]]
-        used.update(available[:2])
-
-        # Winner: higher push tier wins (PPV wins matter more)
-        planned_winner = w1 if _calculate_wrestler_score(
-            w1, push_map, PUSH_TIERS) >= _calculate_wrestler_score(
-            w2, push_map, PUSH_TIERS) else w2
+        used.update(available)
 
         seg = book_match(
             db, show.id, show.world_id,
-            wrestler_ids=[w1.id, w2.id],
+            wrestler_ids=available,
             match_type=planned.get("match_type", "singles"),
             is_title_match=bool(planned.get("title_id")),
             championship_id=planned.get("title_id"),
-            planned_winner_id=planned_winner.id,
+            planned_winner_id=pick_winner(available).id,
             planned_finish="pinfall",
             position=position,
         )
@@ -679,13 +685,10 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
 
     # Book the main event last (highest position)
     main_event = ppv_event.planned_main_event or {}
-    me_wids = main_event.get("wrestler_ids", [])
-    me_available = [wid for wid in me_wids if wid in wrestler_map and wid not in used
-                    and not wrestler_map[wid].is_injured]
+    me_available = available_wrestlers(main_event)
 
     if len(me_available) >= 2:
-        w1, w2 = wrestler_map[me_available[0]], wrestler_map[me_available[1]]
-        used.update(me_available[:2])
+        used.update(me_available)
 
         # Main event: champion usually retains at non-crown-jewel, 40% title change at crown jewel
         title_id = main_event.get("title_id")
@@ -693,9 +696,11 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
         if title_id:
             champ = db.query(ChampionshipDB).filter(ChampionshipDB.id == title_id).first()
 
-        if champ and champ.current_holder_id in (w1.id, w2.id):
-            holder = w1 if w1.id == champ.current_holder_id else w2
-            challenger = w2 if holder == w1 else w1
+        if champ and champ.current_holder_id in me_available:
+            holder = wrestler_map[champ.current_holder_id]
+            team_size = len(me_available) // 2
+            opponent_index = team_size if me_available.index(holder.id) < team_size else 0
+            challenger = wrestler_map[me_available[opponent_index]]
             if ppv_event.is_crown_jewel and random.random() < CROWN_JEWEL_TITLE_CHANGE_RATE:
                 planned_winner = challenger  # Crown jewel title change!
             elif random.random() < REGULAR_PPV_TITLE_CHANGE_RATE:
@@ -703,15 +708,12 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
             else:
                 planned_winner = holder  # Champion retains
         else:
-            # Non-title main event
-            planned_winner = w1 if _calculate_wrestler_score(
-                w1, push_map, PUSH_TIERS) >= _calculate_wrestler_score(
-                w2, push_map, PUSH_TIERS) else w2
+            planned_winner = pick_winner(me_available)
 
         seg = book_match(
             db, show.id, show.world_id,
-            wrestler_ids=[w1.id, w2.id],
-            match_type="singles",
+            wrestler_ids=me_available,
+            match_type="tag_team" if main_event.get("match_type") == "tag_team" else "singles",
             is_title_match=bool(title_id),
             championship_id=title_id,
             planned_winner_id=planned_winner.id,
