@@ -156,6 +156,7 @@ class WrestlerResponse(BaseModel):
     catchphrase: Optional[str]
     is_active: bool
     is_injured: bool
+    injury_return_date: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
