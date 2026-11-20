@@ -130,14 +130,14 @@ def world_list():
             console.print("[yellow]No worlds found. Use 'llmfed world create <name>'.[/yellow]")
             return
         table = Table(title="Game Worlds")
-        table.add_column("ID", style="cyan", max_width=12)
+        table.add_column("ID", style="cyan", no_wrap=True, overflow="ignore")
         table.add_column("Name", style="white")
         table.add_column("Game Date", style="green")
         table.add_column("Tick", justify="right")
         table.add_column("Active", justify="center")
         for w in worlds:
             table.add_row(
-                str(w.id)[:12],
+                str(w.id),
                 w.name,
                 getattr(w, "current_game_date", "?"),
                 str(getattr(w, "current_tick", 0)),
@@ -217,13 +217,13 @@ def fed_list(world_id: str = typer.Argument(..., help="World ID")):
             console.print("[yellow]No federations in this world.[/yellow]")
             return
         table = Table(title="Federations")
-        table.add_column("ID", style="cyan", max_width=12)
+        table.add_column("ID", style="cyan", no_wrap=True, overflow="ignore")
         table.add_column("Name", style="white")
         table.add_column("Prestige", style="green", justify="right")
         table.add_column("Budget", justify="right")
         for f in feds:
             table.add_row(
-                str(f.id)[:12],
+                str(f.id),
                 f.name,
                 str(f.prestige),
                 f"${f.budget:,.0f}",
