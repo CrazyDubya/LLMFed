@@ -1,5 +1,6 @@
 """HTTP regression tests for show booking."""
 
+import random
 from types import SimpleNamespace
 
 import pytest
@@ -12,10 +13,11 @@ from sqlalchemy.orm import sessionmaker
 from agent_service.database import get_db, get_db_sync
 from api_gateway.main import app
 from api_gateway.security import create_access_token
+from core_engine import match_engine, tag_match_simulator
 from models.db_models import Base
 from models.game_models import (
     GameFederationDB, GameWrestlerDB, MatchDB, MatchParticipantDB, PlayerDB, PromoDB, ShowDB, ShowSegmentDB,
-    UserDB, WorldDB,
+    UserDB, WorldDB, WrestlerStatsDB,
 )
 
 
@@ -28,23 +30,24 @@ async def booking_client(tmp_path, monkeypatch):
     async_sessions = async_sessionmaker(bind=async_engine)
     Base.metadata.create_all(engine)
     with sessions.begin() as db:
-        world = WorldDB(name="Booking World")
+        world = WorldDB(name="Booking World", current_game_date="2026-01-04")
         other_world = WorldDB(name="Other World")
         user = UserDB(username="promoter", email="promoter@example.test", password_hash="unused")
         db.add_all([world, other_world, user])
         db.flush()
         federation = GameFederationDB(world_id=world.id, name="Booking Federation")
-        wrestlers = [GameWrestlerDB(world_id=world.id, name=f"Wrestler {i}") for i in range(3)]
+        wrestlers = [GameWrestlerDB(world_id=world.id, name=f"Wrestler {i}", condition=70) for i in range(5)]
         outsider = GameWrestlerDB(world_id=other_world.id, name="Outsider")
         db.add_all([federation, *wrestlers, outsider])
         db.flush()
+        db.add_all(WrestlerStatsDB(wrestler_id=wrestler.id) for wrestler in wrestlers)
         show = ShowDB(world_id=world.id, federation_id=federation.id, name="Booking Show", game_date="2026-01-05")
         db.add_all([show, PlayerDB(user_id=user.id, world_id=world.id, player_type="promoter",
                                    federation_id=federation.id)])
         db.flush()
         show_id = show.id
-        wrestler_ids = [wrestler.id for wrestler in wrestlers[:2]]
-        bench_id = wrestlers[2].id
+        world_id = world.id
+        roster_ids = [wrestler.id for wrestler in wrestlers]
         outsider_id = outsider.id
         token = create_access_token({"sub": user.id})
 
@@ -61,8 +64,9 @@ async def booking_client(tmp_path, monkeypatch):
     client = TestClient(app, base_url="http://localhost", headers={"Authorization": f"Bearer {token}"},
                         raise_server_exceptions=False)
     try:
-        yield SimpleNamespace(client=client, sessions=sessions, show_id=show_id, wrestler_ids=wrestler_ids,
-                              bench_id=bench_id, outsider_id=outsider_id)
+        yield SimpleNamespace(client=client, sessions=sessions, show_id=show_id, world_id=world_id,
+                              roster_ids=roster_ids, wrestler_ids=roster_ids[:2], bench_id=roster_ids[2],
+                              outsider_id=outsider_id)
     finally:
         client.close()
         await async_engine.dispose()
@@ -120,6 +124,50 @@ def test_book_match_rejects_invalid_participants(booking_client, case, message):
     with b.sessions() as db:
         assert db.query(MatchDB).count() == 0
         assert db.query(MatchParticipantDB).count() == 0
+
+
+@pytest.mark.parametrize("legacy_booking", [False, True], ids=["new-booking", "legacy-booking"])
+def test_tag_match_simulates_both_pairs(booking_client, monkeypatch, legacy_booking):
+    b = booking_client
+    wrestlers = b.roster_ids[:4]
+    response = b.client.post(f"/game/shows/{b.show_id}/matches", json={
+        "match_type": "tag_team",
+        "participant_ids": wrestlers,
+    })
+    assert response.status_code == 201, response.text
+    match_id = response.json()["match_id"]
+    if legacy_booking:
+        with b.sessions.begin() as db:
+            for participant in db.get(MatchDB, match_id).participants:
+                participant.team = wrestlers.index(participant.wrestler_id)
+
+    rng = random.Random(0)
+    monkeypatch.setattr(match_engine, "random", rng)
+    monkeypatch.setattr(tag_match_simulator, "random", rng)
+    tick = b.client.post(f"/game/worlds/{b.world_id}/tick")
+    assert tick.status_code == 200, tick.text
+
+    replay = b.client.get(f"/game/matches/{match_id}/play-by-play")
+    assert replay.status_code == 200, replay.text
+    actors = {wid for spot in replay.json()["spots"] for wid in (spot["attacker"], spot["defender"]) if wid}
+    assert actors == set(wrestlers), f"Expected 4 competitors in play-by-play, got {len(actors)}"
+
+    with b.sessions() as db:
+        teams = {p.wrestler_id: p.team for p in db.get(MatchDB, match_id).participants}
+    assert teams == dict(zip(wrestlers, [0, 0, 1, 1]))
+
+
+@pytest.mark.parametrize("count", [2, 3, 5])
+def test_book_tag_match_rejects_unsupported_counts(booking_client, count):
+    b = booking_client
+    response = b.client.post(f"/game/shows/{b.show_id}/matches", json={
+        "match_type": "tag_team",
+        "participant_ids": b.roster_ids[:count],
+    })
+    assert response.status_code == 400, response.text
+    assert response.json()["message"] == "Tag team matches require exactly four wrestlers"
+    with b.sessions() as db:
+        assert db.query(MatchDB).count() == 0
 
 
 @pytest.mark.parametrize("promo_type", ["worked_shoot", None], ids=["requested-type", "default-type"])

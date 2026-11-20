@@ -4,7 +4,7 @@ Notable changes between commits. Supplement git history with a short note here w
 
 ---
 
-- **Show booking:** Reject match and promo segments on completed shows at the service layer.
+- **Tag match booking:** Keep both pairs in 2-on-2 matches, including pending bookings made with the old team numbering.
 
 - **Manager bonds:** Return HTTP 404 instead of 400 when assigning a manager in a missing world, with HTTP regression coverage.
 

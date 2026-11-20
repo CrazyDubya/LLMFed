@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    MatchDB, MatchParticipantDB, GameFederationDB, GameWrestlerDB,
+    ContractDB, MatchDB, MatchParticipantDB, GameFederationDB, GameWrestlerDB, PPVEventDB, WorldDB,
 )
 from game_service.world_service import create_world
 from game_service.show_service import (
@@ -118,6 +118,43 @@ class TestShowCreation:
 
 
 class TestNPCBooking:
+    @pytest.mark.parametrize("main_event", [False, True], ids=["undercard", "main-event"])
+    @pytest.mark.parametrize("available_count", [4, 3], ids=["complete-pairs", "injured-partner"])
+    def test_npc_books_ppv_tag_match_only_with_both_pairs(self, db_session, main_event, available_count):
+        world = WorldDB(name="PPV World")
+        db_session.add(world)
+        db_session.flush()
+        fed = GameFederationDB(world_id=world.id, name="PPV Federation")
+        wrestlers = [
+            GameWrestlerDB(world_id=world.id, name=f"Wrestler {i}", is_injured=i >= available_count)
+            for i in range(4)
+        ]
+        db_session.add_all([fed, *wrestlers])
+        db_session.flush()
+        wrestler_ids = [w.id for w in wrestlers]
+        db_session.add_all(
+            ContractDB(world_id=world.id, federation_id=fed.id, wrestler_id=wid, start_date="2026-01-01")
+            for wid in wrestler_ids
+        )
+        show = create_show(db_session, world.id, fed.id, "PPV", show_type="ppv", game_date="2026-01-05")
+        tag_plan = {"match_type": "tag_team", "wrestler_ids": wrestler_ids}
+        ppv = PPVEventDB(
+            world_id=world.id, federation_id=fed.id, name=show.name, scheduled_date=show.game_date,
+            planned_main_event=tag_plan if main_event else {},
+            planned_matches=[] if main_event else [tag_plan],
+        )
+
+        segments = npc_book_card(db_session, show, ppv_event=ppv)
+
+        assert len(segments) == 1
+        match = db_session.get(MatchDB, segments[0].match_id)
+        if available_count == 4:
+            assert match.match_type == "tag_team"
+            assert {p.wrestler_id: p.team for p in match.participants} == dict(zip(wrestler_ids, [0, 0, 1, 1]))
+        else:
+            assert match.match_type == "singles"
+            assert {p.wrestler_id for p in match.participants} <= set(wrestler_ids[:available_count])
+
     def test_npc_book_card_creates_matches(self, db_session, world_with_fed):
         world, fed = world_with_fed
         show = create_show(db_session, world.id, fed.id, "NPC Show", game_date="2026-01-05")
