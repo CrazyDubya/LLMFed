@@ -119,9 +119,11 @@ def book_match(db: Session, show_id: str, world_id: str,
                planned_winner_id: str = None,
                planned_finish: str = "pinfall",
                position: int = None,
-               planned_duration_minutes: int | None = None) -> ShowSegmentDB:
+               planned_duration_minutes: int | None = None,
+               *, _show: ShowDB = None) -> ShowSegmentDB:
     """Book a match segment on a show."""
-    _require_bookable_show(db, show_id)
+    if _show is None:
+        _require_bookable_show(db, show_id)
 
     is_tag_match = match_type == "tag_team"
     if is_tag_match and len(wrestler_ids) != 4:
@@ -201,9 +203,10 @@ def book_promo_segment(db: Session, show_id: str,
                        target_wrestler_id: str = None,
                        world_id: str = None,
                        game_date: str = None,
-                       promo_type: str = "in_ring") -> ShowSegmentDB:
+                       promo_type: str = "in_ring",
+                       *, _show: ShowDB = None) -> ShowSegmentDB:
     """Book a promo segment, creating a PromoDB record when a wrestler is identified."""
-    show = _require_bookable_show(db, show_id)
+    show = _show if _show is not None else _require_bookable_show(db, show_id)
     if position is None:
         position = _get_next_segment_position(db, show_id)
 
@@ -358,10 +361,13 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
     for p in pushes:
         push_map[p.wrestler_id] = p
 
+    show = _require_bookable_show(db, show.id)
+
     # If this is a PPV with planned matches, book those first
     if ppv_event and (ppv_event.planned_main_event or ppv_event.planned_matches):
         return _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map, booking_style)
 
+    next_position = _get_next_segment_position(db, show.id)
     segments = []
     used = set()
     # Several booking sub-paths below each want a specific card slot (dark
@@ -416,6 +422,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
 
                 seg = book_match(
                     db, show.id, show.world_id,
+                    _show=show, position=next_position + len(segments),
                     wrestler_ids=[w1.id, w2.id],
                     match_type=match_type,
                     stipulation=stipulation,
@@ -455,6 +462,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
 
             seg = book_match(
                 db, show.id, show.world_id,
+                _show=show, position=next_position + len(segments),
                 wrestler_ids=tag_wrestlers,
                 match_type="tag_team",
                 planned_winner_id=planned_winner,
@@ -490,6 +498,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
             if opp:
                 seg = book_match(
                     db, show.id, show.world_id,
+                    _show=show, position=next_position + len(segments),
                     wrestler_ids=[pw.id, opp.id],
                     match_type="singles",
                     planned_winner_id=pw.id if random.random() < PLAYER_MATCH_WIN_RATE else opp.id,
@@ -520,6 +529,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
                     opp = random.choice(candidates)
                     seg = book_match(
                         db, show.id, show.world_id,
+                        _show=show, position=next_position + len(segments),
                         wrestler_ids=[w.id, opp.id],
                         match_type="singles",
                         planned_winner_id=w.id if random.random() < DARK_MATCH_WIN_RATE else opp.id,
@@ -564,6 +574,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
             position = actual_pos + 1
             seg = book_match(
                 db, show.id, show.world_id,
+                _show=show, position=next_position + len(segments),
                 wrestler_ids=[w1.id, w2.id, w3.id],
                 match_type=match_type,
                 planned_winner_id=planned_winner.id,
@@ -607,6 +618,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
 
         seg = book_match(
             db, show.id, show.world_id,
+            _show=show, position=next_position + len(segments),
             wrestler_ids=[w1.id, w2.id],
             match_type="singles",
             stipulation=stipulation,
@@ -640,6 +652,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
         if promo_wrestler:
             book_promo_segment(
                 db, show.id,
+                _show=show,
                 description=f"{promo_wrestler.name} addresses the crowd",
                 position=promo_pos,
                 wrestler_id=promo_wrestler.id,
@@ -682,6 +695,7 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
 
         seg = book_match(
             db, show.id, show.world_id,
+            _show=show,
             wrestler_ids=available,
             match_type=planned.get("match_type", "singles"),
             is_title_match=bool(planned.get("title_id")),
@@ -722,6 +736,7 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
 
         seg = book_match(
             db, show.id, show.world_id,
+            _show=show,
             wrestler_ids=me_available,
             match_type="tag_team" if main_event.get("match_type") == "tag_team" else "singles",
             is_title_match=bool(title_id),
@@ -748,6 +763,7 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
         winner = max(br_wrestlers, key=lambda w: w.popularity + random.randint(-10, 10))
         seg = book_match(
             db, show.id, show.world_id,
+            _show=show,
             wrestler_ids=br_ids,
             match_type="battle_royal",
             planned_winner_id=winner.id,
@@ -767,6 +783,7 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
             winner = max(ffw, key=lambda w: w.popularity + random.randint(-10, 10))
             seg = book_match(
                 db, show.id, show.world_id,
+                _show=show,
                 wrestler_ids=ffw_ids,
                 match_type="fatal_four_way",
                 planned_winner_id=winner.id,
@@ -788,6 +805,7 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
 
         seg = book_match(
             db, show.id, show.world_id,
+            _show=show,
             wrestler_ids=[w1.id, w2.id],
             match_type="singles",
             planned_winner_id=planned_winner.id,
@@ -802,6 +820,7 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
         top = sorted(wrestlers, key=lambda w: w.popularity, reverse=True)[0]
         book_promo_segment(
             db, show.id,
+            _show=show,
             description=f"{top.name} opens {ppv_event.name} with a championship address",
             position=0,
             wrestler_id=top.id,
