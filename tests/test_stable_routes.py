@@ -1,0 +1,100 @@
+"""HTTP regression tests for stable membership validation."""
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from agent_service.database import get_db_sync
+from api_gateway.main import app
+from api_gateway.security import TokenData, get_current_user
+from models.core_models import PlayerDB
+from models.db_models import Base
+from models.game_models import (
+    ContractDB, GameFederationDB, GameWrestlerDB, StableDB, StableMemberDB, WorldDB,
+)
+
+USER_ID = "stable-user"
+
+
+@pytest.fixture
+def stable_api(monkeypatch):
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine)
+    with sessions.begin() as db:
+        for world in ("a", "b"):
+            db.add(WorldDB(id=f"world-{world}", name=f"World {world.upper()}"))
+            db.add(GameFederationDB(id=f"fed-{world}", world_id=f"world-{world}", name=f"Fed {world}"))
+            db.add(PlayerDB(
+                user_id=USER_ID, world_id=f"world-{world}",
+                player_type="promoter", federation_id=f"fed-{world}",
+            ))
+        for wid, world in (("a1", "a"), ("a2", "a"), ("a3", "a"), ("b1", "b")):
+            db.add(GameWrestlerDB(id=wid, world_id=f"world-{world}", name=f"Wrestler {wid}"))
+            db.add(ContractDB(
+                world_id=f"world-{world}", federation_id=f"fed-{world}",
+                wrestler_id=wid, status="active", start_date="2026-01-01",
+            ))
+
+    def get_db():
+        with sessions() as db:
+            yield db
+
+    monkeypatch.setitem(app.dependency_overrides, get_db_sync, get_db)
+    monkeypatch.setitem(app.dependency_overrides, get_current_user, lambda: TokenData(user_id=USER_ID))
+    try:
+        with TestClient(app, base_url="http://localhost") as client:
+            yield client, sessions
+    finally:
+        engine.dispose()
+
+
+def _create_stable(client, leader_id="a1", member_ids=("a1", "a2")):
+    return client.post("/game/worlds/world-a/stables", json={
+        "name": "The Pack", "leader_id": leader_id, "founding_member_ids": list(member_ids),
+    })
+
+
+@pytest.mark.parametrize("bad_member", ["ghost", "b1"])
+def test_create_stable_rejects_member_outside_world(stable_api, bad_member):
+    client, sessions = stable_api
+    response = _create_stable(client, member_ids=["a2", bad_member])
+    with sessions() as db:
+        counts = (db.query(StableDB).count(), db.query(StableMemberDB).count())
+    assert (response.status_code, counts) == (400, (0, 0)), response.text
+    assert response.json()["message"] == f"Wrestler not found in this world: {bad_member}"
+
+
+def test_create_stable_rejects_leader_from_other_world(stable_api):
+    client, sessions = stable_api
+    response = _create_stable(client, leader_id="b1", member_ids=["b1", "a2"])
+    with sessions() as db:
+        count = db.query(StableDB).count()
+    assert (response.status_code, count) == (404, 0), response.text
+    assert response.json()["message"] == "Leader wrestler not found"
+
+
+@pytest.mark.parametrize("bad_member", ["ghost", "b1"])
+def test_add_member_rejects_wrestler_outside_world(stable_api, bad_member):
+    client, sessions = stable_api
+    stable_id = _create_stable(client).json()["id"]
+    response = client.post(f"/game/stables/{stable_id}/members", json={"wrestler_id": bad_member})
+    with sessions() as db:
+        member_ids = {m.wrestler_id for m in db.query(StableMemberDB).filter_by(stable_id=stable_id)}
+    assert (response.status_code, member_ids) == (400, {"a1", "a2"}), response.text
+    assert response.json()["message"] == f"Wrestler not found in this world: {bad_member}"
+
+
+def test_valid_stable_members_are_accepted(stable_api):
+    client, sessions = stable_api
+    created = _create_stable(client)
+    assert created.status_code == 201, created.text
+    added = client.post(f"/game/stables/{created.json()['id']}/members", json={"wrestler_id": "a3"})
+    assert added.status_code == 201, added.text
+    with sessions() as db:
+        member_ids = {m.wrestler_id for m in db.query(StableMemberDB)}
+    assert member_ids == {"a1", "a2", "a3"}
