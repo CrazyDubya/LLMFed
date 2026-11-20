@@ -130,3 +130,52 @@ def test_active_member_still_conflicts(stable_api):
     assert response.json()["message"] == "Database constraint violation"
     with sessions() as db:
         assert db.query(StableMemberDB).filter_by(wrestler_id="a2").count() == 1
+
+
+@pytest.mark.parametrize("new_role", ["member", "lieutenant", "enforcer", "recruit"])
+@pytest.mark.parametrize("inactive_leader", [False, True])
+def test_cannot_demote_last_active_leader(stable_api, new_role, inactive_leader):
+    client, sessions = stable_api
+    stable_id = _create_stable(client).json()["id"]
+    if inactive_leader:
+        with sessions.begin() as db:
+            db.add(StableMemberDB(
+                stable_id=stable_id, wrestler_id="a3", role="leader", is_active=False,
+            ))
+    response = client.patch(
+        f"/game/stables/{stable_id}/members/a1/role", json={"new_role": new_role},
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["message"] == "Cannot demote the stable's only active leader"
+    with sessions() as db:
+        leader = db.query(StableMemberDB).filter_by(stable_id=stable_id, wrestler_id="a1").one()
+        assert leader.role == "leader"
+        assert db.get(StableDB, stable_id).is_active is True
+
+
+def test_leadership_transfer_and_role_changes(stable_api):
+    client, sessions = stable_api
+    stable_id = _create_stable(client).json()["id"]
+    url = f"/game/stables/{stable_id}/members"
+    for wrestler_id, role in (("a1", "leader"), ("a2", "leader"), ("a1", "member")):
+        response = client.patch(f"{url}/{wrestler_id}/role", json={"new_role": role})
+        assert response.status_code == 200, response.text
+    with sessions() as db:
+        roles = {m.wrestler_id: m.role for m in db.query(StableMemberDB).filter_by(stable_id=stable_id)}
+        assert roles == {"a1": "member", "a2": "leader"}
+    response = client.patch(f"{url}/ghost/role", json={"new_role": "member"})
+    assert response.status_code == 404, response.text
+
+
+def test_can_demote_leader_when_another_active_leader_remains(stable_api):
+    client, sessions = stable_api
+    stable_id = _create_stable(client).json()["id"]
+    with sessions.begin() as db:
+        db.query(StableMemberDB).filter_by(stable_id=stable_id, wrestler_id="a2").one().role = "leader"
+    response = client.patch(
+        f"/game/stables/{stable_id}/members/a1/role", json={"new_role": "member"},
+    )
+    assert response.status_code == 200, response.text
+    with sessions() as db:
+        leaders = db.query(StableMemberDB).filter_by(stable_id=stable_id, role="leader", is_active=True).all()
+        assert [m.wrestler_id for m in leaders] == ["a2"]
