@@ -284,6 +284,23 @@ def test_booked_match_lists_participants(booking_client, match_type, count, team
     assert match.json()["participants"] == expected
 
 
+def test_legacy_tag_booking_lists_participants_in_pairs(booking_client):
+    b = booking_client
+    response = b.client.post(f"/game/shows/{b.show_id}/matches",
+                             json={"participant_ids": b.roster_ids[:4], "match_type": "tag_team"})
+    assert response.status_code == 201, response.text
+    match_id = response.json()["match_id"]
+    with b.sessions() as db:
+        rows = db.query(MatchParticipantDB).filter_by(match_id=match_id).order_by(MatchParticipantDB.id)
+        for position, row in enumerate(rows):
+            row.team = position
+        db.commit()
+
+    card = b.client.get(f"/game/shows/{b.show_id}/card").json()
+    assert [p["team"] for p in card["segments"][0]["participants"]] == [0, 0, 1, 1]
+    match = b.client.get(f"/game/matches/{match_id}").json()
+    assert [p["team"] for p in match["participants"]] == [0, 0, 1, 1]
+
 def test_promo_segment_has_no_participants(booking_client):
     b = booking_client
     response = b.client.post(f"/game/shows/{b.show_id}/promos", params={"wrestler_id": b.bench_id})
