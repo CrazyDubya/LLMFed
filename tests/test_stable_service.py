@@ -4,7 +4,7 @@ and match result integration.
 """
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
@@ -76,6 +76,56 @@ def wrestlers(db, world, federation):
 # ---------------------------------------------------------------------------
 # CRUD Tests
 # ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("member", [False, True])
+def test_match_result_sql_count(db, world, federation, wrestlers, member):
+    if member:
+        create_stable(
+            db, world.id, federation.id, "The Pack",
+            leader_id=wrestlers[0].id,
+            founding_member_ids=[w.id for w in wrestlers[:3]],
+            game_date="2026-01-01",
+        )
+    winner_id, loser_id, world_id = wrestlers[0].id, wrestlers[3].id, world.id
+    statements = []
+    commits = []
+
+    def record_sql(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    def record_commit(session):
+        commits.append(True)
+
+    event.listen(db.bind, "before_cursor_execute", record_sql)
+    event.listen(db, "after_commit", record_commit)
+    try:
+        process_match_result_for_stables(db, winner_id, loser_id, world_id)
+    finally:
+        event.remove(db.bind, "before_cursor_execute", record_sql)
+        event.remove(db, "after_commit", record_commit)
+    selects = [s for s in statements if s.startswith("SELECT")]
+    assert len(selects) == (3 if member else 1)
+    assert len(commits) == int(member)
+
+
+def test_match_result_empty_participants(db):
+    statements = []
+
+    def record_sql(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(db.bind, "before_cursor_execute", record_sql)
+    try:
+        process_match_result_for_stables(db, None, None, "missing")
+    finally:
+        event.remove(db.bind, "before_cursor_execute", record_sql)
+    assert statements == []
+
+
+def test_match_result_missing_participants(db):
+    process_match_result_for_stables(db, "missing-winner", "missing-loser", "missing")
+    assert not db.dirty
+
 
 class TestStableCRUD:
     def test_create_stable(self, db, world, federation, wrestlers):

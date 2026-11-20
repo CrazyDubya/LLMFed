@@ -393,13 +393,24 @@ def process_match_result_for_stables(
     When a stable member wins, the whole faction benefits.
     When they lose — especially the leader — cracks form.
     """
-    # Check if winner is in a stable
-    winner_member = db.query(StableMemberDB).filter_by(
-        wrestler_id=winner_id, is_active=True
-    ).first()
+    participant_ids = sorted({wid for wid in (winner_id, loser_id) if wid})
+    if not participant_ids:
+        return
+    members = db.query(StableMemberDB).filter(
+        StableMemberDB.wrestler_id.in_(participant_ids),
+        StableMemberDB.is_active == True,
+    ).order_by(StableMemberDB.id).all()
+    if not members:
+        return
+    memberships = {}
+    for member in members:
+        memberships.setdefault(member.wrestler_id, member)
+    changed = False
+    winner_member = memberships.get(winner_id)
     if winner_member:
         stable = db.query(StableDB).filter_by(id=winner_member.stable_id, is_active=True).first()
         if stable:
+            changed = True
             stable.heat = min(100, stable.heat + 2)
             stable.prestige = min(100, stable.prestige + 1)
             # All members get a small loyalty boost
@@ -410,12 +421,11 @@ def process_match_result_for_stables(
                 m.loyalty = min(100, m.loyalty + 1)
 
     # Check if loser is in a stable
-    loser_member = db.query(StableMemberDB).filter_by(
-        wrestler_id=loser_id, is_active=True
-    ).first()
+    loser_member = memberships.get(loser_id)
     if loser_member:
         stable = db.query(StableDB).filter_by(id=loser_member.stable_id, is_active=True).first()
         if stable:
+            changed = True
             # Leader losing clean is devastating
             if loser_member.role == "leader":
                 stablemates = db.query(StableMemberDB).filter_by(
@@ -427,7 +437,8 @@ def process_match_result_for_stables(
             else:
                 loser_member.loyalty = max(0, loser_member.loyalty - 1)
 
-    db.commit()
+    if changed:
+        db.commit()
 
 
 # ---------------------------------------------------------------------------
