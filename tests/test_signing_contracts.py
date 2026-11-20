@@ -1,11 +1,17 @@
 """Signing actions must see contracts created earlier in the same tick."""
 
+import json
 from unittest.mock import patch
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
+from agent_service.database import get_db_sync
+from api_gateway.main import app
+from api_gateway.security import TokenData, get_current_user
 from game_service.player_action_handler import PlayerActionHandler
 from game_service.world_ticker import WorldTicker
 from models.game_models import (
@@ -16,7 +22,9 @@ from models.game_models import (
 
 @pytest.fixture
 def db():
-    engine = create_engine("sqlite:///:memory:")
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool,
+    )
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine, autoflush=False)() as session:
         session.add_all([
@@ -29,6 +37,61 @@ def db():
         session.commit()
         yield session
     engine.dispose()
+
+
+@pytest.fixture
+def signing_api(db, monkeypatch):
+    def get_db():
+        with sessionmaker(bind=db.bind, autoflush=False)() as session:
+            yield session
+
+    monkeypatch.setitem(app.dependency_overrides, get_db_sync, get_db)
+    monkeypatch.setitem(app.dependency_overrides, get_current_user, lambda: TokenData(user_id="user"))
+    return TestClient(app, base_url="http://localhost", raise_server_exceptions=False)
+
+
+@pytest.mark.parametrize("salary", [-100000, "-100000", float("inf"), float("nan"), "NaN"])
+def test_submit_signing_rejects_invalid_salary(db, signing_api, salary):
+    response = signing_api.post(
+        "/game/worlds/world/actions",
+        content=json.dumps({
+            "action_type": "sign_wrestler",
+            "action_data": {"wrestler_id": "wrestler", "federation_id": "fed", "salary_weekly": salary},
+        }),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 400, response.text
+    assert "salary_weekly" in response.json()["message"]
+    assert db.query(PlayerActionDB).count() == 0
+
+
+def test_submit_and_process_signing_allows_zero_salary(db, signing_api):
+    response = signing_api.post("/game/worlds/world/actions", json={
+        "action_type": "sign_wrestler",
+        "action_data": {"wrestler_id": "wrestler", "federation_id": "fed", "salary_weekly": 0},
+    })
+
+    assert response.status_code == 202, response.text
+    WorldTicker(db, "world")._process_player_actions()
+    assert db.query(ContractDB).one().salary_weekly == 0
+
+
+@pytest.mark.parametrize("salary", [-100000, float("inf"), float("nan")])
+def test_pending_signing_with_invalid_salary_creates_no_contract(db, salary):
+    action = PlayerActionDB(
+        world_id="world", player_id="player", action_type="sign_wrestler",
+        action_data={"wrestler_id": "wrestler", "federation_id": "fed", "salary_weekly": salary},
+    )
+    db.add(action)
+    db.commit()
+
+    WorldTicker(db, "world")._process_player_actions()
+    db.commit()
+
+    assert action.status == "failed"
+    assert "salary_weekly" in action.result["error"]
+    assert db.query(ContractDB).count() == 0
 
 
 @pytest.mark.parametrize("federation_id", ["fed", "other-fed"])

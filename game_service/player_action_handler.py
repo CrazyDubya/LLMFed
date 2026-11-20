@@ -7,6 +7,7 @@ stable/manager/storyline management, match requests, etc.).
 """
 
 import logging
+import math
 import random
 from datetime import datetime
 from typing import Callable
@@ -60,6 +61,17 @@ def get_active_contract(db: Session, wrestler_id: str):
         ContractDB.wrestler_id == wrestler_id,
         ContractDB.status == "active",
     ).first()
+
+
+def get_signing_salary(data: dict) -> float:
+    error = "salary_weekly must be a finite, non-negative number"
+    try:
+        salary = float(data.get("salary_weekly", 1000))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(error) from exc
+    if not math.isfinite(salary) or salary < 0:
+        raise ValueError(error)
+    return salary
 
 
 # -----------------------------------------------------------------
@@ -121,7 +133,7 @@ class PlayerActionHandler:
         """Promoter signs a free agent."""
         wrestler_id = data.get("wrestler_id")
         federation_id = data.get("federation_id")
-        salary = data.get("salary_weekly", 1000)
+        salary = get_signing_salary(data)
 
         wrestler = self.db.query(GameWrestlerDB).filter(
             GameWrestlerDB.id == wrestler_id

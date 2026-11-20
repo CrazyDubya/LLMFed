@@ -17,6 +17,7 @@ from models.game_schemas import (
 from models.game_models import (
     PlayerActionDB, GameNarrativeLogDB, WorldNewsDB,
 )
+from game_service.player_action_handler import get_signing_salary
 from game_service.world_service import (
     create_world, create_player, get_world, get_player_for_user,
 )
@@ -121,6 +122,12 @@ def api_submit_action(
         player = get_player_for_user(db, current_user.user_id, world_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="No player in this world")
+
+    if data.action_type == "sign_wrestler":
+        try:
+            get_signing_salary(data.action_data)
+        except ValueError as e:
+            _handle_value_error(e)
 
     action = PlayerActionDB(
         world_id=world_id,
