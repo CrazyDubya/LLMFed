@@ -116,6 +116,10 @@ def book_match(db: Session, show_id: str, world_id: str,
     if not show:
         raise ValueError("Show not found")
 
+    is_tag_match = match_type == "tag_team"
+    if is_tag_match and len(wrestler_ids) != 4:
+        raise ValueError("Tag team matches require exactly four wrestlers")
+
     if len(set(wrestler_ids)) != len(wrestler_ids):
         raise ValueError("Match participants must be distinct")
     wrestlers = {
@@ -161,7 +165,7 @@ def book_match(db: Session, show_id: str, world_id: str,
             match_id=match.id,
             wrestler_id=wid,
             role="competitor",
-            team=i if match_type in ("tag_team",) else None,
+            team=i // 2 if is_tag_match else None,
         ))
 
     # Determine position

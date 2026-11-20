@@ -226,7 +226,10 @@ class MatchBooking(BaseModel):
     stipulation: Optional[str] = None
     is_title_match: bool = False
     championship_id: Optional[str] = None
-    participant_ids: List[str] = Field(min_length=2)
+    participant_ids: List[str] = Field(
+        min_length=2,
+        description="For tag_team, list exactly four wrestlers: two for the first team, then two for the second.",
+    )
     planned_winner_id: Optional[str] = None  # Promoter's planned finish
     planned_finish: Optional[str] = None
     planned_duration_minutes: int = Field(default=15, ge=5, le=60)
