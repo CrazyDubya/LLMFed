@@ -51,12 +51,13 @@ export function useWorldSocket(worldId: string | null, options: UseWorldSocketOp
     if (!worldId || !token) return;
 
     // Build WebSocket URL relative to current host. Browsers can't set an
-    // Authorization header on the handshake, so the token goes in the query.
+    // Authorization header on the handshake, so the token rides in the
+    // subprotocol list, which keeps it out of URLs and access logs.
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const url = `${protocol}//${host}/ws/${worldId}?token=${encodeURIComponent(token)}`;
+    const url = `${protocol}//${host}/ws/${worldId}`;
 
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url, ['bearer', token]);
     wsRef.current = ws;
     let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
     const stopHeartbeat = () => clearInterval(heartbeatTimer);

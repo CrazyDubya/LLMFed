@@ -32,7 +32,8 @@ def client():
 
 def test_world_feed_connects_and_handles_messages(client):
     token = _register(client)["access_token"]
-    with client.websocket_connect(f"ws://localhost/ws/test-world?token={token}") as websocket:
+    with client.websocket_connect("ws://localhost/ws/test-world", subprotocols=["bearer", token]) as websocket:
+        assert websocket.accepted_subprotocol == "bearer"
         assert websocket.receive_json() == {
             "type": "connected",
             "world_id": "test-world",
@@ -50,15 +51,15 @@ def test_world_feed_connects_and_handles_messages(client):
         }
 
 
-@pytest.mark.parametrize(("query", "headers"), [
-    ("", {}),
-    ("?token=not-a-jwt", {}),
-    ("", {"Authorization": "Bearer not-a-jwt"}),
-    ("", {"X-API-Key": "not-a-key"}),
-], ids=["no-credentials", "bad-query-token", "bad-bearer", "bad-api-key"])
-def test_world_feed_rejects_unauthenticated_clients(client, query, headers):
+@pytest.mark.parametrize(("subprotocols", "headers"), [
+    ([], {}),
+    (["bearer", "not-a-jwt"], {}),
+    ([], {"Authorization": "Bearer not-a-jwt"}),
+    ([], {"X-API-Key": "not-a-key"}),
+], ids=["no-credentials", "bad-subprotocol-token", "bad-bearer", "bad-api-key"])
+def test_world_feed_rejects_unauthenticated_clients(client, subprotocols, headers):
     with pytest.raises(WebSocketDisconnect) as exc_info:
-        with client.websocket_connect(f"ws://localhost/ws/test-world{query}", headers=headers):
+        with client.websocket_connect("ws://localhost/ws/test-world", subprotocols=subprotocols, headers=headers):
             pass
     assert exc_info.value.code == WS_POLICY_VIOLATION
 
@@ -70,3 +71,11 @@ def test_world_feed_accepts_bearer_header_and_api_key(client):
     for headers in (bearer, {"X-API-Key": api_key}):
         with client.websocket_connect("ws://localhost/ws/test-world", headers=headers) as websocket:
             assert websocket.receive_json()["type"] == "connected"
+
+
+def test_world_feed_ignores_token_in_query_string(client):
+    token = _register(client)["access_token"]
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with client.websocket_connect(f"ws://localhost/ws/test-world?token={token}"):
+            pass
+    assert exc_info.value.code == WS_POLICY_VIOLATION

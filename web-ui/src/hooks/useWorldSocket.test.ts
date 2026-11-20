@@ -18,9 +18,11 @@ class MockWebSocket {
   close = vi.fn(() => { this.readyState = 3; });
 
   url: string;
+  protocols?: string[];
 
-  constructor(url: string) {
+  constructor(url: string, protocols?: string[]) {
     this.url = url;
+    this.protocols = protocols;
     MockWebSocket.instances.push(this);
   }
 
@@ -44,10 +46,11 @@ afterEach(() => {
 });
 
 describe('world feed auth', () => {
-  it('sends the signed-in token with the handshake', () => {
-    auth.token = 'a.b+c';
+  it('sends the signed-in token as a subprotocol, not in the URL', () => {
+    auth.token = 'header.payload.signature';
     renderHook(() => useWorldSocket('world'));
-    expect(MockWebSocket.instances[0].url).toBe('ws://localhost:3000/ws/world?token=a.b%2Bc');
+    expect(MockWebSocket.instances[0].url).toBe('ws://localhost:3000/ws/world');
+    expect(MockWebSocket.instances[0].protocols).toEqual(['bearer', 'header.payload.signature']);
   });
 
   it('does not connect when signed out', () => {

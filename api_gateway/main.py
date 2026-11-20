@@ -34,7 +34,7 @@ _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from api_gateway.security import get_websocket_user, validate_production_config
+from api_gateway.security import WS_AUTH_SUBPROTOCOL, get_websocket_user, validate_production_config
 
 # Setup OpenTelemetry
 provider = TracerProvider()
@@ -203,7 +203,8 @@ app.include_router(metrics_router)
 # ---------------------------------------------------------------------------
 @app.websocket("/ws/{world_id}", dependencies=[Depends(get_websocket_user)])
 async def ws_world_feed(websocket: WebSocket, world_id: str):
-    await websocket_endpoint(websocket, world_id)
+    offered = websocket.scope.get("subprotocols", [])
+    await websocket_endpoint(websocket, world_id, WS_AUTH_SUBPROTOCOL if WS_AUTH_SUBPROTOCOL in offered else None)
 
 
 # ---------------------------------------------------------------------------

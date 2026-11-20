@@ -46,9 +46,9 @@ class ConnectionManager:
         self._ws_to_world: Dict[WebSocket, str] = {}
         self._lock = asyncio.Lock()
 
-    async def connect(self, websocket: WebSocket, world_id: str):
+    async def connect(self, websocket: WebSocket, world_id: str, subprotocol: Optional[str] = None):
         """Accept and register a new connection."""
-        await websocket.accept()
+        await websocket.accept(subprotocol=subprotocol)
         async with self._lock:
             if world_id not in self.active_connections:
                 self.active_connections[world_id] = set()
@@ -218,9 +218,9 @@ async def notify_world(world_id: str, event_type: str, data: dict):
 # WebSocket endpoint handler
 # ---------------------------------------------------------------------------
 
-async def websocket_endpoint(websocket: WebSocket, world_id: str):
+async def websocket_endpoint(websocket: WebSocket, world_id: str, subprotocol: Optional[str] = None):
     """WebSocket endpoint for world updates."""
-    await manager.connect(websocket, world_id)
+    await manager.connect(websocket, world_id, subprotocol)
     try:
         # Send welcome message
         await manager.send_personal(websocket, {
