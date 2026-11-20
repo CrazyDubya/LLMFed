@@ -149,6 +149,7 @@ class WrestlerResponse(BaseModel):
     condition: int
     morale: int
     age: int
+    experience_years: int
     weight_class: str
     finisher_name: Optional[str]
     finisher_type: Optional[str]
