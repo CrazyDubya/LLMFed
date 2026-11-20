@@ -14,6 +14,7 @@ from game_service.world_ticker import WorldTicker
 from models.game_models import (
     Base, WorldDB, PlayerDB, PlayerActionDB, GameFederationDB, GameWrestlerDB,
     WrestlerStatsDB, ContractDB, StableDB, ManagerDB, ManagerClientDB, StorylineDB,
+    StorylineParticipantDB,
 )
 
 
@@ -158,3 +159,28 @@ def test_action_world_must_match_handler(action_db):
     handler = PlayerActionHandler(action_db, action_db.get(WorldDB, "b"), lambda *a: None)
     with pytest.raises(ValueError, match="Action not found in this world"):
         handler.execute(PlayerActionDB(world_id="a", player_id="player", action_type="train", action_data={}))
+
+
+@pytest.mark.parametrize("local_storyline", [False, True])
+def test_promo_only_heats_storyline_in_action_world(action_db, local_storyline):
+    player = action_db.get(PlayerDB, "player")
+    player.player_type = "wrestler"
+    player.wrestler_id = "w-b"
+    action_db.add(GameWrestlerDB(id="rival", world_id="b", name="Rival"))
+    foreign = action_db.get(StorylineDB, "story-a")
+    local = action_db.get(StorylineDB, "story-b")
+    foreign.heat = local.heat = 30
+    for story in ([foreign, local] if local_storyline else [foreign]):
+        for wrestler_id in ("w-b", "rival"):
+            action_db.add(StorylineParticipantDB(storyline_id=story.id, wrestler_id=wrestler_id))
+    action_db.commit()
+    handler = PlayerActionHandler(action_db, action_db.get(WorldDB, "b"), lambda *a, **kw: None)
+    result = handler.execute(PlayerActionDB(
+        world_id="b", player_id="player", action_type="cut_promo",
+        action_data={"wrestler_id": "w-b", "target_wrestler_id": "rival"},
+    ))
+    assert foreign.heat == 30
+    if local_storyline:
+        assert local.heat == 30 + result["storyline_heat_boost"]
+    else:
+        assert "storyline_heat_boost" not in result

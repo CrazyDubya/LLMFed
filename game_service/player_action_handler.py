@@ -344,7 +344,7 @@ class PlayerActionHandler:
         # If targeting a rival, boost storyline heat
         if target_id:
             sl_svc = _get_storyline_service()
-            existing = sl_svc._find_storyline_between(self.db, wrestler_id, target_id)
+            existing = sl_svc._find_storyline_between(self.db, wrestler_id, target_id, self.world.id)
             if existing:
                 heat_boost = 5 if quality >= 60 else 3
                 sl_svc.progress_storyline(
