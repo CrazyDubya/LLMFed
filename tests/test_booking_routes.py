@@ -141,3 +141,52 @@ def test_book_promo(booking_client, promo_type):
         assert segment["description"] != show.world_id
         assert promo.promo_type == (promo_type or "in_ring")
         assert promo.world_id == show.world_id
+
+
+@pytest.mark.parametrize("case", ["subset", "empty", "duplicate", "extra", "unknown", "other-show"])
+def test_reorder_card_rejects_incomplete_permutation(booking_client, case):
+    b = booking_client
+    with b.sessions.begin() as db:
+        show = db.get(ShowDB, b.show_id)
+        other = ShowDB(world_id=show.world_id, federation_id=show.federation_id,
+                       name="Other Show", game_date=show.game_date)
+        db.add(other)
+        db.flush()
+        segments = [ShowSegmentDB(show_id=b.show_id, position=i, segment_type="promo") for i in (1, 2)]
+        outsider = ShowSegmentDB(show_id=other.id, position=1, segment_type="promo")
+        db.add_all([*segments, outsider])
+        db.flush()
+        first, second = [s.id for s in segments]
+        outsider_id = outsider.id
+    order = {
+        "subset": [second], "empty": [], "duplicate": [first, first],
+        "extra": [second, first, "missing"], "unknown": [second, "missing"],
+        "other-show": [second, outsider_id],
+    }[case]
+
+    response = b.client.patch(f"/game/shows/{b.show_id}/card/order", json={"segment_order": order})
+    assert response.status_code == 400, response.text
+    assert response.json()["message"] == "Segment order must contain every show segment exactly once"
+    with b.sessions() as db:
+        assert [(s.id, s.position) for s in db.query(ShowSegmentDB).filter_by(show_id=b.show_id)
+                .order_by(ShowSegmentDB.position)] == [(first, 1), (second, 2)]
+        assert db.get(ShowSegmentDB, outsider_id).position == 1
+
+
+@pytest.mark.parametrize("count", [0, 2])
+def test_reorder_card_full_permutation(booking_client, count):
+    b = booking_client
+    with b.sessions.begin() as db:
+        segments = [ShowSegmentDB(show_id=b.show_id, position=i + 1, segment_type="promo")
+                    for i in range(count)]
+        db.add_all(segments)
+        db.flush()
+        order = [s.id for s in reversed(segments)]
+
+    response = b.client.patch(f"/game/shows/{b.show_id}/card/order", json={"segment_order": order})
+    assert response.status_code == 200, response.text
+    expected = list(zip(order, range(1, count + 1)))
+    assert [(s["id"], s["position"]) for s in response.json()["segments"]] == expected
+    with b.sessions() as db:
+        assert [(s.id, s.position) for s in db.query(ShowSegmentDB).filter_by(show_id=b.show_id)
+                .order_by(ShowSegmentDB.position)] == expected
