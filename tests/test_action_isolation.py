@@ -232,3 +232,17 @@ def test_invalid_role_rejected_before_loading_targets(action_db):
     finally:
         event.remove(action_db.bind, "before_cursor_execute", record)
     assert not any("FROM game_wrestlers" in statement for statement in statements)
+
+
+@pytest.mark.parametrize("entrypoint", ["validate", "execute", "_action_sign_wrestler"])
+def test_legacy_foreign_contract_blocks_duplicate_signing(action_db, entrypoint):
+    action_db.add(ContractDB(world_id="a", wrestler_id="w-b", federation_id="fed-a",
+                             start_date="2026-01-01", status="active", salary_weekly=1000))
+    action_db.commit()
+    handler = PlayerActionHandler(action_db, action_db.get(WorldDB, "b"), lambda *a: None)
+    action = PlayerActionDB(world_id="b", player_id="player", action_type="sign_wrestler",
+                            action_data={"wrestler_id": "w-b", "federation_id": "fed-b"})
+    with pytest.raises(ValueError, match="Wrestler already under contract"):
+        getattr(handler, entrypoint)(action.action_data if entrypoint == "_action_sign_wrestler" else action)
+    assert action_db.query(ContractDB).count() == 1
+    assert action_db.query(ContractDB).one().world_id == "a"

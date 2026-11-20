@@ -161,7 +161,7 @@ class PlayerActionHandler:
         else:
             # Preserve duplicate-signing rejection before checking the destination.
             if action.action_type == "sign_wrestler" and get_active_contract(
-                self.db, data.get("wrestler_id"), self.world.id,
+                self.db, data.get("wrestler_id"),
             ):
                 raise ValueError("Wrestler already under contract")
             federation_ids = set()
@@ -237,7 +237,7 @@ class PlayerActionHandler:
             raise ValueError("Wrestler not found")
 
         # Check not already signed
-        active_contract = get_active_contract(self.db, wrestler_id, self.world.id)
+        active_contract = get_active_contract(self.db, wrestler_id)
         if active_contract:
             raise ValueError("Wrestler already under contract")
 
