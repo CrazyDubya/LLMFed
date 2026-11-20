@@ -408,19 +408,20 @@ class PlayerActionHandler:
         # Store the request in world metadata for the show booking phase to pick up
         meta = dict(self.world.world_config or {})
         match_requests = meta.get("pending_match_requests", [])
+        last_request_dates = dict(meta.get("last_match_request_dates", {}))
 
         # Check cooldown -- only 1 request per 7 days
         game_date = self.world.current_game_date
-        for req in match_requests:
-            if req.get("wrestler_id") == wrestler_id:
-                last_date = req.get("date", "")
-                try:
-                    days_since = (datetime.strptime(game_date, "%Y-%m-%d") -
-                                  datetime.strptime(last_date, "%Y-%m-%d")).days
-                    if days_since < 7:
-                        return {"message": f"Match request on cooldown ({7 - days_since} days remaining)"}
-                except (ValueError, TypeError):
-                    pass
+        request_dates = [last_request_dates.get(wrestler_id)]
+        request_dates.extend(req.get("date") for req in match_requests if req.get("wrestler_id") == wrestler_id)
+        for last_date in request_dates:
+            try:
+                days_since = (datetime.strptime(game_date, "%Y-%m-%d") -
+                              datetime.strptime(last_date, "%Y-%m-%d")).days
+                if days_since < 7:
+                    return {"message": f"Match request on cooldown ({7 - days_since} days remaining)"}
+            except (ValueError, TypeError):
+                pass
 
         # Remove old request for this wrestler if any, add new one
         match_requests = [r for r in match_requests if r.get("wrestler_id") != wrestler_id]
@@ -431,6 +432,8 @@ class PlayerActionHandler:
             "type": "request_match",
         })
         meta["pending_match_requests"] = match_requests
+        last_request_dates[wrestler_id] = game_date
+        meta["last_match_request_dates"] = last_request_dates
         self.world.world_config = meta
 
         self._log_event(
