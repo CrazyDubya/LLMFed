@@ -1,7 +1,7 @@
 """Tests for the show booking service."""
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
@@ -118,6 +118,63 @@ class TestShowCreation:
 
 
 class TestNPCBooking:
+    def test_completed_show_rejects_booking(self, db_session, world_with_fed):
+        world, fed = world_with_fed
+        show = create_show(db_session, world.id, fed.id, "Completed show")
+        show.is_completed = True
+        db_session.flush()
+        wrestlers = db_session.query(GameWrestlerDB).filter(
+            GameWrestlerDB.world_id == world.id,
+        ).limit(2).all()
+        for book in [
+            lambda: book_match(db_session, show.id, world.id, [w.id for w in wrestlers]),
+            lambda: book_promo_segment(db_session, show.id),
+            lambda: npc_book_card(db_session, show),
+        ]:
+            with pytest.raises(ValueError, match="Cannot book segments on a completed show"):
+                book()
+        assert get_show_card(db_session, show.id) == []
+
+    @pytest.mark.parametrize("roster_size", [0, 12])
+    def test_npc_booking_select_count(self, db_session, roster_size):
+        world = WorldDB(name="SQL count world")
+        db_session.add(world)
+        db_session.flush()
+        fed = GameFederationDB(world_id=world.id, name="SQL count federation")
+        db_session.add(fed)
+        db_session.flush()
+        for i in range(roster_size):
+            wrestler = GameWrestlerDB(world_id=world.id, name=f"Wrestler {i}", is_npc=True)
+            db_session.add(wrestler)
+            db_session.flush()
+            db_session.add(ContractDB(
+                world_id=world.id, federation_id=fed.id, wrestler_id=wrestler.id,
+                start_date="2026-01-01",
+            ))
+        show = create_show(db_session, world.id, fed.id, "SQL count show")
+        statements = []
+
+        def count_selects(conn, cursor, statement, parameters, context, executemany):
+            if statement.lstrip().upper().startswith("SELECT"):
+                statements.append(statement)
+
+        event.listen(db_session.bind, "before_cursor_execute", count_selects)
+        try:
+            segments = npc_book_card(db_session, show)
+        finally:
+            event.remove(db_session.bind, "before_cursor_execute", count_selects)
+
+        if roster_size:
+            assert len(segments) >= 3
+            assert len(statements) <= 18
+            assert sum("FROM shows" in sql for sql in statements) == 1
+            assert sum("count(" in sql.lower() and "show_segments" in sql for sql in statements) == 1
+            card = get_show_card(db_session, show.id)
+            assert [seg.position for seg in card] == list(range(1, len(card) + 1))
+        else:
+            assert segments == []
+            assert len(statements) == 2
+
     @pytest.mark.parametrize("main_event", [False, True], ids=["undercard", "main-event"])
     @pytest.mark.parametrize("available_count", [4, 3], ids=["complete-pairs", "injured-partner"])
     def test_npc_books_ppv_tag_match_only_with_both_pairs(self, db_session, main_event, available_count):
