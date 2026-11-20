@@ -197,6 +197,7 @@ def restore_snapshot(
     # Insert the (possibly-branched) world row first, then every table row,
     # rewriting ids/foreign keys and reviving ISO datetime strings back into
     # real datetime objects for DateTime-typed columns.
+    world_data = {k: _remap(v) for k, v in world_data.items() if k != "id"}
     world_data["id"] = new_world_id
     if not create_new_world:
         _delete_existing_world_data(db, new_world_id, model_by_table)

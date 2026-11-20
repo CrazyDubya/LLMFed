@@ -17,13 +17,14 @@ from game_service.snapshot_service import (
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from models.db_models import Base
 from models.core_models import WorldDB
 
 
 @pytest.fixture
 def db_session():
-    engine = create_engine("sqlite:///:memory:")
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     # Import all models to register them with Base
     import models.core_models  # noqa
     import models.wrestler_models  # noqa
@@ -78,6 +79,62 @@ class TestCreateSnapshot:
 
 
 class TestRestoreSnapshot:
+    @pytest.mark.parametrize("via_http", [False, True], ids=["service", "http"])
+    def test_branch_remaps_world_config(self, db_session, world_with_data, via_http):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from agent_service.database import get_db_sync
+        from api_gateway.routes.snapshot_routes import router
+        from api_gateway.security import get_current_user
+        from models.game_models import GameFederationDB, GameWrestlerDB
+
+        fed = GameFederationDB(world_id=world_with_data.id, name="Request Fed")
+        wrestlers = [GameWrestlerDB(world_id=world_with_data.id, name=name) for name in ["A", "B"]]
+        db_session.add_all([fed, *wrestlers])
+        db_session.flush()
+        config = {
+            "pending_match_requests": [{
+                "wrestler_id": wrestlers[0].id, "opponent_id": wrestlers[1].id,
+                "federation_id": fed.id, "type": "open_challenge",
+            }],
+            "last_match_request_dates": {wrestlers[0].id: "2026-01-01"},
+            "nested": {"world_id": world_with_data.id, "empty": [[], {}], "optional": None},
+            "difficulty": "normal",
+        }
+        world_with_data.world_config = config
+        db_session.commit()
+        if via_http:
+            app = FastAPI()
+            app.include_router(router)
+            app.dependency_overrides[get_db_sync] = lambda: db_session
+            app.dependency_overrides[get_current_user] = lambda: object()
+            with TestClient(app, base_url="http://localhost") as client:
+                response = client.post("/game/snapshots", json={"world_id": world_with_data.id})
+                assert response.status_code == 201, response.text
+                response = client.post("/game/snapshots/restore", json={
+                    "snapshot_id": response.json()["snapshot_id"], "create_new_world": True,
+                })
+                assert response.status_code == 200, response.text
+                result = response.json()
+        else:
+            snapshot = create_snapshot(db_session, world_with_data.id)
+            result = restore_snapshot(db_session, snapshot["data"])
+        db_session.expire_all()
+        branch_id = result["world_id"]
+        branch = db_session.get(WorldDB, branch_id)
+        new_ids = {w.name: w.id for w in db_session.query(GameWrestlerDB).filter_by(world_id=branch_id)}
+        new_fed = db_session.query(GameFederationDB).filter_by(world_id=branch_id).one()
+        assert set(new_ids.values()).isdisjoint(w.id for w in wrestlers)
+        assert branch.world_config == {
+            **config,
+            "pending_match_requests": [{**config["pending_match_requests"][0],
+                                        "wrestler_id": new_ids["A"], "opponent_id": new_ids["B"],
+                                        "federation_id": new_fed.id}],
+            "last_match_request_dates": {new_ids["A"]: "2026-01-01"},
+            "nested": {**config["nested"], "world_id": branch_id},
+        }
+        assert db_session.get(WorldDB, world_with_data.id).world_config == config
+
     def test_branch_remaps_booking_vision_json(self, db_session, world_with_data):
         from models.game_models import BookingVisionDB, GameFederationDB, GameWrestlerDB
 
