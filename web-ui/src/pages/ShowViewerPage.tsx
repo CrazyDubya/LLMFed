@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { getErrorMessage } from '../utils/errors';
+import { formatMatchup, type MatchParticipant } from '../utils/matchup';
 
 interface Segment {
   id: string;
@@ -14,6 +15,7 @@ interface Segment {
   rating: number | null;
   crowd_reaction: string | null;
   is_completed: boolean;
+  participants: MatchParticipant[];
 }
 
 interface MatchResult {
@@ -214,6 +216,11 @@ export default function ShowViewerPage() {
               <div className="px-4 py-4">
                 {seg.segment_type === 'match' && match ? (
                   <div>
+                    {seg.participants.length > 0 && (
+                      <p className="text-white text-lg font-semibold mb-1">
+                        {formatMatchup(seg.participants)}
+                      </p>
+                    )}
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-gray-400 text-sm">{match.match_type} match</span>
                       {match.stipulation && (

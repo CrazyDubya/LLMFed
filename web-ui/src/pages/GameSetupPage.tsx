@@ -1,14 +1,20 @@
 import { useState } from 'react';
+import { skipToken, useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useGame } from '../context/GameContext';
-import { api, type PlayerCreateData } from '../api/client';
+import { api, type Player, type PlayerCreateData } from '../api/client';
 import { getErrorMessage } from '../utils/errors';
 
 export default function GameSetupPage() {
   const { user, logout } = useAuth();
-  const { setWorld, setPlayer } = useGame();
+  const { savedWorldId, setGame } = useGame();
   const navigate = useNavigate();
+  const { data: savedPlayer, isSuccess: canContinue, isError: saveUnavailable } = useQuery({
+    queryKey: ['savedPlayer', user?.id, savedWorldId],
+    queryFn: savedWorldId ? () => api.getMyPlayer(savedWorldId) : skipToken,
+    retry: false,
+  });
 
   const [step, setStep] = useState<'mode' | 'promoter' | 'wrestler'>('mode');
   const [worldName, setWorldName] = useState('My Wrestling World');
@@ -21,13 +27,17 @@ export default function GameSetupPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const openGame = (worldId: string, player: Player) => {
+    setGame(worldId, player);
+    navigate(player.player_type === 'promoter' ? '/promoter' : '/wrestler');
+  };
+
   const startGame = async (playerType: 'promoter' | 'wrestler') => {
     setLoading(true);
     setError('');
     try {
       // Create world
       const world = await api.createWorld({ name: worldName });
-      setWorld(world.id);
 
       // Create player
       const playerData: PlayerCreateData = {
@@ -46,9 +56,7 @@ export default function GameSetupPage() {
       }
 
       const player = await api.createPlayer(playerData);
-      setPlayer(player);
-
-      navigate(playerType === 'promoter' ? '/promoter' : '/wrestler');
+      openGame(world.id, player);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -66,6 +74,21 @@ export default function GameSetupPage() {
             <button onClick={logout} className="text-sm text-gray-500 hover:text-gray-300">Logout</button>
           </div>
         </div>
+
+        {step === 'mode' && savedWorldId && canContinue && (
+          <div className="bg-[#1a1a24] rounded-lg p-6 border border-gray-800 mb-6 flex items-center justify-between">
+            <h2 className="text-xl text-white">Saved Game</h2>
+            <button
+              onClick={() => openGame(savedWorldId, savedPlayer)}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white font-semibold rounded transition-colors"
+            >
+              Continue
+            </button>
+          </div>
+        )}
+        {step === 'mode' && saveUnavailable && (
+          <p role="status" className="text-gray-400 text-sm mb-6">Could not load your saved game.</p>
+        )}
 
         {/* World Name */}
         <div className="bg-[#1a1a24] rounded-lg p-6 border border-gray-800 mb-6">

@@ -132,6 +132,57 @@ class TestFedRoster:
         assert [cell.strip() for cell in row.split("│")[1:-1]] == ["Casey Vale", "Rook", "face", "73"]
 
 
+class TestCLIExitCodes:
+    def test_advance_missing_world(self, replay_db):
+        result = runner.invoke(app, ["world", "advance", "missing-world"])
+
+        assert result.exit_code == 1
+        assert "not found" in result.stderr
+
+    def test_import_missing_file(self, replay_db, tmp_path):
+        result = runner.invoke(app, ["snapshot", "import", str(tmp_path / "missing.json")])
+
+        assert result.exit_code == 1
+        assert "No such file" in result.stderr
+
+    def test_export_missing_world(self, replay_db, tmp_path):
+        result = runner.invoke(app, [
+            "snapshot", "export", "missing-world", str(tmp_path / "snapshot.json"),
+        ])
+
+        assert result.exit_code == 1
+        assert "not found" in result.stderr
+
+    @pytest.mark.parametrize("command", [["world", "advance"], ["sim", "run"]])
+    @pytest.mark.parametrize("days", ["0", "-3"])
+    def test_nonpositive_days_rejected(self, replay_db, monkeypatch, command, days):
+        from unittest.mock import Mock
+        from game_service.world_ticker import WorldTicker
+
+        tick = Mock(return_value={})
+        monkeypatch.setattr(WorldTicker, "tick", tick)
+
+        result = runner.invoke(app, [*command, "replay-world", "--days", days])
+
+        assert result.exit_code == 2
+        assert "Invalid value" in result.stderr
+        tick.assert_not_called()
+
+    @pytest.mark.parametrize("command", [["world", "advance"], ["sim", "run"]])
+    def test_positive_days_advance(self, replay_db, command):
+        from models.game_models import WorldDB
+
+        with replay_db() as db:
+            previous_tick = db.get(WorldDB, "replay-world").current_tick
+
+        result = runner.invoke(app, [*command, "replay-world", "--days", "2"])
+
+        assert result.exit_code == 0
+        assert "Advanced 2 day(s)" in result.stdout
+        with replay_db() as db:
+            assert db.get(WorldDB, "replay-world").current_tick == previous_tick + 2
+
+
 class TestCLIBasics:
     def test_help(self):
         result = runner.invoke(app, ["--help"])

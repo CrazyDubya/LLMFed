@@ -31,6 +31,7 @@ if _root not in sys.path:
 
 app = typer.Typer(name="llmfed", help="LLMFed wrestling simulation CLI")
 console = Console()
+error_console = Console(stderr=True)
 
 # Sub-commands
 world_app = typer.Typer(help="Manage game worlds")
@@ -130,14 +131,14 @@ def world_list():
             console.print("[yellow]No worlds found. Use 'llmfed world create <name>'.[/yellow]")
             return
         table = Table(title="Game Worlds")
-        table.add_column("ID", style="cyan", max_width=12)
+        table.add_column("ID", style="cyan", no_wrap=True, overflow="ignore")
         table.add_column("Name", style="white")
         table.add_column("Game Date", style="green")
         table.add_column("Tick", justify="right")
         table.add_column("Active", justify="center")
         for w in worlds:
             table.add_row(
-                str(w.id)[:12],
+                str(w.id),
                 w.name,
                 getattr(w, "current_game_date", "?"),
                 str(getattr(w, "current_tick", 0)),
@@ -182,7 +183,7 @@ def world_status(world_id: str = typer.Argument(..., help="World ID")):
 @world_app.command("advance")
 def world_advance(
     world_id: str = typer.Argument(..., help="World ID"),
-    days: int = typer.Option(1, "-d", "--days", help="Number of days to advance"),
+    days: int = typer.Option(1, "-d", "--days", min=1, help="Number of days to advance"),
 ):
     """Advance a world by N game days."""
     from game_service.world_ticker import WorldTicker
@@ -195,7 +196,8 @@ def world_advance(
         console.print(f"[green]Advanced {days} day(s). New date: {result.get('new_game_date', '?')}[/green]")
     except Exception as e:
         db.rollback()
-        console.print(f"[red]Error: {e}[/red]")
+        error_console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
     finally:
         db.close()
 
@@ -217,13 +219,13 @@ def fed_list(world_id: str = typer.Argument(..., help="World ID")):
             console.print("[yellow]No federations in this world.[/yellow]")
             return
         table = Table(title="Federations")
-        table.add_column("ID", style="cyan", max_width=12)
+        table.add_column("ID", style="cyan", no_wrap=True, overflow="ignore")
         table.add_column("Name", style="white")
         table.add_column("Prestige", style="green", justify="right")
         table.add_column("Budget", justify="right")
         for f in feds:
             table.add_row(
-                str(f.id)[:12],
+                str(f.id),
                 f.name,
                 str(f.prestige),
                 f"${f.budget:,.0f}",
@@ -274,7 +276,7 @@ def fed_roster(federation_id: str = typer.Argument(..., help="Federation ID")):
 @sim_app.command("run")
 def sim_run(
     world_id: str = typer.Argument(..., help="World ID"),
-    days: int = typer.Option(1, "--days", "-d", help="Days to simulate"),
+    days: int = typer.Option(1, "--days", "-d", min=1, help="Days to simulate"),
 ):
     """Run the simulation for N days (alias for world advance)."""
     world_advance(world_id, days)
@@ -312,7 +314,9 @@ def snapshot_export(
         path = export_snapshot_to_file(snapshot, filepath)
         console.print(f"[green]Snapshot written to {path} ({snapshot['size_bytes']} bytes)[/green]")
     except (ValueError, OSError) as e:
-        console.print(f"[red]{e}[/red]")
+        db.rollback()
+        error_console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
     finally:
         db.close()
 
@@ -336,7 +340,9 @@ def snapshot_import(
         )
         console.print(f"[green]Restored: {result}[/green]")
     except (ValueError, OSError) as e:
-        console.print(f"[red]{e}[/red]")
+        db.rollback()
+        error_console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
     finally:
         db.close()
 
