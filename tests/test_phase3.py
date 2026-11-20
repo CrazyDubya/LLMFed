@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from models.db_models import Base
 from models.game_models import (
     WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    MatchDB, MatchParticipantDB, ChampionshipDB,
+    MatchDB, MatchParticipantDB, ChampionshipDB, ChampionshipHistoryDB,
     WrestlerHistoryDB, WrestlerRelationshipDB, TagTeamDB,
     TalentOfferDB, ShowDB, GameNarrativeLogDB,
     WorldNewsDB,
@@ -137,9 +137,16 @@ class TestMatchAftermath:
         title = ChampionshipDB(
             world_id="world1", federation_id=fed.id, name="World Title",
             current_holder_id=champ.id, defenses=3, prestige=80,
+            current_reign_start="2026-01-10",
         )
         db_session.add(title)
         db_session.flush()
+
+        old_reign = ChampionshipHistoryDB(
+            championship_id=title.id, wrestler_id=champ.id,
+            reign_start=title.current_reign_start, defenses=0,
+        )
+        db_session.add(old_reign)
 
         # Challenger wins
         match = _create_completed_match(
@@ -151,8 +158,15 @@ class TestMatchAftermath:
         process_match_aftermath(db_session, match, "2026-01-15")
 
         db_session.refresh(title)
+        db_session.refresh(old_reign)
         assert title.current_holder_id == challenger.id
         assert title.defenses == 0
+        assert old_reign.reign_end == "2026-01-15"
+        assert old_reign.defenses == 3
+        new_reign = db_session.query(ChampionshipHistoryDB).filter_by(
+            championship_id=title.id, wrestler_id=challenger.id, reign_end=None,
+        ).one()
+        assert new_reign.defenses == 0
 
         # Check narrative log
         logs = db_session.query(GameNarrativeLogDB).filter(
@@ -161,7 +175,8 @@ class TestMatchAftermath:
         assert len(logs) == 1
         assert "NEW CHAMPION" in logs[0].description
 
-    def test_title_defense(self, db_session):
+    @pytest.mark.parametrize("has_active_reign", [True, False])
+    def test_title_defense(self, db_session, has_active_reign):
         _create_world(db_session)
         fed = _create_fed(db_session)
         champ = _create_wrestler(db_session, name="Champion")
@@ -170,9 +185,22 @@ class TestMatchAftermath:
         title = ChampionshipDB(
             world_id="world1", federation_id=fed.id, name="Title",
             current_holder_id=champ.id, defenses=2, prestige=70,
+            current_reign_start="2026-01-10",
         )
         db_session.add(title)
         db_session.flush()
+
+        past_reign = ChampionshipHistoryDB(
+            championship_id=title.id, wrestler_id=champ.id,
+            reign_start="2026-01-01", reign_end="2026-01-05", defenses=1,
+        )
+        db_session.add(past_reign)
+        if has_active_reign:
+            active_reign = ChampionshipHistoryDB(
+                championship_id=title.id, wrestler_id=champ.id,
+                reign_start=title.current_reign_start, defenses=0,
+            )
+            db_session.add(active_reign)
 
         match = _create_completed_match(
             db_session, "world1", champ.id, challenger.id, champ.id,
@@ -183,8 +211,13 @@ class TestMatchAftermath:
         process_match_aftermath(db_session, match, "2026-01-15")
 
         db_session.refresh(title)
+        db_session.refresh(past_reign)
         assert title.current_holder_id == champ.id
         assert title.defenses == 3
+        assert past_reign.defenses == 1
+        if has_active_reign:
+            db_session.refresh(active_reign)
+            assert active_reign.defenses == title.defenses
 
     def test_wrestler_history_entries(self, db_session):
         _create_world(db_session)
