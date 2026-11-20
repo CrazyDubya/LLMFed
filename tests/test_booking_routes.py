@@ -16,8 +16,8 @@ from api_gateway.security import create_access_token
 from core_engine import match_engine, tag_match_simulator
 from models.db_models import Base
 from models.game_models import (
-    GameFederationDB, GameWrestlerDB, MatchDB, MatchParticipantDB, PlayerDB, PromoDB, ShowDB, ShowSegmentDB,
-    UserDB, WorldDB, WrestlerStatsDB,
+    ChampionshipDB, GameFederationDB, GameWrestlerDB, MatchDB, MatchParticipantDB, PlayerDB, PromoDB,
+    ShowDB, ShowSegmentDB, UserDB, WorldDB, WrestlerHistoryDB, WrestlerStatsDB,
 )
 
 
@@ -105,7 +105,14 @@ def test_tick_runs_show_booked_for_current_game_date(booking_client):
     assert not show["is_completed"]
     card_url = f"/game/shows/{show['id']}/card"
 
-    match = b.client.post(f"/game/shows/{show['id']}/matches", json={"participant_ids": b.wrestler_ids})
+    with b.sessions.begin() as db:
+        title = ChampionshipDB(world_id=b.world_id, federation_id=b.federation_id, name="Vacant Title")
+        db.add(title)
+        db.flush()
+        title_id = title.id
+    match = b.client.post(f"/game/shows/{show['id']}/matches", json={
+        "participant_ids": b.wrestler_ids, "is_title_match": True, "championship_id": title_id,
+    })
     assert match.status_code == 201, match.text
 
     future = b.client.post(shows_url, json={"name": "Future show", "game_date": "2026-01-06"})
@@ -118,6 +125,16 @@ def test_tick_runs_show_booked_for_current_game_date(booking_client):
     assert card["show"]["is_completed"]
     assert card["show"]["game_date"] == "2026-01-04"
     assert card["segments"][0]["is_completed"]
+    with b.sessions() as db:
+        title = db.get(ChampionshipDB, title_id)
+        assert [reign.reign_start for reign in title.history] == [show["game_date"]]
+        histories = db.query(WrestlerHistoryDB).filter(
+            WrestlerHistoryDB.wrestler_id.in_(b.wrestler_ids),
+            WrestlerHistoryDB.event_type.in_(("match_win", "match_loss")),
+        ).all()
+        assert sorted((entry.event_type, entry.game_date) for entry in histories) == [
+            ("match_loss", show["game_date"]), ("match_win", show["game_date"]),
+        ]
     assert b.client.get(f"/game/shows/{b.show_id}/card").json()["show"]["is_completed"]
     assert not b.client.get(f"/game/shows/{future_id}/card").json()["show"]["is_completed"]
 
