@@ -45,6 +45,8 @@ def main():
             counts["selects"] += 1
             if phase == "momentum":
                 counts["momentum_selects"] += 1
+            if phase == "agency":
+                counts["agency_selects"] += 1
         if phase == "show":
             counts["show_sql"] += 1
         if "count(" in statement and "championships" in statement:
@@ -56,6 +58,19 @@ def main():
     show_seconds = 0.0
     original_momentum = inter_federation_service.update_federation_momentum
     momentum_seconds = 0.0
+    original_agency = WorldTicker._character_agency_tick
+    agency_seconds = 0.0
+
+    def agency(self, *a, **kw):
+        nonlocal phase, agency_seconds
+        previous_phase = phase
+        phase = "agency"
+        start = time.perf_counter()
+        try:
+            return original_agency(self, *a, **kw)
+        finally:
+            agency_seconds += time.perf_counter() - start
+            phase = previous_phase
 
     def momentum(*a, **kw):
         nonlocal phase, momentum_seconds
@@ -83,6 +98,8 @@ def main():
         WorldTicker, "_simulate_shows", shows,
     ), patch.object(
         inter_federation_service, "update_federation_momentum", momentum,
+    ), patch.object(
+        WorldTicker, "_character_agency_tick", agency,
     ):
         with patch(
             "game_service.world_service.random.randint",
@@ -96,7 +113,7 @@ def main():
         seconds = time.perf_counter() - start
         event.remove(engine, "before_cursor_execute", sql)
         result = dict(seconds=seconds, show_seconds=show_seconds,
-                      momentum_seconds=momentum_seconds, **counts)
+                      momentum_seconds=momentum_seconds, agency_seconds=agency_seconds, **counts)
         print(json.dumps(result, sort_keys=True), flush=True)
         (args.output / "results.json").write_text(json.dumps(result, indent=2))
         fingerprint = {"tick_results": tick_results}
