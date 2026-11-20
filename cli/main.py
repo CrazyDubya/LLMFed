@@ -256,13 +256,13 @@ def fed_roster(federation_id: str = typer.Argument(..., help="Federation ID")):
         table.add_column("Name", style="white")
         table.add_column("Ring Name", style="cyan")
         table.add_column("Alignment", style="yellow")
-        table.add_column("Overall", justify="right", style="green")
+        table.add_column("Popularity", justify="right", style="green")
         for w in wrestlers:
             table.add_row(
                 getattr(w, "real_name", "?"),
                 w.name,
                 getattr(w, "alignment", "?"),
-                str(getattr(w, "overall_rating", "?")),
+                str(w.popularity) if w.popularity is not None else "—",
             )
         console.print(table)
     finally:
