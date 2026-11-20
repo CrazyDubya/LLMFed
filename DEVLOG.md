@@ -6,6 +6,10 @@ Notable changes between commits. Supplement git history with a short note here w
 
 - **Show booking:** Reject match and promo segments on completed shows at the service layer.
 
+- **Live feed:** Send Web UI heartbeats every 25 seconds and clear their timers on disconnect and cleanup; add fake-timer hook regression tests.
+
+- **Analytics:** Scope wrestler and federation analytics to the requested world and return 404 for missing or out-of-world IDs.
+
 - **Shows Hub:** Authenticate show listing and auto-ticker controls, and display API failures instead of misleading empty or stopped states.
 
 - **Federation momentum:** Batch daily show, contract and wrestler reads across federations while preserving first-show selection and de-duplicated roster morale.
