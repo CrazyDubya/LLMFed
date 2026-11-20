@@ -145,6 +145,54 @@ class TestCLIExitCodes:
         assert result.exit_code == 1
         assert "No such file" in result.stderr
 
+    @pytest.mark.parametrize("damage", ["truncated", "empty", "header", "checksum", "deflate"])
+    def test_import_invalid_snapshot(self, replay_db, tmp_path, monkeypatch, damage):
+        from unittest.mock import Mock
+        import cli.main as cli_main
+        from game_service.snapshot_service import create_snapshot
+        from models.game_models import WorldDB
+
+        with replay_db() as db:
+            data = create_snapshot(db, world_id="replay-world")["data"]
+        damaged = {
+            "truncated": data[:20],
+            "empty": b"",
+            "header": b"not gzip",
+            "checksum": data[:-8] + bytes([data[-8] ^ 255]) + data[-7:],
+            "deflate": data[:10] + b"\x07" + data[11:],
+        }
+        path = tmp_path / "bad.gz"
+        path.write_bytes(damaged[damage])
+        db = replay_db()
+        rollback = Mock(wraps=db.rollback)
+        monkeypatch.setattr(db, "rollback", rollback)
+        monkeypatch.setattr(cli_main, "_get_db", lambda: db)
+
+        result = runner.invoke(app, ["snapshot", "import", str(path)], env={"COLUMNS": "240"})
+
+        assert result.exit_code == 1
+        assert f"Invalid or truncated snapshot: {path}" in result.stderr
+        assert result.stdout == ""
+        rollback.assert_called_once_with()
+        with replay_db() as check:
+            assert check.query(WorldDB).count() == 1
+
+    def test_import_valid_snapshot(self, replay_db, tmp_path):
+        from game_service.snapshot_service import create_snapshot
+        from models.game_models import WorldDB
+
+        with replay_db() as db:
+            data = create_snapshot(db, world_id="replay-world")["data"]
+        path = tmp_path / "valid.gz"
+        path.write_bytes(data)
+
+        result = runner.invoke(app, ["snapshot", "import", str(path)])
+
+        assert result.exit_code == 0
+        assert "Restored:" in result.stdout
+        with replay_db() as db:
+            assert db.query(WorldDB).count() == 2
+
     def test_export_missing_world(self, replay_db, tmp_path):
         result = runner.invoke(app, [
             "snapshot", "export", "missing-world", str(tmp_path / "snapshot.json"),

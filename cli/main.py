@@ -17,6 +17,9 @@ Usage:
 
 import sys
 import os
+import gzip
+import json
+import zlib
 from typing import Optional
 
 import typer
@@ -339,6 +342,10 @@ def snapshot_import(
             create_new_world=target_world_id is None,
         )
         console.print(f"[green]Restored: {result}[/green]")
+    except (EOFError, gzip.BadGzipFile, zlib.error, json.JSONDecodeError, UnicodeError):
+        db.rollback()
+        error_console.print(f"Invalid or truncated snapshot: {filepath}", style="red", markup=False)
+        raise typer.Exit(1)
     except (ValueError, OSError) as e:
         db.rollback()
         error_console.print(f"[red]{e}[/red]")
