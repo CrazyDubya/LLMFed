@@ -3,6 +3,9 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorldSocket } from './useWorldSocket';
 
+const auth = vi.hoisted(() => ({ token: 'jwt' as string | null }));
+vi.mock('../context/AuthContext', () => ({ useAuth: () => auth }));
+
 class MockWebSocket {
   static OPEN = 1;
   static instances: MockWebSocket[] = [];
@@ -30,6 +33,7 @@ class MockWebSocket {
 beforeEach(() => {
   vi.useFakeTimers();
   MockWebSocket.instances = [];
+  auth.token = 'jwt';
   vi.stubGlobal('WebSocket', MockWebSocket);
 });
 
@@ -37,6 +41,21 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describe('world feed auth', () => {
+  it('sends the signed-in token with the handshake', () => {
+    auth.token = 'a.b+c';
+    renderHook(() => useWorldSocket('world'));
+    expect(MockWebSocket.instances[0].url).toBe('ws://localhost:3000/ws/world?token=a.b%2Bc');
+  });
+
+  it('does not connect when signed out', () => {
+    auth.token = null;
+    renderHook(() => useWorldSocket('world'));
+    act(() => vi.advanceTimersByTime(60000));
+    expect(MockWebSocket.instances).toHaveLength(0);
+  });
 });
 
 describe('world feed heartbeat', () => {
