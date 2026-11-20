@@ -149,12 +149,14 @@ class WrestlerResponse(BaseModel):
     condition: int
     morale: int
     age: int
+    experience_years: int
     weight_class: str
     finisher_name: Optional[str]
     finisher_type: Optional[str]
     catchphrase: Optional[str]
     is_active: bool
     is_injured: bool
+    injury_return_date: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

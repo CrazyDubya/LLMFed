@@ -17,10 +17,12 @@ from models.game_schemas import (
 from models.game_models import (
     PlayerActionDB, GameNarrativeLogDB, WorldNewsDB,
 )
+from game_service.player_action_handler import get_signing_salary
 from game_service.world_service import (
     create_world, create_player, get_world, get_player_for_user,
 )
 from game_service.world_ticker import WorldTicker
+from game_service.player_action_handler import PlayerActionHandler
 from api_gateway.websocket_hub import manager as ws_manager
 from game_service.promo_service import generate_promo as svc_generate_promo
 
@@ -122,12 +124,22 @@ def api_submit_action(
     except ValueError:
         raise HTTPException(status_code=404, detail="No player in this world")
 
+    if data.action_type == "sign_wrestler":
+        try:
+            get_signing_salary(data.action_data)
+        except ValueError as e:
+            _handle_value_error(e)
+
     action = PlayerActionDB(
         world_id=world_id,
         player_id=player.id,
         action_type=data.action_type,
         action_data=data.action_data,
     )
+    try:
+        PlayerActionHandler(db, get_world(db, world_id), lambda *args, **kwargs: None).validate(action)
+    except ValueError as e:
+        _handle_value_error(e)
     db.add(action)
     db.commit()
     db.refresh(action)

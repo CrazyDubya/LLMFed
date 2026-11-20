@@ -7,6 +7,7 @@ stable/manager/storyline management, match requests, etc.).
 """
 
 import logging
+import math
 import random
 from datetime import datetime
 from typing import Callable
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session
 from models.game_models import (
     WorldDB, PlayerActionDB, GameWrestlerDB,
     WrestlerStatsDB, ContractDB, ShowDB, StorylineDB,
+    GameFederationDB, PlayerDB, StableDB, ManagerDB, ManagerClientDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,12 +56,26 @@ def _get_manager_service():
 # DRY helper for the repeated active-contract query
 # -----------------------------------------------------------------
 
-def get_active_contract(db: Session, wrestler_id: str):
+def get_active_contract(db: Session, wrestler_id: str, world_id: str = None):
     """Return the active ContractDB for a wrestler, or None."""
-    return db.query(ContractDB).filter(
+    query = db.query(ContractDB).filter(
         ContractDB.wrestler_id == wrestler_id,
         ContractDB.status == "active",
-    ).first()
+    )
+    if world_id is not None:
+        query = query.filter(ContractDB.world_id == world_id)
+    return query.first()
+
+
+def get_signing_salary(data: dict) -> float:
+    error = "salary_weekly must be a finite, non-negative number"
+    try:
+        salary = float(data.get("salary_weekly", 1000))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(error) from exc
+    if not math.isfinite(salary) or salary < 0:
+        raise ValueError(error)
+    return salary
 
 
 # -----------------------------------------------------------------
@@ -87,8 +103,110 @@ class PlayerActionHandler:
 
     # ---- dispatch ------------------------------------------------
 
+    def validate(self, action: PlayerActionDB):
+        """Validate every referenced entity before any handler can mutate state."""
+        if action.world_id is not None and action.world_id != self.world.id:
+            raise ValueError("Action not found in this world")
+        data = action.action_data
+        fields = {
+            "sign_wrestler": ("wrestler_id", "federation_id"),
+            "book_show": ("federation_id",),
+            "train": ("wrestler_id",),
+            "cut_promo": ("wrestler_id", "target_wrestler_id"),
+            "request_match": ("wrestler_id",),
+            "open_challenge": ("wrestler_id",),
+            "form_stable": ("leader_id", "founding_member_ids", "manager_id"),
+            "join_stable": ("stable_id", "wrestler_id"),
+            "leave_stable": ("stable_id", "wrestler_id"),
+            "dissolve_stable": ("stable_id",),
+            "assign_manager": ("manager_id", "client_wrestler_id"),
+            "create_manager": ("federation_id",),
+            "remove_manager": ("bond_id",),
+            "create_storyline": ("wrestler_ids", "federation_id"),
+            "advance_storyline": ("storyline_id",),
+        }.get(action.action_type)
+        if fields is None:
+            return
+        personal_actions = ("train", "cut_promo", "request_match", "open_challenge")
+        player = None
+        if action.player_id is not None:
+            player = self.db.query(PlayerDB).filter_by(id=action.player_id, world_id=self.world.id).first()
+            if player is None:
+                raise ValueError("Player not found in this world")
+            if action.action_type in personal_actions:
+                if player.player_type != "wrestler":
+                    raise ValueError("You do not control this wrestler")
+            elif player.player_type != "promoter":
+                raise ValueError("You do not control this federation")
+        models = {
+            "wrestler_id": (GameWrestlerDB, "Wrestler"),
+            "target_wrestler_id": (GameWrestlerDB, "Wrestler"),
+            "leader_id": (GameWrestlerDB, "Wrestler"),
+            "founding_member_ids": (GameWrestlerDB, "Wrestler"),
+            "wrestler_ids": (GameWrestlerDB, "Wrestler"),
+            "client_wrestler_id": (GameWrestlerDB, "Wrestler"),
+            "federation_id": (GameFederationDB, "Federation"),
+            "stable_id": (StableDB, "Stable"),
+            "manager_id": (ManagerDB, "Manager"),
+            "bond_id": (ManagerClientDB, "Bond"),
+            "storyline_id": (StorylineDB, "Storyline"),
+        }
+        entities = {}
+        for field in fields:
+            value = data.get(field)
+            if value is None:
+                continue
+            model, label = models[field]
+            ids = set(value) if field in ("founding_member_ids", "wrestler_ids") else {value}
+            targets = self.db.query(model).filter(model.id.in_(ids), model.world_id == self.world.id).all() if ids else []
+            if len(targets) != len(ids):
+                raise ValueError(f"{label} not found in this world")
+            entities[field] = targets
+
+        # Calls without a player are also used by trusted in-process services.
+        if player is None:
+            return
+        if action.action_type in personal_actions:
+            wrestler_id = data.get("wrestler_id")
+            if player.player_type != "wrestler" or player.wrestler_id != wrestler_id:
+                raise ValueError("You do not control this wrestler")
+        else:
+            # Preserve duplicate-signing rejection before checking the destination.
+            if action.action_type == "sign_wrestler" and get_active_contract(
+                self.db, data.get("wrestler_id"),
+            ):
+                raise ValueError("Wrestler already under contract")
+            federation_ids = set()
+            roster_ids = set()
+            for field, targets in entities.items():
+                for target in targets:
+                    if field == "federation_id":
+                        federation_ids.add(target.id)
+                    elif hasattr(target, "federation_id") and target.federation_id:
+                        federation_ids.add(target.federation_id)
+                    elif isinstance(target, ManagerClientDB):
+                        manager = self.db.query(ManagerDB).filter_by(
+                            id=target.manager_id, world_id=self.world.id,
+                        ).first()
+                        if manager is None:
+                            raise ValueError("Manager not found in this world")
+                        if manager.federation_id:
+                            federation_ids.add(manager.federation_id)
+                    elif isinstance(target, GameWrestlerDB) and action.action_type != "sign_wrestler":
+                        roster_ids.add(target.id)
+            if roster_ids:
+                contracts = self.db.query(ContractDB).filter(
+                    ContractDB.wrestler_id.in_(roster_ids),
+                    ContractDB.world_id == self.world.id,
+                    ContractDB.status == "active",
+                ).all()
+                federation_ids.update(contract.federation_id for contract in contracts)
+            if player.player_type != "promoter" or any(fed != player.federation_id for fed in federation_ids):
+                raise ValueError("You do not control this federation")
+
     def execute(self, action: PlayerActionDB) -> dict:
         """Execute a single player action.  Returns result dict."""
+        self.validate(action)
         action_type = action.action_type
         data = action.action_data
 
@@ -111,9 +229,9 @@ class PlayerActionHandler:
         }
 
         handler = dispatch.get(action_type)
-        if handler:
-            return handler(data)
-        return {"message": f"Action '{action_type}' acknowledged"}
+        if handler is None:
+            raise ValueError(f"Unsupported action type: {action_type}")
+        return handler(data)
 
     # ---- individual action handlers ------------------------------
 
@@ -121,10 +239,11 @@ class PlayerActionHandler:
         """Promoter signs a free agent."""
         wrestler_id = data.get("wrestler_id")
         federation_id = data.get("federation_id")
-        salary = data.get("salary_weekly", 1000)
+        salary = get_signing_salary(data)
 
         wrestler = self.db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id == wrestler_id
+            GameWrestlerDB.id == wrestler_id,
+            GameWrestlerDB.world_id == self.world.id,
         ).first()
         if not wrestler:
             raise ValueError("Wrestler not found")
@@ -169,6 +288,8 @@ class PlayerActionHandler:
 
         stats = self.db.query(WrestlerStatsDB).filter(
             WrestlerStatsDB.wrestler_id == wrestler_id
+        ).join(GameWrestlerDB, GameWrestlerDB.id == WrestlerStatsDB.wrestler_id).filter(
+            GameWrestlerDB.world_id == self.world.id,
         ).first()
         if not stats:
             raise ValueError("Wrestler stats not found")
@@ -246,7 +367,7 @@ class PlayerActionHandler:
         # If targeting a rival, boost storyline heat
         if target_id:
             sl_svc = _get_storyline_service()
-            existing = sl_svc._find_storyline_between(self.db, wrestler_id, target_id)
+            existing = sl_svc._find_storyline_between(self.db, wrestler_id, target_id, self.world.id)
             if existing:
                 heat_boost = 5 if quality >= 60 else 3
                 sl_svc.progress_storyline(
@@ -280,12 +401,12 @@ class PlayerActionHandler:
             raise ValueError("Wrestler not found")
 
         # Find wrestler's federation
-        contract = get_active_contract(self.db, wrestler_id)
+        contract = get_active_contract(self.db, wrestler_id, self.world.id)
         if not contract:
             raise ValueError("Wrestler has no active contract")
 
         # Store the request in world metadata for the show booking phase to pick up
-        meta = self.world.world_config or {}
+        meta = dict(self.world.world_config or {})
         match_requests = meta.get("pending_match_requests", [])
 
         # Check cooldown -- only 1 request per 7 days
@@ -332,18 +453,20 @@ class PlayerActionHandler:
         if not wrestler:
             raise ValueError("Wrestler not found")
 
-        contract = get_active_contract(self.db, wrestler_id)
+        contract = get_active_contract(self.db, wrestler_id, self.world.id)
         if not contract:
             raise ValueError("Wrestler has no active contract")
 
         # Find a suitable opponent: +/-10 popularity from same federation
         roster_contracts = self.db.query(ContractDB).filter(
+            ContractDB.world_id == self.world.id,
             ContractDB.federation_id == contract.federation_id,
             ContractDB.status == "active",
             ContractDB.wrestler_id != wrestler_id,
         ).all()
 
         roster_wrestlers = self.db.query(GameWrestlerDB).filter(
+            GameWrestlerDB.world_id == self.world.id,
             GameWrestlerDB.id.in_([c.wrestler_id for c in roster_contracts]),
             GameWrestlerDB.is_injured.is_(False),
         ).all()
@@ -363,7 +486,7 @@ class PlayerActionHandler:
         opponent = random.choice(candidates)
 
         # Store in metadata for show booking
-        meta = self.world.world_config or {}
+        meta = dict(self.world.world_config or {})
         match_requests = meta.get("pending_match_requests", [])
         match_requests = [r for r in match_requests if r.get("wrestler_id") != wrestler_id]
         match_requests.append({
@@ -401,7 +524,7 @@ class PlayerActionHandler:
             member_ids = [leader_id] + member_ids
 
         # Find federation from leader's contract
-        contract = get_active_contract(self.db, leader_id)
+        contract = get_active_contract(self.db, leader_id, self.world.id)
         if not contract:
             raise ValueError("Leader has no active contract")
 
@@ -518,7 +641,7 @@ class PlayerActionHandler:
         federation_id = data.get("federation_id")
         if not federation_id:
             # Infer from first wrestler's contract
-            contract = get_active_contract(self.db, wrestler_ids[0])
+            contract = get_active_contract(self.db, wrestler_ids[0], self.world.id)
             federation_id = contract.federation_id if contract else None
         storyline = sl_svc.create_storyline(
             self.db, self.world.id, federation_id,
