@@ -1,4 +1,4 @@
-"""HTTP regression tests for batched storyline serialization."""
+"""HTTP regression tests for storyline routes."""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -90,6 +90,26 @@ def test_create_storyline_missing_world(storyline_api):
     })
     assert response.status_code == 404, response.text
     assert response.json()["message"] == "World not found"
+
+
+def test_create_storyline_rejects_wrestler_from_another_world(storyline_api):
+    client, sessions, _ = storyline_api
+    with sessions.begin() as db:
+        db.add(WorldDB(id="other-world", name="Other World"))
+        db.add(GameWrestlerDB(id="visitor", world_id="other-world", name="The Visitor"))
+
+    response = client.post("/game/worlds/story-world/storylines", json={
+        "name": "Cross-world feud", "description": "A rivalry", "wrestler_ids": ["hero", "villain", "visitor"],
+    })
+    detail = client.get("/game/wrestlers/visitor")
+    assert detail.status_code == 200, detail.text
+    print(f"POST HTTP {response.status_code} {response.text}")
+    print(f"GET HTTP {detail.status_code} active_storylines={detail.json()['active_storylines']}")
+    assert response.status_code == 400, response.text
+    assert response.json()["message"] == "Wrestler not found in this world"
+    assert detail.json()["active_storylines"] == []
+    with sessions() as db:
+        assert db.query(StorylineDB).count() == 0
 
 
 def test_create_storyline_returns_saved_body(storyline_api):

@@ -99,15 +99,20 @@ def create_storyline(db: Session, world_id: str, federation_id: str,
                      game_date: str = None,
                      kayfabe_level: int = 100) -> StorylineDB:
     """Create a new storyline between wrestlers."""
+    participant_ids = set(wrestler_ids)
+    wrestlers = db.query(GameWrestlerDB.id, GameWrestlerDB.name).filter(
+        GameWrestlerDB.world_id == world_id,
+        GameWrestlerDB.id.in_(participant_ids),
+    ).all() if participant_ids else []
+    if len(wrestlers) != len(participant_ids):
+        raise ValueError("Wrestler not found in this world")
+
     if not name:
         names = STORYLINE_NAMES.get(storyline_type, STORYLINE_NAMES["feud"])
         name = random.choice(names)
 
     if not description:
-        wrestlers = db.query(GameWrestlerDB).filter(
-            GameWrestlerDB.id.in_(wrestler_ids)
-        ).all()
-        w_names = {w.id: w.name for w in wrestlers}
+        w_names = dict(wrestlers)
 
         if storyline_type == "feud" and len(wrestler_ids) >= 2:
             template = random.choice(FEUD_TRIGGERS)
