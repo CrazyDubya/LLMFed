@@ -23,7 +23,7 @@ dependencies = [
     "websockets",
     "rich",
     "PyJWT>=2.10,<3",
-    "passlib[bcrypt]",
+    "bcrypt",
     "python-multipart",
     "slowapi",
     "aiosqlite>=0.22.1",
@@ -47,3 +47,7 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["api_gateway", "agent_service", "core_engine", "llm_abstraction", "models"]
+
+[tool.pytest.ini_options]
+filterwarnings = ["ignore::ResourceWarning", "ignore::pytest.PytestUnraisableExceptionWarning"]
+asyncio_default_fixture_loop_scope = "session"
