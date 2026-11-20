@@ -24,7 +24,7 @@ def stable_api(monkeypatch):
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
-    sessions = sessionmaker(bind=engine)
+    sessions = sessionmaker(bind=engine, autoflush=False)
     with sessions.begin() as db:
         for world in ("a", "b"):
             db.add(WorldDB(id=f"world-{world}", name=f"World {world.upper()}"))
@@ -98,3 +98,35 @@ def test_valid_stable_members_are_accepted(stable_api):
     with sessions() as db:
         member_ids = {m.wrestler_id for m in db.query(StableMemberDB)}
     assert member_ids == {"a1", "a2", "a3"}
+
+
+def test_member_can_rejoin_stable(stable_api):
+    client, sessions = stable_api
+    url = f"/game/stables/{_create_stable(client).json()['id']}/members"
+    added = client.post(url, json={"wrestler_id": "a3", "role": "recruit"})
+    assert added.status_code == 201, added.text
+    assert client.delete(f"{url}/a3").status_code == 204
+    with sessions.begin() as db:
+        member = db.query(StableMemberDB).filter_by(wrestler_id="a3").one()
+        assert member.is_active is False
+        assert member.left_date is not None
+        db.get(WorldDB, "world-a").current_game_date = "2026-01-05"
+    rejoined = client.post(url, json={"wrestler_id": "a3", "role": "enforcer"})
+    assert rejoined.status_code == 201, rejoined.text
+    assert rejoined.json() == {"id": added.json()["id"], "wrestler_id": "a3", "role": "enforcer"}
+    with sessions() as db:
+        member = db.query(StableMemberDB).filter_by(wrestler_id="a3").one()
+        assert member.is_active is True
+        assert member.left_date is None
+        assert member.joined_date == "2026-01-05"
+        assert (member.loyalty, member.influence) == (65, 30)
+
+
+def test_active_member_still_conflicts(stable_api):
+    client, sessions = stable_api
+    stable_id = _create_stable(client).json()["id"]
+    response = client.post(f"/game/stables/{stable_id}/members", json={"wrestler_id": "a2"})
+    assert response.status_code == 409, response.text
+    assert response.json()["message"] == "Database constraint violation"
+    with sessions() as db:
+        assert db.query(StableMemberDB).filter_by(wrestler_id="a2").count() == 1

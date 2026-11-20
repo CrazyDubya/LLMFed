@@ -105,15 +105,18 @@ def add_member(
         raise ValueError("Stable not found")
     _require_world_wrestlers(db, stable.world_id, {wrestler_id})
 
-    member = StableMemberDB(
-        stable_id=stable_id,
-        wrestler_id=wrestler_id,
-        role=role,
-        loyalty=50 if role == "recruit" else 65,
-        influence=15 if role == "recruit" else 30,
-        joined_date=game_date,
-    )
-    db.add(member)
+    member = db.query(StableMemberDB).filter_by(
+        stable_id=stable_id, wrestler_id=wrestler_id, is_active=False,
+    ).first()
+    if member is None:
+        member = StableMemberDB(stable_id=stable_id, wrestler_id=wrestler_id)
+        db.add(member)
+    member.role = role
+    member.loyalty = 50 if role == "recruit" else 65
+    member.influence = 15 if role == "recruit" else 30
+    member.joined_date = game_date
+    member.left_date = None
+    member.is_active = True
 
     wrestler = db.query(GameWrestlerDB).filter_by(id=wrestler_id).first()
     db.add(GameNarrativeLogDB(
