@@ -209,7 +209,7 @@ def api_create_stable(
     """Create a new stable/faction."""
     try:
         # Determine federation from the leader wrestler's contract
-        leader = db.query(GameWrestlerDB).filter_by(id=data.leader_id).first()
+        leader = db.query(GameWrestlerDB).filter_by(id=data.leader_id, world_id=world_id).first()
         if not leader:
             raise HTTPException(status_code=404, detail="Leader wrestler not found")
         contract = db.query(ContractDB).filter_by(
@@ -269,10 +269,13 @@ def api_add_stable_member(
     stable = _get_active_stable_or_404(db, stable_id)
     _require_federation_owner_if_any(db, current_user.user_id, stable.federation_id)
     world = get_world(db, stable.world_id)
-    member = stable_service.add_member(
-        db, stable_id, data.wrestler_id, data.role,
-        game_date=world.current_game_date if world else None,
-    )
+    try:
+        member = stable_service.add_member(
+            db, stable_id, data.wrestler_id, data.role,
+            game_date=world.current_game_date if world else None,
+        )
+    except ValueError as e:
+        _handle_value_error(e)
     return {"id": member.id, "wrestler_id": member.wrestler_id, "role": member.role}
 
 
