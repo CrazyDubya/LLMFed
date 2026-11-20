@@ -496,19 +496,21 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
                 candidates = [w for w in wrestlers if w.id not in used and w.id != pw_id and not w.is_injured]
                 opp = random.choice(candidates) if candidates else None
 
-            if opp:
-                seg = book_match(
-                    db, show.id, show.world_id,
-                    wrestler_ids=[pw.id, opp.id],
-                    match_type="singles",
-                    planned_winner_id=pw.id if random.random() < PLAYER_MATCH_WIN_RATE else opp.id,
-                    planned_finish="pinfall",
-                )
-                segments.append(seg)
-                card_priority[seg.id] = 1  # Opening match — gets the player on TV
-                used.add(pw.id)
-                used.add(opp.id)
-                player_match_booked = True
+            if not opp:
+                continue
+
+            seg = book_match(
+                db, show.id, show.world_id,
+                wrestler_ids=[pw.id, opp.id],
+                match_type="singles",
+                planned_winner_id=pw.id if random.random() < PLAYER_MATCH_WIN_RATE else opp.id,
+                planned_finish="pinfall",
+            )
+            segments.append(seg)
+            card_priority[seg.id] = 1  # Opening match — gets the player on TV
+            used.add(pw.id)
+            used.add(opp.id)
+            player_match_booked = True
 
             # Remove fulfilled request
             pending_requests = [r for r in pending_requests if r.get("wrestler_id") != pw_id]
