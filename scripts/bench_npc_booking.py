@@ -1,4 +1,4 @@
-"""Run alternating seeded benchmarks: python scripts/bench_npc_booking.py BEFORE OUTPUT."""
+"""Run seeded benchmarks: python scripts/bench_npc_booking.py --baseline master OUTPUT."""
 
 import argparse
 import hashlib
@@ -59,24 +59,36 @@ def run_one(repo, output):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("before", type=Path)
+    parser.add_argument("--baseline", default="master", help="Baseline git ref (default: master)")
     parser.add_argument("output", type=Path)
     parser.add_argument("--pairs", type=int, default=10)
-    parser.add_argument("--run", action="store_true")
+    parser.add_argument("--run", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.run:
-        run_one(args.before.resolve(), args.output.resolve())
+        run_one(args.run.resolve(), args.output.resolve())
         return
     args.output.mkdir(parents=True, exist_ok=False)
     after = Path(__file__).resolve().parents[1]
+    baseline = subprocess.check_output(
+        ["git", "rev-parse", "--verify", f"{args.baseline}^{{commit}}"], cwd=after, text=True,
+    ).strip()
+    before = args.output.resolve() / "baseline-worktree"
+    subprocess.run(["git", "worktree", "add", "--detach", str(before), baseline], cwd=after, check=True)
+    try:
+        benchmark(args, before, after, baseline)
+    finally:
+        subprocess.run(["git", "worktree", "remove", str(before)], cwd=after, check=True)
+
+
+def benchmark(args, before, after, baseline):
     env = dict(os.environ, PYTHONHASHSEED="0", OTEL_SDK_DISABLED="true")
     env.pop("LLMFED_USE_LLM", None)
     results = {"before": [], "after": []}
     for i in range(args.pairs):
-        for label, repo in [("before", args.before.resolve()), ("after", after)]:
+        for label, repo in [("before", before), ("after", after)]:
             output = args.output.resolve() / f"{i:02d}-{label}"
             with (args.output / f"{i:02d}-{label}.log").open("w") as log:
-                subprocess.run([sys.executable, str(Path(__file__).resolve()), str(repo), str(output), "--run"],
+                subprocess.run([sys.executable, str(Path(__file__).resolve()), str(output), "--run", str(repo)],
                                cwd=repo, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
             result = json.loads((output / "results.json").read_text())
             results[label].append(result)
@@ -92,6 +104,7 @@ def main():
         assert len(hashes) == 1, (key, hashes)
         print(key, next(iter(hashes)))
     (args.output / "summary.json").write_text(json.dumps(results, indent=2) + "\n")
+    (args.output / "baseline.txt").write_text(baseline + "\n")
 
 
 if __name__ == "__main__":
