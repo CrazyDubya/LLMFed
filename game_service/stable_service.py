@@ -38,6 +38,9 @@ def create_stable(
     game_date: str = None,
 ) -> StableDB:
     """Form a new stable with founding members."""
+    all_member_ids = set(founding_member_ids) | {leader_id}
+    _require_world_wrestlers(db, world_id, all_member_ids)
+
     stable = StableDB(
         world_id=world_id,
         federation_id=federation_id,
@@ -56,7 +59,6 @@ def create_stable(
     db.flush()  # Get the stable.id
 
     # Add founding members
-    all_member_ids = set(founding_member_ids) | {leader_id}
     for wid in all_member_ids:
         role = "leader" if wid == leader_id else "member"
         loyalty = 85 if wid == leader_id else 70
@@ -98,6 +100,11 @@ def add_member(
 ) -> StableMemberDB:
     """Add a wrestler to an existing stable.  New members start as recruits
     with modest loyalty — they need to prove themselves."""
+    stable = db.query(StableDB).filter_by(id=stable_id).first()
+    if not stable:
+        raise ValueError("Stable not found")
+    _require_world_wrestlers(db, stable.world_id, {wrestler_id})
+
     member = db.query(StableMemberDB).filter_by(
         stable_id=stable_id, wrestler_id=wrestler_id, is_active=False,
     ).first()
@@ -111,18 +118,15 @@ def add_member(
     member.left_date = None
     member.is_active = True
 
-    stable = db.query(StableDB).filter_by(id=stable_id).first()
-    if stable:
-        wrestler = db.query(GameWrestlerDB).filter_by(id=wrestler_id).first()
-        w_name = wrestler.name if wrestler else "Unknown"
-        db.add(GameNarrativeLogDB(
-            world_id=stable.world_id,
-            game_date=game_date or "",
-            tick=0,
-            event_type="stable_member_added",
-            description=f"{w_name} has joined {stable.name} as a {role}!",
-            importance=6,
-        ))
+    wrestler = db.query(GameWrestlerDB).filter_by(id=wrestler_id).first()
+    db.add(GameNarrativeLogDB(
+        world_id=stable.world_id,
+        game_date=game_date or "",
+        tick=0,
+        event_type="stable_member_added",
+        description=f"{wrestler.name} has joined {stable.name} as a {role}!",
+        importance=6,
+    ))
 
     db.commit()
     return member
@@ -146,6 +150,9 @@ def remove_member(
     was_leader = member.role == "leader"
     member.is_active = False
     member.left_date = game_date
+    # Sessions run with autoflush off; flush so the queries below no longer
+    # see the departing member as active.
+    db.flush()
 
     stable = db.query(StableDB).filter_by(id=stable_id).first()
     if stable:
@@ -161,16 +168,13 @@ def remove_member(
             importance=7,
         ))
 
-        # If leader left, promote the highest-influence remaining member
-        if was_leader:
-            _auto_promote_leader(db, stable, game_date)
-
-        # Check if the stable still has enough active members
         active_count = db.query(StableMemberDB).filter_by(
             stable_id=stable_id, is_active=True
         ).count()
         if active_count < 2:
             dissolve_stable(db, stable_id, game_date, reason="too few members")
+        elif was_leader:
+            _auto_promote_leader(db, stable, game_date)
 
     db.commit()
     return True
@@ -429,6 +433,19 @@ def process_match_result_for_stables(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _require_world_wrestlers(db: Session, world_id: str, wrestler_ids) -> None:
+    """Raise ValueError unless every wrestler exists in ``world_id``."""
+    found = {
+        wid for (wid,) in db.query(GameWrestlerDB.id).filter(
+            GameWrestlerDB.world_id == world_id,
+            GameWrestlerDB.id.in_(wrestler_ids),
+        )
+    }
+    missing = sorted(set(wrestler_ids) - found)
+    if missing:
+        raise ValueError(f"Wrestler not found in this world: {', '.join(missing)}")
+
 
 def _get_wrestler_names(db: Session, wrestler_ids: list) -> dict:
     """Fetch a {wrestler_id: name} mapping."""
