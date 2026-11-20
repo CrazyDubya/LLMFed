@@ -143,6 +143,7 @@ class PlayerActionHandler:
             is_exclusive=True,
         )
         self.db.add(contract)
+        self.db.flush()
         self._log_event("signing", f"{wrestler.name} signed with federation", [wrestler_id, federation_id])
         return {"contract_id": contract.id, "wrestler": wrestler.name}
 
