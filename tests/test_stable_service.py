@@ -22,10 +22,13 @@ from game_service.stable_service import (
 
 @pytest.fixture
 def db():
-    """Create an in-memory SQLite database for testing."""
+    """Create an in-memory SQLite database for testing.
+
+    Autoflush is off to match the production ``SessionLocal``.
+    """
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
-    SessionLocal = sessionmaker(bind=engine)
+    SessionLocal = sessionmaker(bind=engine, autoflush=False)
     session = SessionLocal()
     yield session
     session.close()
@@ -141,6 +144,38 @@ class TestStableCRUD:
         ).first()
         assert new_leader is not None
         assert new_leader.wrestler_id == wrestlers[1].id
+
+    def test_remove_top_influence_leader_promotes_remaining_member(self, db, world, federation, wrestlers):
+        stable = create_stable(
+            db, world.id, federation.id, "The Pack",
+            leader_id=wrestlers[0].id,
+            founding_member_ids=[w.id for w in wrestlers[:3]],
+            game_date="2026-01-01",
+        )
+
+        remove_member(db, stable.id, wrestlers[0].id, game_date="2026-01-10")
+
+        new_leader = db.query(StableMemberDB).filter_by(
+            stable_id=stable.id, role="leader", is_active=True
+        ).first()
+        assert new_leader is not None
+        assert new_leader.wrestler_id in {wrestlers[1].id, wrestlers[2].id}
+
+    def test_removal_leaving_one_member_dissolves_stable(self, db, world, federation, wrestlers):
+        stable = create_stable(
+            db, world.id, federation.id, "The Duo",
+            leader_id=wrestlers[0].id,
+            founding_member_ids=[wrestlers[1].id],
+            game_date="2026-01-01",
+        )
+
+        remove_member(db, stable.id, wrestlers[1].id, game_date="2026-01-10")
+
+        db.refresh(stable)
+        assert stable.is_active is False
+        assert stable.dissolved_date == "2026-01-10"
+        active = db.query(StableMemberDB).filter_by(stable_id=stable.id, is_active=True).count()
+        assert active == 0
 
     def test_dissolve_stable(self, db, world, federation, wrestlers):
         stable = create_stable(
