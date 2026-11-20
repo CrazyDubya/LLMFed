@@ -506,7 +506,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
             break  # One player match per show
 
         # Update metadata
-        meta = world.world_config or {}
+        meta = dict(world.world_config or {})
         meta["pending_match_requests"] = pending_requests
         world.world_config = meta
 
