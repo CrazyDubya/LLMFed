@@ -91,7 +91,10 @@ def test_match_request_persists(match_client, action_type, config):
     if action_type == "open_challenge":
         expected["opponent_id"] = "opponent"
     retained = [r for r in config.get("pending_match_requests", []) if r["wrestler_id"] != "wrestler"]
-    assert persisted == {**config, "pending_match_requests": [*retained, expected]}
+    expected_config = {**config, "pending_match_requests": [*retained, expected]}
+    if action_type == "request_match":
+        expected_config["last_match_request_dates"] = {"wrestler": "2026-01-05"}
+    assert persisted == expected_config
 
 
 @pytest.mark.parametrize("action_type", ["request_match", "open_challenge"])
@@ -125,6 +128,59 @@ def test_match_request_without_booking_preserves_config(match_client, action_typ
         assert action["result"]["error"] == expected
     with sessions() as db:
         assert db.get(WorldDB, "world").world_config == config
+
+
+@pytest.mark.parametrize("last_date", [None, "invalid", "2025-12-01"])
+def test_match_request_replaces_expired_or_invalid_history(match_client, last_date):
+    client, sessions = match_client
+    with sessions.begin() as db:
+        db.get(WorldDB, "world").world_config = {
+            "last_match_request_dates": {"wrestler": last_date, "other": "2026-01-04"},
+        }
+    response = client.post("/game/worlds/world/actions", json={
+        "action_type": "request_match", "action_data": {"wrestler_id": "wrestler"},
+    })
+    assert response.status_code == 202, response.text
+    tick = client.post("/game/worlds/world/tick")
+    assert tick.status_code == 200, tick.text
+    with sessions() as db:
+        assert db.get(WorldDB, "world").world_config["last_match_request_dates"] == {
+            "wrestler": "2026-01-05", "other": "2026-01-04",
+        }
+
+
+def test_match_request_cooldown_survives_booking(match_client):
+    client, sessions = match_client
+    show_date = datetime(2026, 1, 5) + timedelta(days=zlib.crc32(b"fed") % 7)
+    with sessions.begin() as db:
+        db.get(WorldDB, "world").current_game_date = (show_date - timedelta(days=1)).strftime("%Y-%m-%d")
+        db.get(GameFederationDB, "fed").is_npc = True
+    path = "/game/worlds/world"
+    payload = {"action_type": "request_match", "action_data": {"wrestler_id": "wrestler"}}
+
+    def request_and_tick():
+        response = client.post(f"{path}/actions", json=payload)
+        assert response.status_code == 202, response.text
+        tick = client.post(f"{path}/tick")
+        assert tick.status_code == 200, tick.text
+        actions = client.get(f"{path}/actions")
+        assert actions.status_code == 200, actions.text
+        action = next(a for a in actions.json() if a["id"] == response.json()["id"])
+        assert action["status"] == "completed", action
+        print(f"POST actions {response.status_code}; GET actions {actions.status_code}: {action['result']}")
+        return action["result"]
+
+    assert request_and_tick()["status"] == "pending"
+    with sessions() as db:
+        show = db.query(ShowDB).filter_by(world_id="world").one()
+        assert show.is_completed
+        assert db.query(MatchParticipantDB).filter_by(wrestler_id="wrestler").count() == 1
+        assert db.get(WorldDB, "world").world_config["pending_match_requests"] == []
+    assert request_and_tick() == {"message": "Match request on cooldown (6 days remaining)"}
+    # A rejected request must not move the cooldown boundary.
+    tick = client.post(f"{path}/tick?days=5")
+    assert tick.status_code == 200, tick.text
+    assert request_and_tick()["status"] == "pending"
 
 
 def test_booked_request_is_consumed_before_later_show(match_client, monkeypatch):
