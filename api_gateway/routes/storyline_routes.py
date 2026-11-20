@@ -44,6 +44,21 @@ def _wrestler_names(db: Session, wrestler_ids: List[str]) -> dict:
     return {w.id: w.name for w in rows}
 
 
+def _storyline_response(storyline: StorylineDB, participants: list) -> StorylineResponse:
+    return StorylineResponse(
+        id=storyline.id,
+        world_id=storyline.world_id,
+        federation_id=storyline.federation_id,
+        name=storyline.name,
+        storyline_type=storyline.storyline_type,
+        status=storyline.status,
+        description=storyline.description,
+        heat=storyline.heat,
+        start_date=storyline.start_date,
+        participants=participants,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Storylines
 # ---------------------------------------------------------------------------
@@ -84,18 +99,7 @@ def api_list_storylines(
             }
             for p in parts_by_storyline.get(sl.id, [])
         ]
-        results.append(StorylineResponse(
-            id=sl.id,
-            world_id=sl.world_id,
-            federation_id=sl.federation_id,
-            name=sl.name,
-            storyline_type=sl.storyline_type,
-            status=sl.status,
-            description=sl.description,
-            heat=sl.heat,
-            start_date=sl.start_date,
-            participants=participants,
-        ))
+        results.append(_storyline_response(sl, participants))
     return results
 
 
@@ -132,14 +136,13 @@ def api_create_storyline(
             game_date=world.current_game_date,
         )
         db.commit()
-        resp = StorylineResponse.model_validate(storyline)
         names = _wrestler_names(db, data.wrestler_ids)
         roles = ["protagonist", "antagonist"] + ["ally"] * max(0, len(data.wrestler_ids) - 2)
-        resp.participants = [
+        participants = [
             {"wrestler_id": wid, "wrestler_name": names.get(wid, "Unknown"), "role": role}
             for wid, role in zip(data.wrestler_ids, roles)
         ]
-        return resp
+        return _storyline_response(storyline, participants)
     except ValueError as e:
         _handle_value_error(e)
 
@@ -167,12 +170,11 @@ def api_advance_storyline(
 
     db.commit()
     db.refresh(storyline)
-    resp = StorylineResponse.model_validate(storyline)
 
     parts = db.query(StorylineParticipantDB).filter_by(storyline_id=storyline_id).all()
     names = _wrestler_names(db, [p.wrestler_id for p in parts])
-    resp.participants = [
+    participants = [
         {"wrestler_id": p.wrestler_id, "wrestler_name": names.get(p.wrestler_id, "Unknown"), "role": p.role}
         for p in parts
     ]
-    return resp
+    return _storyline_response(storyline, participants)
