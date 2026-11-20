@@ -17,7 +17,7 @@ from api_gateway.security import create_access_token
 from game_service import show_service
 from models.db_models import Base
 from models.game_models import (
-    ContractDB, GameFederationDB, GameWrestlerDB, MatchParticipantDB, PlayerDB, ShowDB, UserDB, WorldDB,
+    ContractDB, GameFederationDB, GameWrestlerDB, MatchParticipantDB, PlayerActionDB, PlayerDB, ShowDB, UserDB, WorldDB,
 )
 
 
@@ -95,7 +95,24 @@ def test_match_request_persists(match_client, action_type, config):
 
 
 @pytest.mark.parametrize("action_type", ["request_match", "open_challenge"])
-@pytest.mark.parametrize("case", ["missing-wrestler", "no-contract", "unavailable"])
+def test_match_request_rejects_missing_wrestler(match_client, action_type):
+    client, sessions = match_client
+    config = {"difficulty": "normal"}
+    with sessions.begin() as db:
+        db.get(WorldDB, "world").world_config = config
+    response = client.post("/game/worlds/world/actions", json={
+        "action_type": action_type,
+        "action_data": {"wrestler_id": "missing"},
+    })
+    assert response.status_code == 400, response.text
+    assert response.json()["message"] == "Wrestler not found in this world"
+    with sessions() as db:
+        assert db.query(PlayerActionDB).filter_by(world_id="world").count() == 0
+        assert db.get(WorldDB, "world").world_config == config
+
+
+@pytest.mark.parametrize("action_type", ["request_match", "open_challenge"])
+@pytest.mark.parametrize("case", ["no-contract", "unavailable"])
 def test_match_request_without_booking_preserves_config(match_client, action_type, case):
     client, sessions = match_client
     config = {"difficulty": "normal"}
@@ -109,7 +126,7 @@ def test_match_request_without_booking_preserves_config(match_client, action_typ
             db.get(GameWrestlerDB, "opponent").is_injured = True
     response = client.post("/game/worlds/world/actions", json={
         "action_type": action_type,
-        "action_data": {"wrestler_id": "missing" if case == "missing-wrestler" else "wrestler"},
+        "action_data": {"wrestler_id": "wrestler"},
     })
     assert response.status_code == 202, response.text
     tick = client.post("/game/worlds/world/tick")
@@ -121,8 +138,7 @@ def test_match_request_without_booking_preserves_config(match_client, action_typ
         assert expected in action["result"]["message"]
     else:
         assert action["status"] == "failed"
-        expected = "Wrestler not found" if case == "missing-wrestler" else "Wrestler has no active contract"
-        assert action["result"]["error"] == expected
+        assert action["result"]["error"] == "Wrestler has no active contract"
     with sessions() as db:
         assert db.get(WorldDB, "world").world_config == config
 
