@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
 
 // Must stay below the server's 60-second heartbeat timeout.
 const HEARTBEAT_INTERVAL_MS = 25_000;
@@ -35,6 +36,7 @@ interface UseWorldSocketOptions {
 }
 
 export function useWorldSocket(worldId: string | null, options: UseWorldSocketOptions = {}) {
+  const { token } = useAuth();
   const [connected, setConnected] = useState(false);
   const [lastEvent, setLastEvent] = useState<WorldEvent | null>(null);
   const [eventLog, setEventLog] = useState<WorldEvent[]>([]);
@@ -46,14 +48,16 @@ export function useWorldSocket(worldId: string | null, options: UseWorldSocketOp
   optionsRef.current = options;
 
   const connect = useCallback(() => {
-    if (!worldId) return;
+    if (!worldId || !token) return;
 
-    // Build WebSocket URL relative to current host
+    // Build WebSocket URL relative to current host. Browsers can't set an
+    // Authorization header on the handshake, so the token rides in the
+    // subprotocol list, which keeps it out of URLs and access logs.
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
     const url = `${protocol}//${host}/ws/${worldId}`;
 
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url, ['bearer', token]);
     wsRef.current = ws;
     let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
     const stopHeartbeat = () => clearInterval(heartbeatTimer);
@@ -104,7 +108,7 @@ export function useWorldSocket(worldId: string | null, options: UseWorldSocketOp
       stopHeartbeat();
       ws.close();
     };
-  }, [worldId]);
+  }, [worldId, token]);
 
   useEffect(() => {
     connect();

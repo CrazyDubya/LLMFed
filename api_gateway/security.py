@@ -12,11 +12,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
-from fastapi import Depends, HTTPException, status, Header
+from fastapi import Depends, HTTPException, Header, WebSocket, WebSocketException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agent_service.database import get_db
+from agent_service.database import AsyncSessionLocal, get_db
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from passlib.context import CryptContext
 from pydantic import BaseModel
@@ -222,6 +222,42 @@ async def get_optional_user(
         except HTTPException:
             return None
     return None
+
+
+WS_AUTH_SUBPROTOCOL = "bearer"
+
+
+async def get_websocket_user(
+    websocket: WebSocket,
+    authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None),
+) -> TokenData:
+    """Authenticate a WebSocket handshake with the same credentials as the REST API.
+
+    Browsers cannot set headers on a WebSocket handshake, so they offer the JWT as
+    ``Sec-WebSocket-Protocol: bearer, <jwt>``, which keeps it out of URLs and access
+    logs. Rejects with close code 1008. Uses its own short-lived session so an open
+    socket doesn't hold a pooled connection for its whole lifetime.
+    """
+    token = None
+    subprotocols = websocket.scope.get("subprotocols", [])
+    if len(subprotocols) == 2 and subprotocols[0] == WS_AUTH_SUBPROTOCOL:
+        token = subprotocols[1]
+    scheme, _, bearer = (authorization or "").partition(" ")
+    if scheme.lower() == "bearer" and bearer:
+        token = bearer
+    try:
+        async with AsyncSessionLocal() as db:
+            if token is not None:
+                return await _authenticate_token_user(decode_token(token), db)
+            if x_api_key is not None:
+                return await _authenticate_api_key(x_api_key, db)
+    except HTTPException as exc:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason=exc.detail)
+    raise WebSocketException(
+        code=status.WS_1008_POLICY_VIOLATION,
+        reason="Authentication required (bearer subprotocol, Bearer token or X-API-Key header)",
+    )
 
 
 def require_role(*allowed_roles: str):

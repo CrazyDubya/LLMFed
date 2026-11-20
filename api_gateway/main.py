@@ -18,7 +18,7 @@ from slowapi.util import get_remote_address
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, Request, WebSocket
+from fastapi import Depends, FastAPI, Request, WebSocket
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry import trace
@@ -34,7 +34,7 @@ _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from api_gateway.security import validate_production_config
+from api_gateway.security import WS_AUTH_SUBPROTOCOL, get_websocket_user, validate_production_config
 
 # Setup OpenTelemetry
 provider = TracerProvider()
@@ -201,9 +201,10 @@ app.include_router(metrics_router)
 # ---------------------------------------------------------------------------
 # WebSocket
 # ---------------------------------------------------------------------------
-@app.websocket("/ws/{world_id}")
+@app.websocket("/ws/{world_id}", dependencies=[Depends(get_websocket_user)])
 async def ws_world_feed(websocket: WebSocket, world_id: str):
-    await websocket_endpoint(websocket, world_id)
+    offered = websocket.scope.get("subprotocols", [])
+    await websocket_endpoint(websocket, world_id, WS_AUTH_SUBPROTOCOL if WS_AUTH_SUBPROTOCOL in offered else None)
 
 
 # ---------------------------------------------------------------------------

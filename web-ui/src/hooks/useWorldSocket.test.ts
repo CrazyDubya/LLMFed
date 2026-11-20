@@ -3,6 +3,9 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorldSocket } from './useWorldSocket';
 
+const auth = vi.hoisted(() => ({ token: 'jwt' as string | null }));
+vi.mock('../context/AuthContext', () => ({ useAuth: () => auth }));
+
 class MockWebSocket {
   static OPEN = 1;
   static instances: MockWebSocket[] = [];
@@ -15,9 +18,11 @@ class MockWebSocket {
   close = vi.fn(() => { this.readyState = 3; });
 
   url: string;
+  protocols?: string[];
 
-  constructor(url: string) {
+  constructor(url: string, protocols?: string[]) {
     this.url = url;
+    this.protocols = protocols;
     MockWebSocket.instances.push(this);
   }
 
@@ -30,6 +35,7 @@ class MockWebSocket {
 beforeEach(() => {
   vi.useFakeTimers();
   MockWebSocket.instances = [];
+  auth.token = 'jwt';
   vi.stubGlobal('WebSocket', MockWebSocket);
 });
 
@@ -37,6 +43,22 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describe('world feed auth', () => {
+  it('sends the signed-in token as a subprotocol, not in the URL', () => {
+    auth.token = 'header.payload.signature';
+    renderHook(() => useWorldSocket('world'));
+    expect(MockWebSocket.instances[0].url).toBe('ws://localhost:3000/ws/world');
+    expect(MockWebSocket.instances[0].protocols).toEqual(['bearer', 'header.payload.signature']);
+  });
+
+  it('does not connect when signed out', () => {
+    auth.token = null;
+    renderHook(() => useWorldSocket('world'));
+    act(() => vi.advanceTimersByTime(60000));
+    expect(MockWebSocket.instances).toHaveLength(0);
+  });
 });
 
 describe('world feed heartbeat', () => {
