@@ -112,7 +112,7 @@ def federation_health(
         "federation_id": federation_id,
         "name": fed.name,
         "roster_count": roster_count,
-        "balance": getattr(fed, "balance", 0),
+        "balance": fed.budget,
         "shows_completed": len(shows),
         "avg_show_rating": round(sum(show_ratings) / len(show_ratings), 2) if show_ratings else 0.0,
         "avg_tv_rating": round(sum(tv_ratings) / len(tv_ratings), 2) if tv_ratings else 0.0,
