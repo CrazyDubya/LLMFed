@@ -57,6 +57,15 @@ def _get_next_segment_position(db: Session, show_id: str) -> int:
     return db.query(ShowSegmentDB).filter(ShowSegmentDB.show_id == show_id).count() + 1
 
 
+def _require_bookable_show(db: Session, show_id: str) -> ShowDB:
+    show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
+    if not show:
+        raise ValueError("Show not found")
+    if show.is_completed:
+        raise ValueError("Cannot book segments on a completed show")
+    return show
+
+
 def _calculate_wrestler_score(wrestler, push_map, push_tiers, randomness=15):
     """Calculate a wrestler's booking score from push tier and popularity."""
     push = push_map.get(wrestler.id)
@@ -112,9 +121,7 @@ def book_match(db: Session, show_id: str, world_id: str,
                position: int = None,
                planned_duration_minutes: int | None = None) -> ShowSegmentDB:
     """Book a match segment on a show."""
-    show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
-    if not show:
-        raise ValueError("Show not found")
+    _require_bookable_show(db, show_id)
 
     if len(set(wrestler_ids)) != len(wrestler_ids):
         raise ValueError("Match participants must be distinct")
@@ -192,6 +199,7 @@ def book_promo_segment(db: Session, show_id: str,
                        game_date: str = None,
                        promo_type: str = "in_ring") -> ShowSegmentDB:
     """Book a promo segment, creating a PromoDB record when a wrestler is identified."""
+    show = _require_bookable_show(db, show_id)
     if position is None:
         position = _get_next_segment_position(db, show_id)
 
@@ -199,9 +207,7 @@ def book_promo_segment(db: Session, show_id: str,
     if wrestler_id:
         # Resolve world_id from show if not provided
         if not world_id:
-            show = db.query(ShowDB).filter(ShowDB.id == show_id).first()
-            if show:
-                world_id = show.world_id
+            world_id = show.world_id
         promo = PromoDB(
             world_id=world_id,
             wrestler_id=wrestler_id,

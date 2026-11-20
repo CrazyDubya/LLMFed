@@ -141,3 +141,20 @@ def test_book_promo(booking_client, promo_type):
         assert segment["description"] != show.world_id
         assert promo.promo_type == (promo_type or "in_ring")
         assert promo.world_id == show.world_id
+
+
+@pytest.mark.parametrize("kind", ["matches", "promos"])
+def test_booking_rejects_completed_show(booking_client, kind):
+    b = booking_client
+    with b.sessions.begin() as db:
+        db.get(ShowDB, b.show_id).is_completed = True
+
+    kwargs = ({"json": {"participant_ids": b.wrestler_ids}} if kind == "matches"
+              else {"params": {"wrestler_id": b.wrestler_ids[0]}})
+    response = b.client.post(f"/game/shows/{b.show_id}/{kind}", **kwargs)
+    assert response.status_code == 400, response.text
+    assert response.json()["message"] == "Cannot book segments on a completed show"
+
+    with b.sessions() as db:
+        for model in (ShowSegmentDB, MatchDB, MatchParticipantDB, PromoDB):
+            assert db.query(model).count() == 0
