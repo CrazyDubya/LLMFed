@@ -308,7 +308,7 @@ def check_match_storyline_triggers(db: Session, match: MatchDB, game_date: str):
         return
 
     # Check existing storyline between these wrestlers
-    existing = _find_storyline_between(db, winner.wrestler_id, loser.wrestler_id)
+    existing = _find_storyline_between(db, winner.wrestler_id, loser.wrestler_id, match.world_id)
 
     if existing:
         # Progress existing storyline — heat scales with match quality
@@ -357,7 +357,7 @@ def check_match_storyline_triggers(db: Session, match: MatchDB, game_date: str):
                 )
 
 
-def _find_storyline_between(db: Session, w1_id: str, w2_id: str):
+def _find_storyline_between(db: Session, w1_id: str, w2_id: str, world_id: str):
     """Find an active storyline involving both wrestlers."""
     sl_ids_1 = {sp.storyline_id for sp in db.query(StorylineParticipantDB).filter(
         StorylineParticipantDB.wrestler_id == w1_id
@@ -371,6 +371,7 @@ def _find_storyline_between(db: Session, w1_id: str, w2_id: str):
         return None
 
     return db.query(StorylineDB).filter(
+        StorylineDB.world_id == world_id,
         StorylineDB.id.in_(common),
         StorylineDB.status.in_(["brewing", "active", "climax"]),
     ).first()
@@ -511,7 +512,7 @@ def check_relationship_collision_storylines(db: Session, world_id: str, game_dat
             continue
 
         # Check if they already have an active storyline
-        existing = _find_storyline_between(db, rel.wrestler1_id, rel.wrestler2_id)
+        existing = _find_storyline_between(db, rel.wrestler1_id, rel.wrestler2_id, world_id)
         if existing:
             continue
 
