@@ -38,6 +38,7 @@ def wrestler_performance(
         .filter(
             MatchParticipantDB.wrestler_id == wrestler_id,
             MatchDB.world_id == world_id,
+            MatchDB.is_completed,
             MatchDB.winner_id.isnot(None),
         )
         .order_by(MatchDB.created_at.desc())
@@ -186,6 +187,7 @@ def head_to_head(
             MatchDB.id.in_(db.query(a_matches)),
             MatchDB.id.in_(db.query(b_matches)),
             MatchDB.world_id == world_id,
+            MatchDB.is_completed,
             MatchDB.winner_id.isnot(None),
         )
         .all()
@@ -241,6 +243,7 @@ def top_performers(
         .filter(
             MatchParticipantDB.wrestler_id.in_([w.id for w in wrestlers]),
             MatchDB.world_id == world_id,
+            MatchDB.is_completed,
             MatchDB.winner_id.isnot(None),
         )
         .all()

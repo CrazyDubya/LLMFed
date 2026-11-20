@@ -16,6 +16,7 @@ from models.show_models import MatchDB, MatchParticipantDB
 from models.wrestler_models import ContractDB
 from models.federation_models import GameFederationDB
 from game_service.analytics_service import world_summary
+from game_service.show_service import book_match, create_show
 
 
 @pytest.fixture
@@ -136,6 +137,39 @@ class TestAnalyticsRoutes:
         assert response.json()["name"] == "Debutant"
         assert response.json()["total_matches"] == 0
         assert response.json()["recent_matches"] == []
+
+    @pytest.mark.parametrize("route", ["wrestler", "head-to-head", "leaderboard"])
+    def test_booked_winner_not_counted(self, analytics_client, db_session, world_with_matches, route):
+        world, winner, loser, played = world_with_matches
+        federation = GameFederationDB(world_id=world.id, name="Analytics Federation")
+        db_session.add(federation)
+        db_session.flush()
+        show = create_show(db_session, world.id, federation.id, "Upcoming Show")
+        segment = book_match(
+            db_session, show.id, world.id, [winner.id, loser.id], planned_winner_id=loser.id,
+        )
+        db_session.commit()
+        assert segment.match.winner_id == loser.id
+        assert not segment.match.is_completed
+
+        path = f"/game/analytics/world/{world.id}/{route}"
+        if route == "wrestler":
+            path += f"/{loser.id}"
+        elif route == "head-to-head":
+            path += f"?a={winner.id}&b={loser.id}"
+        response = analytics_client.get(path)
+        assert response.status_code == 200
+        body = response.json()
+
+        if route == "wrestler":
+            assert (body["wins"], body["losses"], body["total_matches"], body["win_rate"]) == (0, 1, 1, 0.0)
+            assert [match["match_id"] for match in body["recent_matches"]] == [played.id]
+        elif route == "head-to-head":
+            assert (body["a_wins"], body["b_wins"], body["total_matches"]) == (1, 0, 1)
+        else:
+            assert [(row["wrestler_id"], row["wins"], row["total_matches"]) for row in body] == [
+                (winner.id, 1, 1), (loser.id, 0, 1),
+            ]
 
     def test_missing_wrestler(self, analytics_client):
         response = analytics_client.get("/game/analytics/world/missing/wrestler/missing")
