@@ -21,6 +21,7 @@ from game_service.world_service import (
     create_world, create_player, get_world, get_player_for_user,
 )
 from game_service.world_ticker import WorldTicker
+from game_service.player_action_handler import PlayerActionHandler
 from api_gateway.websocket_hub import manager as ws_manager
 from game_service.promo_service import generate_promo as svc_generate_promo
 
@@ -128,6 +129,10 @@ def api_submit_action(
         action_type=data.action_type,
         action_data=data.action_data,
     )
+    try:
+        PlayerActionHandler(db, get_world(db, world_id), lambda *args, **kwargs: None).validate(action)
+    except ValueError as e:
+        _handle_value_error(e)
     db.add(action)
     db.commit()
     db.refresh(action)
