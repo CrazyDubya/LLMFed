@@ -1,6 +1,8 @@
 """Persist match requests across HTTP action submission and world ticks."""
 
 import json
+import zlib
+from datetime import datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -12,9 +14,10 @@ from sqlalchemy.orm import sessionmaker
 from agent_service.database import get_db, get_db_sync
 from api_gateway.main import app
 from api_gateway.security import create_access_token
+from game_service import show_service
 from models.db_models import Base
 from models.game_models import (
-    ContractDB, GameFederationDB, GameWrestlerDB, PlayerDB, UserDB, WorldDB,
+    ContractDB, GameFederationDB, GameWrestlerDB, MatchParticipantDB, PlayerDB, ShowDB, UserDB, WorldDB,
 )
 
 
@@ -122,3 +125,53 @@ def test_match_request_without_booking_preserves_config(match_client, action_typ
         assert action["result"]["error"] == expected
     with sessions() as db:
         assert db.get(WorldDB, "world").world_config == config
+
+
+def test_booked_request_is_consumed_before_later_show(match_client, monkeypatch):
+    client, sessions = match_client
+    monkeypatch.setattr(show_service.random, "random", lambda: 0.99)
+    show_day = zlib.crc32(b"fed") % 7
+    show_date = datetime(2026, 1, 5) + timedelta(days=show_day)
+    pending = {"wrestler_id": "wrestler", "federation_id": "fed", "opponent_id": "opponent",
+               "type": "open_challenge", "date": "2026-01-01"}
+    unrelated = {"wrestler_id": "elsewhere", "federation_id": "other-fed", "type": "request_match"}
+    with sessions.begin() as db:
+        world = db.get(WorldDB, "world")
+        world.current_game_date = (show_date - timedelta(days=1)).strftime("%Y-%m-%d")
+        world.world_config = {"difficulty": "normal", "pending_match_requests": [pending, unrelated]}
+        db.get(GameFederationDB, "fed").is_npc = True
+        db.get(GameWrestlerDB, "wrestler").popularity = 10
+        db.get(GameWrestlerDB, "opponent").popularity = 90
+        db.add_all(GameWrestlerDB(id=wid, world_id="world", name=wid, popularity=pop)
+                   for wid, pop in [("middle-low", 35), ("middle-high", 65)])
+        db.flush()
+        db.add_all(ContractDB(world_id="world", federation_id="fed", wrestler_id=wid,
+                              start_date="2026-01-01") for wid in ["middle-low", "middle-high"])
+
+    def has_requested_pair(db, show):
+        for segment in show.segments:
+            if not segment.match_id:
+                continue
+            match = segment.match
+            ids = {p.wrestler_id for p in db.query(MatchParticipantDB).filter_by(match_id=match.id)}
+            if ids == {"wrestler", "opponent"}:
+                return True
+        return False
+
+    tick = client.post("/game/worlds/world/tick")
+    assert tick.status_code == 200, tick.text
+    with sessions() as db:
+        show = db.query(ShowDB).filter_by(world_id="world").one()
+        assert show.is_completed
+        assert has_requested_pair(db, show)
+        persisted = db.get(WorldDB, "world").world_config
+        assert persisted == {"difficulty": "normal", "pending_match_requests": [unrelated]}
+
+    tick = client.post("/game/worlds/world/tick?days=7")
+    assert tick.status_code == 200, tick.text
+    with sessions() as db:
+        shows = db.query(ShowDB).filter_by(world_id="world").order_by(ShowDB.game_date).all()
+        assert len(shows) == 2
+        assert shows[1].is_completed
+        assert not has_requested_pair(db, shows[1])
+        assert db.get(WorldDB, "world").world_config == persisted
