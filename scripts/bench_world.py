@@ -23,7 +23,7 @@ from sqlalchemy.orm import sessionmaker
 from models.db_models import Base
 from game_service.world_service import create_world
 from game_service.world_ticker import WorldTicker
-from game_service import inter_federation_service
+from game_service import inter_federation_service, stable_service
 
 
 def main():
@@ -43,6 +43,8 @@ def main():
         counts["sql"] += 1
         if statement.startswith("SELECT"):
             counts["selects"] += 1
+            if phase == "stable_match":
+                counts["stable_match_selects"] += 1
             if phase == "momentum":
                 counts["momentum_selects"] += 1
             if phase == "agency":
@@ -70,6 +72,25 @@ def main():
             return original_agency(self, *a, **kw)
         finally:
             agency_seconds += time.perf_counter() - start
+            phase = previous_phase
+    original_stable_match = stable_service.process_match_result_for_stables
+    stable_match_seconds = 0.0
+
+    def commit(conn):
+        counts["commits"] += 1
+        if phase == "stable_match":
+            counts["stable_match_commits"] += 1
+
+    def stable_match(*a, **kw):
+        nonlocal phase, stable_match_seconds
+        previous_phase = phase
+        phase = "stable_match"
+        counts["stable_match_calls"] += 1
+        start = time.perf_counter()
+        try:
+            return original_stable_match(*a, **kw)
+        finally:
+            stable_match_seconds += time.perf_counter() - start
             phase = previous_phase
 
     def momentum(*a, **kw):
@@ -100,6 +121,8 @@ def main():
         inter_federation_service, "update_federation_momentum", momentum,
     ), patch.object(
         WorldTicker, "_character_agency_tick", agency,
+    ), patch.object(
+        stable_service, "process_match_result_for_stables", stable_match,
     ):
         with patch(
             "game_service.world_service.random.randint",
@@ -108,11 +131,14 @@ def main():
             world = create_world(db, "Profiling world")
         ticker = WorldTicker(db, world.id)
         event.listen(engine, "before_cursor_execute", sql)
+        event.listen(engine, "commit", commit)
         start = time.perf_counter()
         tick_results = ticker.tick(days=28)
         seconds = time.perf_counter() - start
         event.remove(engine, "before_cursor_execute", sql)
+        event.remove(engine, "commit", commit)
         result = dict(seconds=seconds, show_seconds=show_seconds,
+                      stable_match_seconds=stable_match_seconds,
                       momentum_seconds=momentum_seconds, agency_seconds=agency_seconds, **counts)
         print(json.dumps(result, sort_keys=True), flush=True)
         (args.output / "results.json").write_text(json.dumps(result, indent=2))
@@ -126,6 +152,8 @@ def main():
         )
         digest = hashlib.sha256((args.output / "fingerprint.json").read_bytes()).hexdigest()
         (args.output / "sha256.txt").write_text(digest + "\n")
+        tick_digest = hashlib.sha256(json.dumps(tick_results, sort_keys=True, default=str).encode()).hexdigest()
+        (args.output / "tick_sha256.txt").write_text(tick_digest + "\n")
         print("sha256=" + digest, flush=True)
     db.close()
     engine.dispose()
