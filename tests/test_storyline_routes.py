@@ -83,6 +83,27 @@ def test_list_storylines_invalid_limit(storyline_api):
     assert response.status_code == 422
 
 
+def test_list_storylines_filters_by_federation_before_limiting(storyline_api):
+    client, sessions, _ = storyline_api
+    with sessions.begin() as db:
+        db.add_all([
+            StorylineDB(id="own", world_id="story-world", federation_id="home-fed",
+                        name="Home Rivalry", status="active", heat=40),
+            StorylineDB(id="resolved", world_id="story-world", federation_id="home-fed",
+                        name="Old Rivalry", status="resolved", heat=60),
+            StorylineDB(id="rival", world_id="story-world", federation_id="rival-fed",
+                        name="Rival Federation Feud", status="active", heat=80),
+            StorylineDB(id="unaffiliated", world_id="story-world",
+                        name="Unaffiliated Feud", status="active", heat=90),
+        ])
+
+    response = client.get("/game/worlds/story-world/storylines", params={
+        "federation_id": "home-fed", "status": "active", "limit": 1,
+    })
+    assert response.status_code == 200, response.text
+    assert [story["id"] for story in response.json()] == ["own"]
+
+
 def test_create_storyline_missing_world(storyline_api):
     client, _, _ = storyline_api
     response = client.post("/game/worlds/missing-world/storylines", json={

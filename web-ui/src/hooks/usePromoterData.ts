@@ -33,7 +33,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
         api.getChampionships(federationId),
         api.getNarrative(worldId, 20),
         api.getWorld(worldId),
-        api.listStorylines(worldId),
+        api.listStorylines(worldId, undefined, federationId),
         api.listStables(worldId, federationId).catch(() => []),
         api.listManagerBonds(worldId).catch(() => []),
         api.listManagers(worldId, federationId).catch(() => []),

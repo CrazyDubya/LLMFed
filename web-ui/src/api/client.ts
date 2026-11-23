@@ -188,8 +188,13 @@ export const api = {
     request<any[]>(`/worlds/${worldId}/news?limit=${limit}`),
 
   // Storylines
-  listStorylines: (worldId: string, status?: string) =>
-    request<any[]>(`/worlds/${worldId}/storylines${status ? `?status=${status}` : ''}`),
+  listStorylines: (worldId: string, status?: string, federationId?: string) => {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (federationId) params.set('federation_id', federationId);
+    const query = params.toString();
+    return request<any[]>(`/worlds/${worldId}/storylines${query ? `?${query}` : ''}`);
+  },
 
   createStoryline: (worldId: string, data: {
     wrestler_ids: string[]; storyline_type?: string;
