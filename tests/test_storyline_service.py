@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    StorylineParticipantDB, GameWrestlerDB, GameFederationDB,
+    StorylineParticipantDB, GameWrestlerDB, GameFederationDB, GameNarrativeLogDB,
 )
 from game_service.world_service import create_world
 from game_service.storyline_service import (
@@ -119,6 +119,27 @@ class TestStorylineProgression:
         sl.status = "active"
         progress_storyline(db_session, sl, "match", heat_delta=10)
         assert sl.status == "climax"
+
+    def test_progress_log_uses_world_date_and_tick(self, db_session, world_data):
+        world, fed, wrestlers = world_data
+        world.current_game_date = "2026-03-14"
+        world.current_tick = 72
+        sl = create_storyline(
+            db_session, world.id, fed.id,
+            [wrestlers[0].id, wrestlers[1].id],
+        )
+
+        progress_storyline(
+            db_session, sl, "match_result", heat_delta=5,
+            description="Their rivalry intensified after a 3.5-star match!",
+        )
+        db_session.flush()
+
+        log = db_session.query(GameNarrativeLogDB).filter(
+            GameNarrativeLogDB.world_id == world.id,
+            GameNarrativeLogDB.event_type == "storyline",
+        ).one()
+        assert (log.game_date, log.tick) == ("2026-03-14", 72)
 
     def test_resolve_storyline(self, db_session, world_data):
         world, fed, wrestlers = world_data
