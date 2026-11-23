@@ -140,12 +140,7 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
     Pulls from: gimmick archetype, voice style, alignment, backstory,
     recent events, active storylines, relationships, and career state.
     """
-    from models.game_models import (
-        GameWrestlerDB, WrestlerStatsDB,
-        WrestlerBackstoryDB, StorylineDB, StorylineParticipantDB,
-        WrestlerRelationshipDB, ContractDB, GameFederationDB,
-        ChampionshipDB,
-    )
+    from models.game_models import GameWrestlerDB
     from game_service.ticker_query_helpers import get_active_gimmick
 
     wrestler = db.query(GameWrestlerDB).filter(
@@ -154,11 +149,22 @@ def build_character_system_prompt(db: Session, wrestler_id: str) -> str:
     if not wrestler:
         return "You are a professional wrestler."
 
+    gimmick = get_active_gimmick(db, wrestler_id)
+    return _build_character_system_prompt(db, wrestler, gimmick)
+
+
+def _build_character_system_prompt(db, wrestler, gimmick) -> str:
+    from models.game_models import (
+        GameWrestlerDB, WrestlerStatsDB,
+        WrestlerBackstoryDB, StorylineDB, StorylineParticipantDB,
+        WrestlerRelationshipDB, ContractDB, GameFederationDB,
+        ChampionshipDB,
+    )
+
+    wrestler_id = wrestler.id
     stats = db.query(WrestlerStatsDB).filter(
         WrestlerStatsDB.wrestler_id == wrestler_id
     ).first()
-
-    gimmick = get_active_gimmick(db, wrestler_id)
 
     backstory = db.query(WrestlerBackstoryDB).filter(
         WrestlerBackstoryDB.wrestler_id == wrestler_id,

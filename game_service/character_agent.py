@@ -19,6 +19,7 @@ from game_service.character_prompts import (
     FALLBACK_DECISIONS, FALLBACK_REACTIONS,
     BOOKER_SYSTEM, MATCH_NARRATOR_SYSTEM,
     build_character_system_prompt, build_decide_prompt,
+    _build_character_system_prompt,
     build_speak_prompt,
     build_react_prompt,
     build_social_media_prompt,
@@ -122,7 +123,6 @@ def character_decide(db: Session, wrestler_id: str,
 
 
 def _character_decide(db, wrestler, gimmick, situation, options):
-    wrestler_id = wrestler.id
     archetype = gimmick.archetype if gimmick else "anti_hero"
 
     # Template fallback
@@ -133,7 +133,7 @@ def _character_decide(db, wrestler, gimmick, situation, options):
     if not USE_LLM:
         return fallback
 
-    system_prompt = build_character_system_prompt(db, wrestler_id)
+    system_prompt = _build_character_system_prompt(db, wrestler, gimmick)
     user_prompt = build_decide_prompt(wrestler.name, situation, options)
 
     result = _llm_call(system_prompt, user_prompt, "", max_tokens=100)

@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 
 from game_service import character_agent as agency
+from game_service.character_prompts import ARCHETYPE_PERSONALITIES
 from models.db_models import Base
 from models.game_models import GameWrestlerDB, GimmickHistoryDB
 
@@ -62,16 +63,30 @@ def test_agency_gimmick_order_and_fallback(db, monkeypatch, earlier_id, seconds)
     monkeypatch.setattr(agency.random, 'random', lambda: 0)
     monkeypatch.setattr(agency.random, 'choice', lambda choices: choices[0])
     monkeypatch.setattr(agency, 'USE_LLM', True)
-    monkeypatch.setattr(agency, 'build_character_system_prompt', lambda *args: 'prompt')
+    prompts = []
+    selects = []
+
+    def record(conn, cursor, statement, *args):
+        if statement.startswith('SELECT') and 'FROM gimmick_history' in statement:
+            selects.append(statement)
 
     class BrokenLLM:
         def generate(self, *args, **kwargs):
+            prompts.append(kwargs['system_message'])
             raise RuntimeError('unavailable')
 
     monkeypatch.setattr(agency, '_get_llm', lambda: BrokenLLM())
-    events = agency.tick_character_agency(db, 'world', '2026-01-01')
+    event.listen(db.bind, 'before_cursor_execute', record)
+    try:
+        events = agency.tick_character_agency(db, 'world', '2026-01-01')
+    finally:
+        event.remove(db.bind, 'before_cursor_execute', record)
     expected = agency.FALLBACK_DECISIONS['underdog_face'][0].replace('_', ' ')
     assert events == [f'Actor: {expected} — Actor acts on instinct.']
+    assert len(prompts) == 1
+    assert ARCHETYPE_PERSONALITIES['underdog_face'] in prompts[0]
+    assert ARCHETYPE_PERSONALITIES['monster_heel'] not in prompts[0]
+    assert len(selects) == 1
 
 
 def test_public_decide_missing_wrestler(db):
