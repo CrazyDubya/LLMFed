@@ -11,6 +11,8 @@ afterEach(() => {
 
 it.each([
   { budget: -17181.2, text: `Budget: -$${(17181).toLocaleString()}`, color: 'text-red-400' },
+  { budget: -0.5, text: `Budget: -$${(1).toLocaleString()}`, color: 'text-red-400' },
+  { budget: -0.4, text: `Budget: $${(0).toLocaleString()}`, color: 'text-green-400' },
   { budget: 17181.2, text: `Budget: $${(17181).toLocaleString()}`, color: 'text-green-400' },
   { budget: 0, text: `Budget: $${(0).toLocaleString()}`, color: 'text-green-400' },
 ])('renders the budget with the expected sign and color: $budget', async ({ budget, text, color }) => {
