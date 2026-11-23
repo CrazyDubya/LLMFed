@@ -77,6 +77,27 @@ def test_submit_and_process_signing_allows_zero_salary(db, signing_api):
     assert db.query(ContractDB).one().salary_weekly == 0
 
 
+def test_signing_narrative_names_destination_federation(db, signing_api):
+    federation = db.get(GameFederationDB, "fed")
+    federation.name = "Pacific Coast Wrestling"
+    federation.short_name = "PCW"
+    db.commit()
+
+    response = signing_api.post("/game/worlds/world/actions", json={
+        "action_type": "sign_wrestler",
+        "action_data": {"wrestler_id": "wrestler", "federation_id": "fed"},
+    })
+    assert response.status_code == 202, response.text
+    WorldTicker(db, "world")._process_player_actions()
+    db.commit()
+
+    response = signing_api.get("/game/worlds/world/narrative")
+    assert response.status_code == 200, response.text
+    assert [entry["description"] for entry in response.json() if entry["event_type"] == "signing"] == [
+        "Free Agent signed with Pacific Coast Wrestling",
+    ]
+
+
 @pytest.mark.parametrize("salary", [-100000, float("inf"), float("nan")])
 def test_pending_signing_with_invalid_salary_creates_no_contract(db, salary):
     action = PlayerActionDB(
