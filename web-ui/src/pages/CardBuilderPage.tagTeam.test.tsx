@@ -9,7 +9,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('explains the tag team requirement and only lets four selected wrestlers be booked', async () => {
+function renderCardBuilder() {
   const roster = ['Avery', 'Blake', 'Casey', 'Drew', 'Ellis'].map((name, index) => ({ id: String(index), name }));
   const bookMatch = vi.fn();
   vi.stubGlobal('fetch', vi.fn(async (path: string, options: RequestInit) => {
@@ -26,7 +26,11 @@ it('explains the tag team requirement and only lets four selected wrestlers be b
     .forEach(([key, value]) => localStorage.setItem(key, value));
   window.history.replaceState(null, '', '/show/show/book');
   render(<App />);
+  return { roster, bookMatch };
+}
 
+it('explains the tag team requirement and only lets four selected wrestlers be booked', async () => {
+  const { roster, bookMatch } = renderCardBuilder();
   fireEvent.change(await screen.findByDisplayValue('Singles'), { target: { value: 'tag_team' } });
 
   const [first, second, third, fourth, fifth] = roster.map(({ name }) =>
@@ -60,6 +64,40 @@ it('explains the tag team requirement and only lets four selected wrestlers be b
   expect(bookMatch).toHaveBeenCalledWith(expect.objectContaining({
     match_type: 'tag_team',
     participant_ids: ['0', '1', '2', '4'],
+  }));
+  await screen.findByRole('button', { name: 'Book Match (0 wrestlers)' });
+});
+
+it.each([
+  { matchType: 'singles', count: 2, label: 'singles' },
+  { matchType: 'triple_threat', count: 3, label: 'triple threat' },
+  { matchType: 'fatal_four_way', count: 4, label: 'fatal four way' },
+])('only lets $count wrestlers be booked for $label', async ({ matchType, count, label }) => {
+  const { roster, bookMatch } = renderCardBuilder();
+  const select = await screen.findByDisplayValue('Singles');
+  if (matchType !== 'singles') fireEvent.change(select, { target: { value: matchType } });
+  const buttons = roster.map(({ name }) =>
+    screen.getByRole<HTMLButtonElement>('button', { name: new RegExp(name) }),
+  );
+  buttons.slice(0, count - 1).forEach(button => fireEvent.click(button));
+
+  const submit = screen.getByRole<HTMLButtonElement>('button', { name: /Book Match/ });
+  expect(submit.disabled).toBe(true);
+  fireEvent.click(submit);
+  expect(bookMatch).not.toHaveBeenCalled();
+  expect(screen.getByRole('group', {
+    name: /Participants/,
+    description: `Select exactly ${count} wrestlers for a ${label} match.`,
+  })).toBeTruthy();
+
+  fireEvent.click(buttons[count - 1]);
+  expect(submit.disabled).toBe(false);
+  expect(buttons[count].disabled).toBe(true);
+  expect(buttons[count - 1].disabled).toBe(false);
+  fireEvent.click(submit);
+  expect(bookMatch).toHaveBeenCalledWith(expect.objectContaining({
+    match_type: matchType,
+    participant_ids: roster.slice(0, count).map(({ id }) => id),
   }));
   await screen.findByRole('button', { name: 'Book Match (0 wrestlers)' });
 });

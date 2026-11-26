@@ -5,7 +5,13 @@ import { api } from '../api/client';
 import { getErrorMessage } from '../utils/errors';
 import { formatMatchup, type MatchParticipant } from '../utils/matchup';
 
-const TAG_TEAM_SIZE = 4;
+const MATCH_FORMATS = {
+  singles: { label: 'Singles', count: 2 },
+  tag_team: { label: 'Tag Team', count: 4 },
+  triple_threat: { label: 'Triple Threat', count: 3 },
+  fatal_four_way: { label: 'Fatal Four Way', count: 4 },
+};
+type MatchFormat = keyof typeof MATCH_FORMATS;
 
 interface Wrestler {
   id: string;
@@ -38,11 +44,9 @@ export default function CardBuilderPage() {
 
   // Match booking form
   const [selectedWrestlers, setSelectedWrestlers] = useState<string[]>([]);
-  const [matchType, setMatchType] = useState('singles');
-  const isTagTeam = matchType === 'tag_team';
-  const hasRequiredParticipants = isTagTeam
-    ? selectedWrestlers.length === TAG_TEAM_SIZE
-    : selectedWrestlers.length >= 2;
+  const [matchType, setMatchType] = useState<MatchFormat>('singles');
+  const { count, label } = MATCH_FORMATS[matchType];
+  const hasRequiredParticipants = selectedWrestlers.length === count;
   const [plannedWinner, setPlannedWinner] = useState('');
   const [plannedFinish, setPlannedFinish] = useState('pinfall');
   const [stipulation, setStipulation] = useState('');
@@ -87,10 +91,7 @@ export default function CardBuilderPage() {
     if (id === plannedWinner) setPlannedWinner('');
     setSelectedWrestlers(prev => {
       if (prev.includes(id)) return prev.filter(w => w !== id);
-      if (matchType === 'singles' && prev.length >= 2) return prev;
-      if (matchType === 'triple_threat' && prev.length >= 3) return prev;
-      if (matchType === 'fatal_four_way' && prev.length >= 4) return prev;
-      if (isTagTeam && prev.length >= TAG_TEAM_SIZE) return prev;
+      if (prev.length >= count) return prev;
       return [...prev, id];
     });
   };
@@ -222,30 +223,27 @@ export default function CardBuilderPage() {
               <select
                 value={matchType}
                 onChange={e => {
-                  setMatchType(e.target.value);
+                  setMatchType(e.target.value as MatchFormat);
                   setSelectedWrestlers([]);
                   setPlannedWinner('');
                 }}
                 className="w-full bg-[#0f0f14] border border-gray-700 rounded p-2 text-white text-sm"
               >
-                <option value="singles">Singles</option>
-                <option value="tag_team">Tag Team</option>
-                <option value="triple_threat">Triple Threat</option>
-                <option value="fatal_four_way">Fatal Four Way</option>
+                {Object.entries(MATCH_FORMATS).map(([value, format]) => (
+                  <option key={value} value={value}>{format.label}</option>
+                ))}
               </select>
             </div>
 
             {/* Wrestler Selection */}
-            <div role="group" aria-labelledby="participants-label" aria-describedby={isTagTeam ? 'tag-team-hint' : undefined}>
+            <div role="group" aria-labelledby="participants-label" aria-describedby="participants-hint">
               <div id="participants-label" className="text-sm text-gray-400 mb-1">
                 Participants ({selectedWrestlers.length} selected)
                 {selectedNames && <span className="text-amber-400 ml-2">{selectedNames}</span>}
               </div>
-              {isTagTeam && (
-                <p id="tag-team-hint" className="text-sm text-gray-400 mb-2">
-                  Select exactly {TAG_TEAM_SIZE} wrestlers for a tag team match.
-                </p>
-              )}
+              <p id="participants-hint" className="text-sm text-gray-400 mb-2">
+                Select exactly {count} wrestlers for a {label.toLowerCase()} match.
+              </p>
               <div className="max-h-48 overflow-y-auto bg-[#0f0f14] border border-gray-700 rounded">
                 {availableRoster.map(w => {
                   const isSelected = selectedWrestlers.includes(w.id);
@@ -254,7 +252,7 @@ export default function CardBuilderPage() {
                       key={w.id}
                       onClick={() => toggleWrestler(w.id)}
                       aria-pressed={isSelected}
-                      disabled={isTagTeam && selectedWrestlers.length >= TAG_TEAM_SIZE && !isSelected}
+                      disabled={hasRequiredParticipants && !isSelected}
                       className={`w-full text-left px-3 py-2 text-sm border-b border-gray-800 transition-colors ${
                         isSelected
                           ? 'bg-amber-900/30 text-amber-300'
