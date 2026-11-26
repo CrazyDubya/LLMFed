@@ -9,7 +9,7 @@ from agent_service.database import get_db_sync
 from api_gateway.security import get_current_user, TokenData
 from models.game_schemas import (
     WorldCreate, WorldResponse,
-    PlayerCreate, PlayerResponse,
+    NewGameCreate, PlayerCreate, PlayerResponse,
     PlayerActionSubmit, PlayerActionResponse,
     NarrativeLogResponse, WorldNewsResponse, WorldTickStatus,
     PromoRequest, PromoResponse,
@@ -19,7 +19,7 @@ from models.game_models import (
 )
 from game_service.player_action_handler import get_signing_salary
 from game_service.world_service import (
-    create_world, create_player, get_world, get_player_for_user,
+    create_new_game, create_world, create_player, get_world, get_player_for_user,
 )
 from game_service.world_ticker import WorldTicker
 from game_service.player_action_handler import PlayerActionHandler
@@ -38,6 +38,22 @@ def _handle_value_error(e: ValueError):
 # ---------------------------------------------------------------------------
 # World endpoints
 # ---------------------------------------------------------------------------
+
+@router.post("/new-game", response_model=PlayerResponse, status_code=201)
+def api_create_new_game(
+    data: NewGameCreate,
+    current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db_sync),
+):
+    """Create a world and the current user's first player."""
+    try:
+        player = create_new_game(
+            db, current_user.user_id, data.world.model_dump(), data.player.model_dump(exclude_none=True),
+        )
+        return PlayerResponse.model_validate(player)
+    except ValueError as e:
+        _handle_value_error(e)
+
 
 @router.post("/worlds", response_model=WorldResponse, status_code=201)
 def api_create_world(

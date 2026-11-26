@@ -37,8 +37,7 @@ export interface Player {
   wrestler_id?: string;
 }
 
-export interface PlayerCreateData {
-  world_id: string;
+export interface PlayerOptions {
   player_type: 'promoter' | 'wrestler';
   federation_name?: string;
   federation_description?: string;
@@ -46,6 +45,10 @@ export interface PlayerCreateData {
   wrestler_gimmick?: string;
   wrestler_alignment?: string;
   wrestler_style?: string;
+}
+
+export interface PlayerCreateData extends PlayerOptions {
+  world_id: string;
 }
 
 export interface ShowSummary {
@@ -139,6 +142,9 @@ export const api = {
   getMe: () => request<User>('/auth/me'),
 
   // Worlds
+  createNewGame: (data: { world: { name: string }; player: PlayerOptions }) =>
+    request<Player & { world_id: string }>('/new-game', { method: 'POST', body: JSON.stringify(data) }),
+
   createWorld: (data: { name: string; description?: string; is_multiplayer?: boolean }) =>
     request<World>('/worlds', { method: 'POST', body: JSON.stringify(data) }),
 

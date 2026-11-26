@@ -3,7 +3,7 @@ import { skipToken, useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useGame } from '../context/GameContext';
-import { api, type Player, type PlayerCreateData } from '../api/client';
+import { api, type Player, type PlayerOptions } from '../api/client';
 import { getErrorMessage } from '../utils/errors';
 
 export default function GameSetupPage() {
@@ -36,14 +36,7 @@ export default function GameSetupPage() {
     setLoading(true);
     setError('');
     try {
-      // Create world
-      const world = await api.createWorld({ name: worldName });
-
-      // Create player
-      const playerData: PlayerCreateData = {
-        world_id: world.id,
-        player_type: playerType,
-      };
+      const playerData: PlayerOptions = { player_type: playerType };
 
       if (playerType === 'promoter') {
         playerData.federation_name = fedName || 'My Wrestling Federation';
@@ -55,8 +48,8 @@ export default function GameSetupPage() {
         playerData.wrestler_style = wrestlerStyle;
       }
 
-      const player = await api.createPlayer(playerData);
-      openGame(world.id, player);
+      const player = await api.createNewGame({ world: { name: worldName }, player: playerData });
+      openGame(player.world_id, player);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
