@@ -9,7 +9,7 @@ that made the nWo, Evolution, and The Bloodline must-watch TV.
 
 import random
 import logging
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from models.game_models import (
     StableDB, StableMemberDB, GameWrestlerDB, GameNarrativeLogDB,
@@ -295,12 +295,35 @@ def get_stable_with_members(db: Session, stable_id: str) -> dict:
 
 def list_stables(db: Session, world_id: str, federation_id: str = None, active_only: bool = True) -> list:
     """List all stables in a world, optionally filtered by federation."""
+    return _stables_query(db, world_id, federation_id, active_only).all()
+
+
+def list_stables_with_members(
+    db: Session, world_id: str, federation_id: str = None,
+) -> tuple[list[StableDB], dict[str, str], dict[str, str]]:
+    """List active stables with active members and bulk-loaded wrestler and manager names."""
+    stables = _stables_query(db, world_id, federation_id, active_only=True).options(
+        selectinload(StableDB.members.and_(StableMemberDB.is_active.is_(True)))
+    ).all()
+    wrestler_ids = {member.wrestler_id for stable in stables for member in stable.members}
+    wrestler_names = _get_wrestler_names(db, list(wrestler_ids))
+
+    manager_ids = {stable.manager_id for stable in stables if stable.manager_id}
+    manager_names = {}
+    if manager_ids:
+        manager_names = dict(db.query(ManagerDB.id, ManagerDB.name).filter(
+            ManagerDB.id.in_(manager_ids)
+        ).all())
+    return stables, wrestler_names, manager_names
+
+
+def _stables_query(db: Session, world_id: str, federation_id: str, active_only: bool):
     q = db.query(StableDB).filter_by(world_id=world_id)
     if federation_id:
         q = q.filter_by(federation_id=federation_id)
     if active_only:
         q = q.filter_by(is_active=True)
-    return q.all()
+    return q
 
 
 def get_wrestler_stable(db: Session, wrestler_id: str) -> dict:

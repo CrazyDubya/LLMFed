@@ -85,8 +85,8 @@ class TestRestoreSnapshot:
         from fastapi.testclient import TestClient
         from agent_service.database import get_db_sync
         from api_gateway.routes.snapshot_routes import router
-        from api_gateway.security import get_current_user
-        from models.game_models import GameFederationDB, GameWrestlerDB
+        from api_gateway.security import get_current_user, TokenData
+        from models.game_models import GameFederationDB, GameWrestlerDB, PlayerDB, UserDB
 
         fed = GameFederationDB(world_id=world_with_data.id, name="Request Fed")
         wrestlers = [GameWrestlerDB(world_id=world_with_data.id, name=name) for name in ["A", "B"]]
@@ -104,10 +104,15 @@ class TestRestoreSnapshot:
         world_with_data.world_config = config
         db_session.commit()
         if via_http:
+            user = UserDB(username="branch-owner", email="branch@example.test", password_hash="unused")
+            db_session.add(user)
+            db_session.flush()
+            db_session.add(PlayerDB(user_id=user.id, world_id=world_with_data.id, player_type="promoter"))
+            db_session.commit()
             app = FastAPI()
             app.include_router(router)
             app.dependency_overrides[get_db_sync] = lambda: db_session
-            app.dependency_overrides[get_current_user] = lambda: object()
+            app.dependency_overrides[get_current_user] = lambda: TokenData(user_id=user.id)
             with TestClient(app, base_url="http://localhost") as client:
                 response = client.post("/game/snapshots", json={"world_id": world_with_data.id})
                 assert response.status_code == 201, response.text
@@ -196,6 +201,101 @@ class TestRestoreSnapshot:
         assert db_session.query(WorldDB).filter_by(id=result["world_id"]).one()
         assert db_session.query(PlayerDB).count() == (0 if branch else 1)
         assert db_session.query(PlayerActionDB).count() == (0 if branch else 1)
+
+    def test_overwrite_remaps_player_links_with_foreign_keys_on(self, db_session, world_with_data):
+        from models.game_models import UserDB, PlayerDB, GameFederationDB, GameWrestlerDB
+
+        db_session.execute(text("PRAGMA foreign_keys=ON"))
+        db_session.autoflush = False
+        world_id = world_with_data.id
+        other_world = WorldDB(name="Other World")
+        db_session.add(other_world)
+        db_session.flush()
+
+        fed = GameFederationDB(world_id=world_id, name="Apex Fed", short_name="AF")
+        wrestler = GameWrestlerDB(world_id=world_id, name="Ace")
+        other_fed = GameFederationDB(world_id=other_world.id, name="Other Fed", short_name="OF")
+        u1 = UserDB(email="promoter@example.com", username="promoter", password_hash="unused")
+        u2 = UserDB(email="wrestler@example.com", username="wrestler", password_hash="unused")
+        u3 = UserDB(email="late@example.com", username="late", password_hash="unused")
+        db_session.add_all([fed, wrestler, other_fed, u1, u2, u3])
+        db_session.flush()
+
+        promoter = PlayerDB(user_id=u1.id, world_id=world_id, player_type="promoter", federation_id=fed.id)
+        wrestler_player = PlayerDB(user_id=u2.id, world_id=world_id, player_type="wrestler", wrestler_id=wrestler.id)
+        other_player = PlayerDB(user_id=u1.id, world_id=other_world.id, player_type="promoter", federation_id=other_fed.id)
+        db_session.add_all([promoter, wrestler_player, other_player])
+        db_session.commit()
+        old_fed_id, old_wrestler_id, other_fed_id = fed.id, wrestler.id, other_fed.id
+        promoter_id, wrestler_player_id, other_player_id = promoter.id, wrestler_player.id, other_player.id
+
+        snapshot = create_snapshot(db_session, world_id)
+
+        # Add a federation and player after the snapshot so it does not exist in the backup.
+        post_snap_fed = GameFederationDB(world_id=world_id, name="Late Fed", short_name="LF")
+        db_session.add(post_snap_fed)
+        db_session.flush()
+        late_player = PlayerDB(user_id=u3.id, world_id=world_id, player_type="promoter", federation_id=post_snap_fed.id)
+        db_session.add(late_player)
+        db_session.commit()
+        late_player_id = late_player.id
+
+        result = restore_snapshot(db_session, snapshot["data"], target_world_id=world_id, create_new_world=False)
+        assert result["world_id"] == world_id
+        assert db_session.execute(text("PRAGMA foreign_key_check")).fetchall() == []
+
+        restored_fed = db_session.query(GameFederationDB).filter_by(world_id=world_id).one()
+        restored_wrestler = db_session.query(GameWrestlerDB).filter_by(world_id=world_id).one()
+        assert restored_fed.id == old_fed_id
+        assert restored_wrestler.id == old_wrestler_id
+
+        db_session.expire_all()
+        assert db_session.get(PlayerDB, promoter_id).federation_id == restored_fed.id
+        assert db_session.get(PlayerDB, promoter_id).wrestler_id is None
+        assert db_session.get(PlayerDB, wrestler_player_id).wrestler_id == restored_wrestler.id
+        assert db_session.get(PlayerDB, wrestler_player_id).federation_id is None
+        assert db_session.get(PlayerDB, late_player_id).federation_id is None
+        assert db_session.get(PlayerDB, other_player_id).federation_id == other_fed_id
+
+        # Restoring the same backup a second time must keep the same player links intact.
+        result_repeat = restore_snapshot(
+            db_session, snapshot["data"], target_world_id=world_id, create_new_world=False,
+        )
+        assert result_repeat["world_id"] == world_id
+        assert db_session.execute(text("PRAGMA foreign_key_check")).fetchall() == []
+        db_session.expire_all()
+        assert db_session.get(PlayerDB, promoter_id).federation_id == old_fed_id
+        assert db_session.get(PlayerDB, wrestler_player_id).wrestler_id == old_wrestler_id
+        assert db_session.get(PlayerDB, late_player_id).federation_id is None
+        assert db_session.get(PlayerDB, other_player_id).federation_id == other_fed_id
+
+    def test_overwrite_other_world_clears_stale_player_links(self, db_session, world_with_data):
+        from models.game_models import UserDB, PlayerDB, GameFederationDB
+
+        db_session.execute(text("PRAGMA foreign_keys=ON"))
+        source_fed = GameFederationDB(world_id=world_with_data.id, name="Source Fed", short_name="SF")
+        target_world = WorldDB(name="Target World")
+        db_session.add_all([source_fed, target_world])
+        db_session.flush()
+
+        target_fed = GameFederationDB(world_id=target_world.id, name="Target Fed", short_name="TF")
+        user = UserDB(email="target@example.com", username="target", password_hash="unused")
+        db_session.add_all([target_fed, user])
+        db_session.flush()
+        target_player = PlayerDB(
+            user_id=user.id, world_id=target_world.id, player_type="promoter", federation_id=target_fed.id,
+        )
+        db_session.add(target_player)
+        db_session.commit()
+
+        snapshot = create_snapshot(db_session, world_with_data.id)
+        result = restore_snapshot(
+            db_session, snapshot["data"], target_world_id=target_world.id, create_new_world=False,
+        )
+        assert result["world_id"] == target_world.id
+        assert db_session.execute(text("PRAGMA foreign_key_check")).fetchall() == []
+        assert db_session.get(PlayerDB, target_player.id).federation_id is None
+        assert db_session.query(GameFederationDB).filter_by(world_id=target_world.id).one().name == "Source Fed"
 
     @pytest.mark.parametrize("branch", [True, False])
     def test_restores_stats_segments_and_participants(self, db_session, world_with_data, branch):

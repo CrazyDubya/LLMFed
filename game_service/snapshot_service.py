@@ -172,9 +172,13 @@ def restore_snapshot(
 
     # Build an old-id -> new-id map for every string-PK row (world included),
     # so foreign keys pointing to a remapped row can be rewritten too.
+    # Same-world overwrites preserve original string PKs so repeated restores
+    # of the same backup keep player links intact; branches and cross-world
+    # overwrites mint fresh UUIDs to avoid colliding with the source world.
     # Integer-autoincrement PK tables (MatchParticipantDB, GameNarrativeLogDB,
     # WrestlerRelationshipDB) are left to the DB to assign — nothing else
     # references those rows by id.
+    preserve_ids = not create_new_world and new_world_id == old_world_id
     id_map: Dict[str, str] = {old_world_id: new_world_id}
     for table_name, rows in tables.items():
         model_cls = model_by_table.get(table_name)
@@ -183,7 +187,7 @@ def restore_snapshot(
         pk_is_string = isinstance(model_cls.id.type, StringType)
         for row in rows:
             if pk_is_string and "id" in row and row["id"]:
-                id_map[row["id"]] = str(uuid.uuid4())
+                id_map[row["id"]] = row["id"] if preserve_ids else str(uuid.uuid4())
 
     def _remap(value):
         if isinstance(value, dict):
@@ -199,8 +203,12 @@ def restore_snapshot(
     # real datetime objects for DateTime-typed columns.
     world_data = {k: _remap(v) for k, v in world_data.items() if k != "id"}
     world_data["id"] = new_world_id
+    player_links: List[tuple] = []
     if not create_new_world:
+        player_links = _detach_player_links(db, new_world_id)
         _delete_existing_world_data(db, new_world_id, model_by_table)
+        if preserve_ids:
+            _expunge_deleted_rows(db, model_by_table, set(id_map.values()))
     _upsert_world_row(db, model_by_table["worlds"], world_data, DateTimeType)
     db.flush()
 
@@ -213,6 +221,9 @@ def restore_snapshot(
                 row.pop("id", None)  # let autoincrement assign
             _insert_row(db, model_cls, row, DateTimeType)
         db.flush()
+
+    if player_links:
+        _reattach_player_links(db, player_links, tables, id_map)
 
     db.commit()
 
@@ -264,6 +275,55 @@ def _upsert_world_row(db: Session, model_cls, row: dict, datetime_type) -> None:
             setattr(existing, key, val)
     else:
         db.add(model_cls(**kwargs))
+
+
+def _detach_player_links(db: Session, world_id: str) -> List[tuple]:
+    """Record and clear world players' federation/wrestler links before overwrite."""
+    from models.core_models import PlayerDB
+
+    players = db.query(PlayerDB).filter(PlayerDB.world_id == world_id).all()
+    links = [(player, player.federation_id, player.wrestler_id) for player in players]
+    for player in players:
+        player.federation_id = None
+        player.wrestler_id = None
+    if players:
+        db.flush()
+    return links
+
+
+def _reattach_player_links(
+    db: Session,
+    player_links: List[tuple],
+    tables: Dict[str, List[Dict[str, Any]]],
+    id_map: Dict[str, str],
+) -> None:
+    """Restore world players' federation/wrestler links to remapped snapshot rows."""
+    fed_ids = {
+        row["id"]: id_map[row["id"]]
+        for row in tables.get("game_federations", [])
+        if row.get("id") in id_map
+    }
+    wrestler_ids = {
+        row["id"]: id_map[row["id"]]
+        for row in tables.get("game_wrestlers", [])
+        if row.get("id") in id_map
+    }
+    for player, old_fed_id, old_wrestler_id in player_links:
+        player.federation_id = fed_ids.get(old_fed_id) if old_fed_id else None
+        player.wrestler_id = wrestler_ids.get(old_wrestler_id) if old_wrestler_id else None
+    db.flush()
+
+
+def _expunge_deleted_rows(db: Session, model_by_table: dict, preserved_ids: set) -> None:
+    """Evict deleted child-table ORM instances whose PKs will be re-inserted."""
+    from models.core_models import WorldDB
+
+    child_classes = tuple(cls for cls in model_by_table.values() if cls is not WorldDB)
+    for obj in list(db.identity_map.values()):
+        if isinstance(obj, child_classes):
+            identity = inspect(obj).identity
+            if identity and identity[0] in preserved_ids:
+                db.expunge(obj)
 
 
 def _delete_existing_world_data(db: Session, world_id: str, model_by_table: dict) -> None:

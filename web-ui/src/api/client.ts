@@ -20,6 +20,16 @@ export interface World {
   is_active: boolean;
 }
 
+export interface WorldNewsArticle {
+  id: string;
+  headline: string;
+  body: string;
+  category: string;
+  game_date: string;
+  is_kayfabe: boolean;
+  source: string;
+}
+
 export interface Player {
   id: string;
   player_type: 'promoter' | 'wrestler';
@@ -61,6 +71,13 @@ export interface Championship {
   current_holder_id: string | null;
   prestige: number;
   defenses: number;
+}
+
+export type ShowStatus = 'all' | 'completed' | 'upcoming';
+
+interface WorldShowsPage {
+  shows: ShowSummary[];
+  counts: Record<ShowStatus, number>;
 }
 
 export interface SchedulerStatus {
@@ -152,6 +169,11 @@ export const api = {
   getWorldShows: (worldId: string, limit: number) =>
     requestJson<ShowSummary[]>(`/worlds/${worldId}/shows?limit=${limit}`),
 
+  getWorldShowsPage: (worldId: string, status: ShowStatus, limit: number, offset: number, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ status, limit: String(limit), offset: String(offset), include_counts: 'true' });
+    return requestJson<WorldShowsPage>(`/worlds/${worldId}/shows?${params}`, { signal });
+  },
+
   // Auto-ticker
   getSchedulerStatus: (signal?: AbortSignal) =>
     requestJson<SchedulerStatus>('/scheduler/status', { signal }),
@@ -193,7 +215,7 @@ export const api = {
     request<any[]>(`/worlds/${worldId}/narrative?limit=${limit}`),
 
   getNews: (worldId: string, limit = 20) =>
-    request<any[]>(`/worlds/${worldId}/news?limit=${limit}`),
+    request<WorldNewsArticle[]>(`/worlds/${worldId}/news?limit=${limit}`),
 
   // Storylines
   listStorylines: (worldId: string, status?: string, federationId?: string) => {
@@ -265,8 +287,8 @@ export const api = {
       method: 'POST', body: JSON.stringify(data),
     }),
 
-  listManagerBonds: (worldId: string) =>
-    request<any[]>(`/worlds/${worldId}/manager-bonds`),
+  listManagerBonds: (worldId: string, federationId?: string) =>
+    request<any[]>(`/worlds/${worldId}/manager-bonds${federationId ? `?federation_id=${encodeURIComponent(federationId)}` : ''}`),
 
   assignManager: (worldId: string, data: {
     manager_id: string; client_wrestler_id: string;

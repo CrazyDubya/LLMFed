@@ -9,7 +9,9 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+from agent_service.database import SessionLocal
 from api_gateway.main import app  # noqa: E402
+from models.game_models import GameFederationDB, ShowDB, WorldDB
 
 # Table creation for the agent-service tables happens once per session via
 # the autouse fixture in tests/conftest.py (init_db() is async and can't be
@@ -46,6 +48,60 @@ def _authenticated_client(_create_agent_service_tables):
 def _unique(prefix: str = "") -> str:
     """Generate a unique name for test isolation."""
     return f"{prefix}{uuid.uuid4().hex[:8]}"
+
+
+class TestWorldShows:
+    @pytest.fixture
+    def listing_url(self):
+        world_id = _unique("shows-")
+        other_id = _unique("other-")
+        fed_id = _unique("fed-")
+        other_fed = _unique("fed-")
+        with SessionLocal.begin() as db:
+            db.add_all([WorldDB(id=world_id, name=world_id), WorldDB(id=other_id, name=other_id)])
+            db.flush()
+            db.add_all([
+                GameFederationDB(id=fed_id, world_id=world_id, name="Summit Wrestling"),
+                GameFederationDB(id=other_fed, world_id=other_id, name="Other Wrestling"),
+            ])
+            db.flush()
+            db.add_all([
+                ShowDB(id=f"{world_id}-{i:03}", world_id=world_id, federation_id=fed_id,
+                       name=f"Show {i}", game_date="2026-02-01" if i > 104 else "2026-01-01",
+                       is_completed=i <= 104)
+                for i in range(1, 206)
+            ])
+            db.add(ShowDB(world_id=other_id, federation_id=other_fed, name="Other show",
+                          game_date="2026-03-01", is_completed=True))
+        return f"/worlds/{world_id}/shows"
+
+    def test_offset_reaches_all_shows_in_stable_order(self, listing_url):
+        rows = []
+        for offset in (0, 100, 200):
+            response = client.get(listing_url, params={"limit": 100, "offset": offset})
+            assert response.status_code == 200
+            rows.extend(response.json())
+        assert [row["name"] for row in rows] == [f"Show {i}" for i in range(205, 0, -1)]
+        assert client.get(listing_url, params={"offset": -1}).status_code == 422
+        assert client.get(listing_url, params={"limit": 201}).status_code == 422
+
+    def test_filtered_pages_include_global_counts(self, listing_url):
+        for status, offset, expected in (
+            ("completed", 100, [4, 3, 2, 1]),
+            ("upcoming", 100, [105]),
+            ("completed", 200, []),
+        ):
+            response = client.get(listing_url, params={
+                "include_counts": True, "status": status, "offset": offset, "limit": 100,
+            })
+            assert response.status_code == 200
+            page = response.json()
+            assert page["counts"] == {"all": 205, "completed": 104, "upcoming": 101}
+            assert [row["name"] for row in page["shows"]] == [f"Show {i}" for i in expected]
+        legacy = client.get(listing_url, params={"limit": 200, "completed_only": True})
+        assert legacy.status_code == 200
+        assert len(legacy.json()) == 104
+        assert all(row["is_completed"] for row in legacy.json())
 
 
 # ---------------------------------------------------------------------------

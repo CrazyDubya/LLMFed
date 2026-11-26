@@ -10,6 +10,7 @@ import SchedulerControls from '../components/SchedulerControls';
 import WarRoomTab from './promoter-tabs/WarRoomTab';
 import FactionsTab from './promoter-tabs/FactionsTab';
 import RelationshipsTab from './promoter-tabs/RelationshipsTab';
+import NewsTab from './promoter-tabs/NewsTab';
 
 export interface Wrestler {
   id: string; name: string; popularity: number; alignment: string;
@@ -70,7 +71,7 @@ export default function PromoterDashboard() {
   const navigate = useNavigate();
 
   const {
-    federation, roster, freeAgents, shows, championships, narrative,
+    federation, roster, freeAgents, shows, championships, news,
     worldData, storylines, stables, managerBonds, managers,
     advancing, error, setError,
     loadData, advanceDay, signWrestler,
@@ -519,34 +520,7 @@ export default function PromoterDashboard() {
           />
         )}
 
-        {/* ========== NEWS TAB (enhanced with event type colors) ========== */}
-        {tab === 'news' && (
-          <div className="space-y-3">
-            {narrative.map(n => (
-              <div key={n.id} className="bg-[#1a1a24] rounded-lg border border-gray-800 p-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`px-2 py-0.5 rounded text-xs ${
-                    n.event_type === 'show' ? 'bg-amber-900/50 text-amber-300' :
-                    n.event_type === 'injury' ? 'bg-red-900/50 text-red-300' :
-                    n.event_type === 'signing' ? 'bg-green-900/50 text-green-300' :
-                    n.event_type === 'stable_formed' ? 'bg-purple-900/50 text-purple-300' :
-                    n.event_type === 'stable_dissolved' ? 'bg-purple-900/50 text-purple-300' :
-                    n.event_type === 'manager_assigned' ? 'bg-cyan-900/50 text-cyan-300' :
-                    n.event_type === 'manager_removed' ? 'bg-cyan-900/50 text-cyan-300' :
-                    n.event_type === 'power_struggle' ? 'bg-orange-900/50 text-orange-300' :
-                    n.event_type === 'betrayal_brewing' ? 'bg-red-900/50 text-red-300' :
-                    n.event_type === 'stable_member_added' ? 'bg-purple-900/50 text-purple-300' :
-                    n.event_type === 'stable_member_removed' ? 'bg-purple-900/50 text-purple-300' :
-                    'bg-gray-800 text-gray-300'
-                  }`}>{n.event_type.replace(/_/g, ' ')}</span>
-                  <span className="text-xs text-gray-500">{n.game_date}</span>
-                </div>
-                <p className="text-gray-300 text-sm">{n.description}</p>
-              </div>
-            ))}
-            {narrative.length === 0 && <div className="text-center text-gray-500 py-8">No events yet. Advance time to see the world come alive!</div>}
-          </div>
-        )}
+        {tab === 'news' && <NewsTab news={news} />}
 
         {/* Live Feed & Scheduler Controls - always visible at bottom */}
         <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-4 pb-8">

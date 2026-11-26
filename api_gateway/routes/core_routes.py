@@ -7,11 +7,12 @@ endpoints that were previously defined inline in the FastAPI app module.
 
 import logging
 import os
-from typing import List
+from typing import List, Literal
 
 from dataclasses import asdict
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from pydantic import BaseModel
+from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from sqlalchemy.future import select
@@ -506,15 +507,21 @@ async def list_world_shows(
     world_id: str,
     limit: int = Query(50, ge=1, le=200),
     completed_only: bool = False,
+    offset: int = Query(0, ge=0),
+    status: Literal["all", "completed", "upcoming"] | None = None,
+    include_counts: bool = False,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
-    """List all shows across all federations in a world."""
+    """List world shows. Opt in to counts for all tabs with `include_counts`."""
     from models.game_models import ShowDB, GameFederationDB
-    query = db.query(ShowDB).filter(ShowDB.world_id == world_id)
-    if completed_only:
-        query = query.filter(ShowDB.is_completed == True)  # noqa: E712
-    shows = query.order_by(ShowDB.game_date.desc()).limit(limit).all()
+    world_filter = ShowDB.world_id == world_id
+    query = db.query(ShowDB).filter(world_filter)
+    if status == "completed" or (status is None and completed_only):
+        query = query.filter(ShowDB.is_completed.is_(True))
+    elif status == "upcoming":
+        query = query.filter(or_(ShowDB.is_completed.is_(False), ShowDB.is_completed.is_(None)))
+    shows = query.order_by(ShowDB.game_date.desc(), ShowDB.id.desc()).offset(offset).limit(limit).all()
 
     fed_names = {
         f.id: f.name for f in db.query(GameFederationDB).filter(
@@ -539,4 +546,15 @@ async def list_world_shows(
             "federation_id": show.federation_id,
             "federation_name": fed_names.get(show.federation_id, "Unknown"),
         })
-    return results
+    if not include_counts:
+        return results
+
+    status_counts = db.query(ShowDB.is_completed, func.count()).filter(world_filter).group_by(
+        ShowDB.is_completed,
+    ).all()
+    total = sum(count for _, count in status_counts)
+    completed = next((count for is_completed, count in status_counts if is_completed), 0)
+    return {
+        "shows": results,
+        "counts": {"all": total, "completed": completed, "upcoming": total - completed},
+    }
