@@ -21,7 +21,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from models.game_models import (
-    PPVEventDB, BookingVisionDB, GameFederationDB,
+    ChampionshipDB, PPVEventDB, BookingVisionDB, GameFederationDB,
     WrestlerPushDB,
 )
 
@@ -198,6 +198,7 @@ def pencil_in_ppv_match(
     title_id: str = None,
     storyline_id: str = None,
     is_main_event: bool = False,
+    for_vacant_title: bool = False,
 ):
     """Pencil in a match for a PPV card."""
     match_plan = {
@@ -207,6 +208,8 @@ def pencil_in_ppv_match(
         "storyline_id": storyline_id,
         "status": "penciled",
     }
+    if for_vacant_title:
+        match_plan["for_vacant_title"] = True
 
     if is_main_event:
         ppv.planned_main_event = match_plan
@@ -246,7 +249,7 @@ def plan_ppv_card_from_vision(
     Uses title pipelines, push tiers, and planned storylines to build
     a full card. Called when entering the build window for a PPV.
     """
-    # Main event: title match with top challenger from pipeline
+    # Main event: title match with top contenders from the pipeline
     pipelines = vision.title_pipelines or {}
     main_event_set = False
 
@@ -255,15 +258,25 @@ def plan_ppv_card_from_vision(
         challengers = pipeline.get("next_challengers", [])
 
         if holder and challengers:
-            challenger = challengers[0]
-            pencil_in_ppv_match(
-                db, ppv,
-                wrestler_ids=[holder, challenger],
-                match_type="singles",
-                title_id=champ_id,
-                is_main_event=not main_event_set,
-            )
-            main_event_set = True
+            wrestler_ids = [holder, challengers[0]]
+        elif not holder and len(challengers) >= 2:
+            # The booking vision may still show a vacancy after TV crowns a champion.
+            championship = db.get(ChampionshipDB, champ_id)
+            if not championship or championship.current_holder_id is not None:
+                continue
+            wrestler_ids = challengers[:2]
+        else:
+            continue
+
+        pencil_in_ppv_match(
+            db, ppv,
+            wrestler_ids=wrestler_ids,
+            match_type="singles",
+            title_id=champ_id,
+            is_main_event=not main_event_set,
+            for_vacant_title=not holder,
+        )
+        main_event_set = True
 
     # Crown jewels get the promoter's dream match — the whole reason this
     # is the biggest show of the year. Book it as the main event if no

@@ -496,6 +496,17 @@ def calculate_stipulation_bonus(stats: WrestlerStatsDB, stipulation: str) -> flo
     return 1.0 + (spec / LC.STIPULATION_BONUS_DIVISOR)
 
 
+def recover_injury(wrestler: GameWrestlerDB, game_date: str) -> bool:
+    """Clear an active wrestler's injury once their return date arrives."""
+    if not (wrestler.is_active and wrestler.is_injured and wrestler.injury_return_date
+            and wrestler.injury_return_date <= game_date):
+        return False
+    wrestler.is_injured = False
+    wrestler.injury_return_date = None
+    wrestler.condition = 70
+    return True
+
+
 def load_conditioning_data(db: Session, world_id: str, game_date: str):
     """Load stats and recent workload once for a world's active wrestlers."""
     stats = {

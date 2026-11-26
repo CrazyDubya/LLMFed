@@ -166,6 +166,38 @@ class TestAnalyticsRoutes:
              "wins": 0, "win_rate": 0.0, "avg_match_rating": 4.5},
         ]
 
+    def test_leaderboard_aggregates_every_counted_match(self, analytics_client, db_session, world_with_matches):
+        world, winner, loser, _ = world_with_matches
+        other = WorldDB(name="Elsewhere")
+        db_session.add(other)
+        db_session.flush()
+        for world_id, winner_id, rating, completed in [
+            (world.id, loser.id, 3.0, True),
+            (world.id, loser.id, 0.0, True),
+            (world.id, winner.id, None, True),
+            (world.id, None, 1.0, True),
+            (world.id, loser.id, 1.0, False),
+            (other.id, loser.id, 1.0, True),
+        ]:
+            match = MatchDB(world_id=world_id, winner_id=winner_id, match_rating=rating, is_completed=completed)
+            db_session.add(match)
+            db_session.flush()
+            db_session.add_all([
+                MatchParticipantDB(match_id=match.id, wrestler_id=winner.id),
+                MatchParticipantDB(match_id=match.id, wrestler_id=loser.id),
+            ])
+        db_session.commit()
+
+        response = analytics_client.get(f"/game/analytics/world/{world.id}/leaderboard?metric=wins")
+
+        assert response.status_code == 200
+        assert response.json() == [
+            {"wrestler_id": winner.id, "name": winner.name, "total_matches": 4,
+             "wins": 2, "win_rate": 0.5, "avg_match_rating": 3.75},
+            {"wrestler_id": loser.id, "name": loser.name, "total_matches": 4,
+             "wins": 2, "win_rate": 0.5, "avg_match_rating": 3.75},
+        ]
+
     @pytest.mark.parametrize("result", ["win", "loss"])
     def test_wrestler_with_matches(self, analytics_client, world_with_matches, result):
         world, winner, loser, match = world_with_matches
@@ -202,6 +234,35 @@ class TestAnalyticsRoutes:
         assert response.json()["name"] == "Debutant"
         assert response.json()["total_matches"] == 0
         assert response.json()["recent_matches"] == []
+
+    def test_head_to_head_counts_time_limit_draw(self, analytics_client, db_session, world_with_matches):
+        world, wrestler_a, wrestler_b, _ = world_with_matches
+        for winner_id, finish_type, rating, is_completed in [
+            (wrestler_a.id, "pinfall", 3.5, True),
+            (wrestler_b.id, "pinfall", 0.0, True),
+            (None, "time_limit_draw", 5.0, True),
+            (None, None, None, False),
+        ]:
+            db_session.add(MatchDB(
+                world_id=world.id, winner_id=winner_id, finish_type=finish_type,
+                match_rating=rating, is_completed=is_completed,
+                participants=[
+                    MatchParticipantDB(wrestler_id=wrestler.id, is_winner=wrestler.id == winner_id)
+                    for wrestler in (wrestler_a, wrestler_b)
+                ],
+            ))
+        db_session.commit()
+
+        response = analytics_client.get(
+            f"/game/analytics/world/{world.id}/head-to-head",
+            params={"a": wrestler_a.id, "b": wrestler_b.id},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert (body["total_matches"], body["draws"], body["a_wins"], body["b_wins"]) == (4, 1, 2, 1)
+        assert body["avg_match_rating"] == 4.33
+        assert body["best_match_rating"] == 5.0
 
     @pytest.mark.parametrize("route", ["wrestler", "head-to-head", "leaderboard"])
     def test_booked_winner_not_counted(self, analytics_client, db_session, world_with_matches, route):

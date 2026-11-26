@@ -10,8 +10,8 @@ Usage:
     llmfed fed list <world_id>           List federations in a world
     llmfed fed roster <fed_id>           Show federation roster
     llmfed sim run <world_id> --days N   Run simulation for N days
-    llmfed match replay <match_id>       Print match play-by-play
-    llmfed maintenance run               Run data cleanup
+    llmfed match <match_id>              Print match play-by-play
+    llmfed maintenance                   Run data cleanup
     llmfed stats                         Show database statistics
 """
 

@@ -344,3 +344,112 @@ class TestFedList:
         assert "72" in result.stdout
         assert "$0" not in result.stdout
         assert "?" not in result.stdout
+
+
+def _parse_cli_usage_examples(docstring: str) -> list[str]:
+    """Extract every `llmfed ...` command line from the CLI module Usage block."""
+    import re
+
+    examples: list[str] = []
+    in_usage = False
+    for line in docstring.splitlines():
+        if line.strip() == "Usage:":
+            in_usage = True
+            continue
+        if in_usage:
+            if not line.strip():
+                break
+            stripped = line.strip()
+            assert stripped.startswith("llmfed "), f"Unexpected Usage line: {line!r}"
+            rest = stripped[len("llmfed "):]
+            parts = re.split(r"\s{2,}", rest, maxsplit=1)
+            if len(parts) == 2:
+                cmd = parts[0].strip()
+            else:
+                match = re.match(r"^(.+?)\s+[A-Z][a-z]", rest)
+                assert match, f"Could not split command and description: {line!r}"
+                cmd = match.group(1).strip()
+            assert cmd, f"Empty command in Usage line: {line!r}"
+            examples.append(cmd)
+    return examples
+
+
+class TestCLIUsageExamples:
+    def test_every_documented_usage_example_runs(self, monkeypatch):
+        import shlex
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        import agent_service.database as db_module
+        import cli.main as cli_main
+        from models.db_models import Base
+        from models.game_models import (
+            ContractDB,
+            GameFederationDB,
+            GameWrestlerDB,
+            WorldDB,
+        )
+        from models.show_models import MatchDB, MatchEventDB
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        session_factory = sessionmaker(bind=engine)
+        with session_factory() as db:
+            db.add(WorldDB(id="world-1", name="Demo World"))
+            db.add(GameFederationDB(id="fed-1", world_id="world-1", name="Apex Wrestling"))
+            db.add(GameWrestlerDB(
+                id="wrestler-1", world_id="world-1", name="Rook", real_name="Casey Vale",
+            ))
+            db.flush()
+            db.add(ContractDB(
+                world_id="world-1",
+                federation_id="fed-1",
+                wrestler_id="wrestler-1",
+                status="active",
+                start_date="2026-01-01",
+            ))
+            db.add(MatchDB(id="match-1", world_id="world-1", match_type="singles"))
+            db.add(MatchEventDB(
+                id=1, match_id="match-1", tick=1, event_type="move", description="Opening lockup.",
+            ))
+            db.commit()
+
+        monkeypatch.setattr(cli_main, "_get_db", session_factory)
+        monkeypatch.setattr(db_module, "init_db_sync", lambda: Base.metadata.create_all(engine))
+
+        examples = _parse_cli_usage_examples(cli_main.__doc__ or "")
+        assert examples, "No usage examples found in cli.main.__doc__"
+
+        placeholders = {
+            "<name>": "Created World",
+            "<world_id>": "world-1",
+            "<fed_id>": "fed-1",
+            "<match_id>": "match-1",
+            "N": "1",
+        }
+
+        try:
+            for example in examples:
+                tokens = []
+                for token in shlex.split(example):
+                    if token in placeholders:
+                        tokens.append(placeholders[token])
+                    else:
+                        assert not (token.startswith("<") and token.endswith(">")), (
+                            f"Unhandled placeholder {token!r} in usage example {example!r}"
+                        )
+                        tokens.append(token)
+
+                result = runner.invoke(app, tokens)
+                assert result.exit_code == 0, (
+                    f"Usage example `llmfed {example}` failed (exit {result.exit_code}): "
+                    f"{result.output or result.stderr}"
+                )
+                assert "Error:" not in result.stdout, (
+                    f"Usage example `llmfed {example}` printed an error: {result.stdout}"
+                )
+                assert "not found" not in result.stdout.lower(), (
+                    f"Usage example `llmfed {example}` hit a missing record: {result.stdout}"
+                )
+        finally:
+            engine.dispose()
+

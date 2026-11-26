@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useGame } from '../context/GameContext';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
@@ -89,11 +89,10 @@ export default function PromoterDashboard() {
   const [showStorylineForm, setShowStorylineForm] = useState(false);
   const [formData, setFormData] = useState<any>({});
 
-  // WebSocket: auto-refresh on tick and show completion events
-  const handleTick = useCallback(() => { loadData(); }, [loadData]);
   const { connected: wsConnected, eventLog } = useWorldSocket(worldId, {
-    onTick: handleTick,
-    onShowCompleted: handleTick,
+    onTick: loadData,
+    onShowCompleted: loadData,
+    onReconnect: loadData,
   });
 
   const exitGame = () => {
@@ -345,9 +344,13 @@ export default function PromoterDashboard() {
             {championships.map(c => (
               <div key={c.id} className="bg-[#1a1a24] rounded-lg border border-gray-800 p-4">
                 <h3 className="text-amber-400 font-medium">{c.name}</h3>
-                <p className="text-sm text-gray-400">
+                <p className="mt-1 text-sm text-gray-400">
+                  {c.current_holder_id ? (
+                    <>Champion: <span className="font-medium text-gray-100">{c.holderName ?? 'Unknown'}</span></>
+                  ) : 'Vacant'}
+                </p>
+                <p className="mt-1 text-sm text-gray-400">
                   Prestige: {c.prestige} | Defenses: {c.defenses}
-                  {c.current_holder_id ? '' : ' | VACANT'}
                 </p>
               </div>
             ))}
