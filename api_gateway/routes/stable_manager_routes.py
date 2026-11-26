@@ -192,13 +192,15 @@ def api_list_stables(
     db: Session = Depends(get_db_sync),
 ):
     """List all active stables in a world."""
-    stables = stable_service.list_stables(db, world_id, federation_id)
+    stables, wrestler_names, manager_names = stable_service.list_stables_with_members(
+        db, world_id, federation_id
+    )
     results = []
-    for s in stables:
-        data = stable_service.get_stable_with_members(db, s.id)
-        resp = StableResponse.model_validate(s)
-        resp.manager_name = data.get("manager_name")
-        resp.members = [StableMemberResponse(**m) for m in data.get("members", [])]
+    for stable in stables:
+        resp = StableResponse.model_validate(stable)
+        resp.manager_name = manager_names.get(stable.manager_id)
+        for member in resp.members:
+            member.wrestler_name = wrestler_names.get(member.wrestler_id, "Unknown")
         results.append(resp)
     return results
 
