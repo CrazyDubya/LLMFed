@@ -298,11 +298,15 @@ def list_managers(db: Session, world_id: str, federation_id: str = None, active_
     return q.all()
 
 
-def list_manager_bonds(db: Session, world_id: str, active_only: bool = True) -> list:
-    """List all manager-client bonds in a world with names."""
+def list_manager_bonds(
+    db: Session, world_id: str, active_only: bool = True, *, federation_id: str | None = None,
+) -> list:
+    """List manager-client bonds with names, optionally filtered by manager federation."""
     q = db.query(ManagerClientDB).filter_by(world_id=world_id)
     if active_only:
         q = q.filter_by(is_active=True)
+    if federation_id:
+        q = q.join(ManagerClientDB.manager).filter(ManagerDB.federation_id == federation_id)
     bonds = q.all()
     result = []
     for bond in bonds:

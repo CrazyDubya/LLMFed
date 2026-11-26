@@ -257,8 +257,8 @@ export const api = {
       method: 'POST', body: JSON.stringify(data),
     }),
 
-  listManagerBonds: (worldId: string) =>
-    request<any[]>(`/worlds/${worldId}/manager-bonds`),
+  listManagerBonds: (worldId: string, federationId?: string) =>
+    request<any[]>(`/worlds/${worldId}/manager-bonds${federationId ? `?federation_id=${encodeURIComponent(federationId)}` : ''}`),
 
   assignManager: (worldId: string, data: {
     manager_id: string; client_wrestler_id: string;

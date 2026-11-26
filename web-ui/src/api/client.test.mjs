@@ -26,6 +26,16 @@ function mockRequest(t, { path, method = 'GET', body, response, status = 200 }) 
 
 const cases = [
   {
+    path: '/game/worlds/world-1/manager-bonds?federation_id=home-fed',
+    request: () => api.listManagerBonds('world-1', 'home-fed'),
+    response: [{ id: 'home-bond' }],
+  },
+  {
+    path: '/game/worlds/world-1/manager-bonds',
+    request: () => api.listManagerBonds('world-1'),
+    response: [],
+  },
+  {
     path: '/game/worlds/world-1/storylines?status=active&federation_id=home-fed',
     request: () => api.listStorylines('world-1', 'active', 'home-fed'),
     response: [{ id: 'story-1', federation_id: 'home-fed' }],
