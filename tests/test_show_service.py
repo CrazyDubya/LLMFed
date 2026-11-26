@@ -82,6 +82,21 @@ class TestShowCreation:
         assert seg.segment_type == "promo"
         assert seg.description == "Big promo time"
 
+    def test_promo_position_is_unique_per_show(self, db_session, world_with_fed):
+        world, fed = world_with_fed
+        show = create_show(db_session, world.id, fed.id, "Promo Show")
+        other_show = create_show(db_session, world.id, fed.id, "Other Show")
+        wrestlers = db_session.query(GameWrestlerDB).filter_by(world_id=world.id).limit(2).all()
+        match = book_match(db_session, show.id, world.id, [w.id for w in wrestlers], position=1)
+
+        with pytest.raises(ValueError, match="Card position 1 is already taken on this show"):
+            book_promo_segment(db_session, show.id, position=1, wrestler_id=wrestlers[0].id)
+
+        promo = book_promo_segment(db_session, other_show.id, position=1, wrestler_id=wrestlers[0].id)
+        assert promo.position == 1
+        assert get_show_card(db_session, show.id) == [match]
+        assert get_show_card(db_session, other_show.id) == [promo]
+
     def test_multiple_segments_auto_position(self, db_session, world_with_fed):
         world, fed = world_with_fed
         show = create_show(db_session, world.id, fed.id, "Multi Show", game_date="2026-01-05")

@@ -427,6 +427,39 @@ def test_book_promo(booking_client, promo_type):
         assert promo.world_id == show.world_id
 
 
+def test_match_booking_rejects_taken_card_position(booking_client):
+    b = booking_client
+    matches_url = f"/game/shows/{b.show_id}/matches"
+    payload = {"participant_ids": b.wrestler_ids}
+
+    first = b.client.post(matches_url, json={**payload, "segment_position": 1})
+    assert first.status_code == 201, first.text
+    assert first.json()["position"] == 1
+
+    duplicate = b.client.post(matches_url, json={**payload, "segment_position": 1})
+    assert duplicate.status_code == 400, duplicate.text
+    assert duplicate.json()["message"] == "Card position 1 is already taken on this show"
+    card_url = f"/game/shows/{b.show_id}/card"
+    card = b.client.get(card_url)
+    assert card.status_code == 200, card.text
+    assert card.json()["segments"] == [first.json()]
+
+    free = b.client.post(matches_url, json={**payload, "segment_position": 3})
+    assert free.status_code == 201, free.text
+    assert free.json()["position"] == 3
+
+    auto = b.client.post(matches_url, json=payload)
+    assert auto.status_code == 201, auto.text
+    assert auto.json()["position"] == 4
+    card = b.client.get(card_url)
+    assert card.status_code == 200, card.text
+    assert card.json()["segments"] == [first.json(), free.json(), auto.json()]
+
+    with b.sessions() as db:
+        assert db.query(MatchDB).count() == 3
+        assert db.query(MatchParticipantDB).count() == 6
+
+
 @pytest.mark.parametrize("kind", ["matches", "promos"])
 def test_booking_rejects_completed_show(booking_client, kind):
     b = booking_client

@@ -12,6 +12,8 @@ A promoter can:
 import random
 import logging
 from datetime import date
+
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from models.game_models import (
@@ -60,8 +62,14 @@ GIMMICK_MATCH_CONFIG = {
 
 
 def _get_next_segment_position(db: Session, show_id: str) -> int:
-    """Get the next available segment position for a show."""
-    return db.query(ShowSegmentDB).filter(ShowSegmentDB.show_id == show_id).count() + 1
+    """Append after the last segment, even when the card has gaps."""
+    last_position = db.query(func.max(ShowSegmentDB.position)).filter_by(show_id=show_id).scalar()
+    return max(last_position or 0, 0) + 1
+
+
+def _require_free_segment_position(db: Session, show_id: str, position: int | None) -> None:
+    if position is not None and db.query(ShowSegmentDB.id).filter_by(show_id=show_id, position=position).first():
+        raise ValueError(f"Card position {position} is already taken on this show")
 
 
 def _require_bookable_show(db: Session, show_id: str) -> ShowDB:
@@ -157,6 +165,7 @@ def book_match(db: Session, show_id: str, world_id: str,
         count, label, count_word = STANDARD_PARTICIPANT_COUNTS[match_type]
         if len(wrestler_ids) != count:
             raise ValueError(f"{label} matches require exactly {count_word} wrestlers")
+    _require_free_segment_position(db, show_id, position)
     return _book_match(
         db, show, world_id, wrestler_ids, match_type, stipulation,
         is_title_match, championship_id, planned_winner_id, planned_finish,
@@ -266,6 +275,7 @@ def book_promo_segment(db: Session, show_id: str,
                        promo_type: str = "in_ring") -> ShowSegmentDB:
     """Book a promo segment, creating a PromoDB record when a wrestler is identified."""
     show = _require_bookable_show(db, show_id)
+    _require_free_segment_position(db, show_id, position)
     return _book_promo_segment(
         db, show, description, position, wrestler_id, target_wrestler_id,
         world_id, game_date, promo_type,
@@ -441,7 +451,7 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
     if ppv_event and (ppv_event.planned_main_event or ppv_event.planned_matches):
         return _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map, booking_style)
 
-    next_position = _get_next_segment_position(db, show.id)
+    next_position = db.query(ShowSegmentDB).filter(ShowSegmentDB.show_id == show.id).count() + 1
     segments = []
     used = set()
     # Several booking sub-paths below each want a specific card slot (dark
