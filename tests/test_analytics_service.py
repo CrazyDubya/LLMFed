@@ -104,6 +104,39 @@ class TestAnalyticsRoutes:
         assert response.json()["shows_completed"] == 1
         assert response.json()["total_gate_revenue"] == 1000
 
+    def test_federation_health_counts_all_completed_shows(self, analytics_client, db_session):
+        world = WorldDB(name="Long-running World")
+        db_session.add(world)
+        db_session.flush()
+        federation = GameFederationDB(world_id=world.id, name="Long-running Federation")
+        db_session.add(federation)
+        db_session.flush()
+        db_session.add_all([
+            ShowDB(
+                world_id=world.id, federation_id=federation.id, name="Weekly Show",
+                game_date=f"2026-01-{day:02d}", is_completed=True, gate_revenue=100,
+                overall_rating=5 if day == 1 else 2,
+                tv_rating=3 if day == 1 else 0 if day % 2 == 0 else None,
+            )
+            for day in range(1, 22)
+        ])
+        db_session.add(ShowDB(
+            world_id=world.id, federation_id=federation.id, name="Upcoming Show",
+            game_date="2026-01-22", is_completed=False, gate_revenue=999,
+        ))
+        db_session.commit()
+
+        response = analytics_client.get(
+            f"/game/analytics/world/{world.id}/federation/{federation.id}"
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert (body["shows_completed"], body["total_gate_revenue"]) == (21, 2100)
+        assert body["avg_gate_revenue"] == 100
+        assert body["avg_show_rating"] == 2.14
+        assert body["avg_tv_rating"] == 3
+
     @pytest.mark.parametrize(("resource", "model"), [
         ("wrestler", GameWrestlerDB),
         ("federation", GameFederationDB),
