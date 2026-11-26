@@ -18,6 +18,7 @@ from models.game_models import (
     ShowDB, ShowSegmentDB, MatchDB, MatchParticipantDB,
     PromoDB, WorldDB,
 )
+from game_service.wrestler_lifecycle_service import recover_injury
 
 logger = logging.getLogger(__name__)
 
@@ -258,6 +259,27 @@ def _simulate_match_segment(
     if not match or match.is_completed:
         return show_momentum, events
 
+    competitors = db.query(GameWrestlerDB).join(
+        MatchParticipantDB, MatchParticipantDB.wrestler_id == GameWrestlerDB.id,
+    ).filter(
+        MatchParticipantDB.match_id == match.id,
+        MatchParticipantDB.role == "competitor",
+        GameWrestlerDB.world_id == world.id,
+    ).order_by(MatchParticipantDB.id).all()
+    for wrestler in competitors:
+        if recover_injury(wrestler, show.game_date):
+            events.append(f"{wrestler.name} returns from injury")
+    injured = [w for w in competitors if w.is_injured]
+    if injured:
+        match.winner_id = None
+        match.finish_type = None
+        names = ", ".join(w.name for w in injured)
+        verb = "is" if len(injured) == 1 else "are"
+        description = f"Match cancelled at {show.name}: {names} {verb} injured."
+        log_event("match_cancelled", description, [w.id for w in competitors], importance=5)
+        events.append(description)
+        return show_momentum, events
+
     # Determine card position from segment index
     match_idx = match_segments.index(seg)
     if match_idx == 0:
@@ -279,12 +301,9 @@ def _simulate_match_segment(
     # attempt is just narrative color.
     try:
         from game_service.manager_service import get_wrestler_manager, attempt_interference
-        participant_ids = [p.wrestler_id for p in db.query(MatchParticipantDB).filter(
-            MatchParticipantDB.match_id == match.id,
-            MatchParticipantDB.role == "competitor",
-        ).all()]
         interference_boosts = {}
-        for wid in participant_ids:
+        for wrestler in competitors:
+            wid = wrestler.id
             info = get_wrestler_manager(db, wid)
             if not info:
                 continue
