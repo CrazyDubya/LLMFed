@@ -13,7 +13,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
   const [federation, setFederation] = useState<any>(null);
   const [roster, setRoster] = useState<Wrestler[]>([]);
   const [freeAgents, setFreeAgents] = useState<Wrestler[]>([]);
-  const [shows, setShows] = useState<any[]>([]);
+  const [shows, setShows] = useState<Awaited<ReturnType<typeof api.getShows>>>([]);
   const [championships, setChampionships] = useState<PromoterChampionship[]>([]);
   const [news, setNews] = useState<WorldNewsArticle[] | 'error' | null>(null);
   const [worldData, setWorldData] = useState<World | null>(null);
