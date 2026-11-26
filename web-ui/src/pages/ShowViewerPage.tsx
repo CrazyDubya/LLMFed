@@ -64,15 +64,13 @@ export default function ShowViewerPage() {
       setShowData(card.show);
       setSegments(card.segments);
 
-      // Load match results for completed matches
+      const matchIds: string[] = card.segments.flatMap((seg: Segment) => seg.match_id ? [seg.match_id] : []);
+      const outcomes = await Promise.allSettled(matchIds.map(matchId => api.getMatch(matchId)));
       const results: Record<string, MatchResult> = {};
-      for (const seg of card.segments) {
-        if (seg.match_id) {
-          try {
-            results[seg.match_id] = await api.getMatch(seg.match_id);
-          } catch { /* match may not exist yet */ }
-        }
-      }
+      outcomes.forEach((outcome, i) => {
+        // A rejected lookup means the match may not exist yet
+        if (outcome.status === 'fulfilled') results[matchIds[i]] = outcome.value;
+      });
       setMatchResults(results);
     } catch (err) {
       setError(getErrorMessage(err));
