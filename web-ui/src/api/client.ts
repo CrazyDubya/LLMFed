@@ -20,6 +20,16 @@ export interface World {
   is_active: boolean;
 }
 
+export interface WorldNewsArticle {
+  id: string;
+  headline: string;
+  body: string;
+  category: string;
+  game_date: string;
+  is_kayfabe: boolean;
+  source: string;
+}
+
 export interface Player {
   id: string;
   player_type: 'promoter' | 'wrestler';
@@ -185,7 +195,7 @@ export const api = {
     request<any[]>(`/worlds/${worldId}/narrative?limit=${limit}`),
 
   getNews: (worldId: string, limit = 20) =>
-    request<any[]>(`/worlds/${worldId}/news?limit=${limit}`),
+    request<WorldNewsArticle[]>(`/worlds/${worldId}/news?limit=${limit}`),
 
   // Storylines
   listStorylines: (worldId: string, status?: string, federationId?: string) => {
