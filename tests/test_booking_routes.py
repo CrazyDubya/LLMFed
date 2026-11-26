@@ -1,6 +1,7 @@
 """HTTP regression tests for show booking."""
 
 import random
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -165,6 +166,44 @@ def test_book_match_duration(booking_client, match_type, duration, expected):
     assert card.json()["segments"] == [segment]
 
 
+def test_federation_show_booking_order_prioritizes_today_before_the_limit(booking_client):
+    b = booking_client
+    shows_url = f"/game/federations/{b.federation_id}/shows"
+    today = date(2026, 1, 4)
+    with b.sessions.begin() as db:
+        db.add_all(
+            ShowDB(world_id=b.world_id, federation_id=b.federation_id, name=f"Later {days}",
+                   game_date=(today + timedelta(days=days)).isoformat())
+            for days in range(2, 22)
+        )
+        db.add_all([
+            ShowDB(world_id=b.world_id, federation_id=b.federation_id, name="Overdue", game_date="2026-01-02"),
+            ShowDB(world_id=b.world_id, federation_id=b.federation_id, name="Completed", game_date="2026-01-03",
+                   is_completed=True),
+            ShowDB(world_id=b.world_id, federation_id=b.federation_id, name="Earlier booking on same day",
+                   game_date=today.isoformat()),
+        ])
+    response = b.client.post(shows_url, json={"name": "Today's show", "game_date": today.isoformat()})
+    assert response.status_code == 201, response.text
+    created = response.json()
+
+    default = b.client.get(shows_url)
+    assert default.status_code == 200, default.text
+    assert [show["name"] for show in default.json()] == [f"Later {days}" for days in range(21, 1, -1)]
+
+    booking = b.client.get(shows_url, params={"order": "booking"})
+    assert booking.status_code == 200, booking.text
+    assert len(booking.json()) == 20
+    assert booking.json()[0]["id"] == created["id"]
+    assert [show["name"] for show in booking.json()[1:]] == [
+        "Earlier booking on same day", "Booking Show", *(f"Later {days}" for days in range(2, 19)),
+    ]
+
+    with_history = b.client.get(shows_url, params={"order": "booking", "limit": 25})
+    assert with_history.status_code == 200, with_history.text
+    assert [show["name"] for show in with_history.json()[-2:]] == ["Completed", "Overdue"]
+
+
 def test_tick_runs_show_booked_for_current_game_date(booking_client):
     b = booking_client
     shows_url = f"/game/federations/{b.federation_id}/shows"
@@ -288,6 +327,33 @@ def test_book_tag_match_rejects_unsupported_counts(booking_client, count):
     assert response.json()["message"] == "Tag team matches require exactly four wrestlers"
     with b.sessions() as db:
         assert db.query(MatchDB).count() == 0
+
+
+@pytest.mark.parametrize(
+    "match_type, count, status",
+    [
+        ("singles", 1, 422), ("singles", 2, 201), ("singles", 3, 400),
+        ("triple_threat", 2, 400), ("triple_threat", 3, 201), ("triple_threat", 4, 400),
+        ("fatal_four_way", 3, 400), ("fatal_four_way", 4, 201), ("fatal_four_way", 5, 400),
+        ("custom", 3, 201),
+    ],
+)
+def test_book_match_enforces_standard_format_counts(booking_client, match_type, count, status):
+    b = booking_client
+    participant_ids = b.roster_ids[:count]
+    response = b.client.post(f"/game/shows/{b.show_id}/matches", json={
+        "match_type": match_type,
+        "participant_ids": participant_ids,
+    })
+    assert response.status_code == status, response.text
+    with b.sessions() as db:
+        matches = db.query(MatchDB).all()
+        if status == 201:
+            match, = matches
+            assert match.match_type == match_type
+            assert {p.wrestler_id for p in match.participants} == set(participant_ids)
+        else:
+            assert matches == []
 
 
 @pytest.mark.parametrize("promo_type", ["worked_shoot", None], ids=["requested-type", "default-type"])

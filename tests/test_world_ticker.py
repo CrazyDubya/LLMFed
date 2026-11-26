@@ -58,6 +58,39 @@ class TestDateUtils:
 
 
 class TestWorldTicker:
+    def test_expiring_contract_does_not_count_as_underpaid(self, db_session):
+        db_session.autoflush = False
+        world = WorldDB(name="Expiry Test World", current_game_date="2026-01-05")
+        federation = GameFederationDB(world=world, name="Test Fed", is_npc=False)
+        departing = GameWrestlerDB(
+            world=world, name="Departing", is_npc=False, popularity=80, morale=75,
+            stats=WrestlerStatsDB(injury_prone=0),
+        )
+        staying = GameWrestlerDB(
+            world=world, name="Staying", is_npc=False, popularity=80, morale=75,
+            stats=WrestlerStatsDB(injury_prone=0),
+        )
+        db_session.add_all([world, federation, departing, staying])
+        db_session.flush()
+        expiring = ContractDB(
+            world_id=world.id, wrestler=departing, federation=federation,
+            salary_weekly=1000, start_date="2025-07-06", end_date="2026-01-06",
+        )
+        ongoing = ContractDB(
+            world_id=world.id, wrestler=staying, federation=federation,
+            salary_weekly=1000, start_date="2025-07-06", end_date="2026-02-06",
+        )
+        db_session.add_all([expiring, ongoing])
+        db_session.commit()
+
+        result = WorldTicker(db_session, world.id).tick(1)
+
+        assert "Contract expired: Departing is now a free agent" in result["day_results"][0]["events"]
+        assert expiring.status == "expired"
+        assert ongoing.status == "active"
+        assert staying.morale == 73
+        assert departing.morale == 75
+
     @pytest.mark.parametrize("calendar", ["new_world", "annual_rollover"])
     @pytest.mark.parametrize(("jitter", "days_until_opening"), [(-7, 1), (0, 1), (7, 7)])
     def test_opening_ppvs_run_after_calendar_start(

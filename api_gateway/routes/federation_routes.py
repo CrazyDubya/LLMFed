@@ -1,8 +1,9 @@
 """Federation routes: federation details, roster, free agents, shows list, championships."""
 
 import logging
-from typing import List
+from typing import List, Literal
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from agent_service.database import get_db_sync
@@ -14,7 +15,7 @@ from models.game_schemas import (
     ChampionshipResponse,
 )
 from models.game_models import (
-    ShowDB, ChampionshipDB,
+    ShowDB, ChampionshipDB, WorldDB,
 )
 from game_service.world_service import (
     get_federation, get_roster, get_free_agents, get_world_federations,
@@ -84,13 +85,25 @@ def api_list_free_agents(
 def api_list_shows(
     federation_id: str,
     limit: int = 20,
+    order: Literal["newest", "booking"] = "newest",
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
-    """List shows for a federation."""
-    shows = db.query(ShowDB).filter(
-        ShowDB.federation_id == federation_id,
-    ).order_by(ShowDB.game_date.desc()).limit(limit).all()
+    """List federation shows. Booking order puts upcoming, unfinished shows first, soonest first."""
+    query = db.query(ShowDB).filter(ShowDB.federation_id == federation_id)
+    if order == "booking":
+        query = query.join(WorldDB, WorldDB.id == ShowDB.world_id)
+        bookable = ShowDB.is_completed.is_(False) & (ShowDB.game_date >= WorldDB.current_game_date)
+        query = query.order_by(
+            case((bookable, 0), else_=1),
+            case((bookable, ShowDB.game_date)).asc(),
+            ShowDB.game_date.desc(),
+            ShowDB.created_at.desc(),
+            ShowDB.id.desc(),
+        )
+    else:
+        query = query.order_by(ShowDB.game_date.desc())
+    shows = query.limit(limit).all()
     return [ShowResponse.model_validate(s) for s in shows]
 
 

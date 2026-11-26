@@ -68,6 +68,62 @@ it('shows the reigning champion and distinguishes vacant titles', async () => {
   expect(screen.getAllByText('Vacant')).toHaveLength(1);
 });
 
+it('shows a newly booked show with its Build Card action after the dashboard reloads', async () => {
+  const endpoint = '/game/federations/shows-fed/shows';
+  const date = '2026-01-01';
+  const laterShows = Array.from({ length: 20 }, (_, index) => ({
+    id: `later-${index}`,
+    name: `Future Event ${20 - index}`,
+    game_date: `2026-02-${String(20 - index).padStart(2, '0')}`,
+    is_completed: false,
+  }));
+  const created = {
+    id: 'new-show', name: 'Summit Live Event', game_date: date,
+    federation_id: 'shows-fed', show_type: 'weekly', venue: 'Local Arena', is_completed: false,
+  };
+  const soonestFirst = [...laterShows].reverse();
+  let booked = false;
+  const fetch = vi.fn(async (path: string, options?: RequestInit) => {
+    if (path === endpoint && options?.method === 'POST') {
+      booked = true;
+      return Response.json(created, { status: 201 });
+    }
+    const responses: Record<string, unknown> = {
+      '/game/auth/me': { id: 'shows-user', username: 'promoter' },
+      '/game/worlds/shows-world': { current_game_date: date },
+      '/game/federations/shows-fed': { name: 'Summit Wrestling', short_name: 'Summit' },
+      [`${endpoint}?limit=20`]: laterShows,
+      [`${endpoint}?limit=20&order=booking`]: booked ? [created, ...soonestFirst.slice(0, 19)] : soonestFirst,
+      '/game/shows/new-show/card': { show: created, segments: [] },
+    };
+    return Response.json(responses[path] ?? []);
+  });
+  vi.stubGlobal('fetch', fetch);
+  vi.stubGlobal('WebSocket', class { close() {} });
+  Object.entries({ token: 'test-token', worldId: 'shows-world', federationId: 'shows-fed', playerType: 'promoter' })
+    .forEach(([key, value]) => localStorage.setItem(key, value));
+  window.history.replaceState(null, '', '/promoter');
+  const dashboard = render(<App />);
+  await screen.findByRole('heading', { name: 'Summit Wrestling' });
+  fireEvent.click(screen.getByRole('button', { name: 'Shows' }));
+  expect(screen.getByRole('heading', { name: 'Future Event 1' })).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: created.name })).toBeNull();
+
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Book New Show' })));
+  expect(fetch).toHaveBeenCalledWith(endpoint, expect.objectContaining({ method: 'POST' }));
+  expect(screen.getByRole('heading', { name: created.name })).toBeTruthy();
+
+  dashboard.unmount();
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Summit Wrestling' });
+  fireEvent.click(screen.getByRole('button', { name: 'Shows' }));
+  const newShow = screen.getByRole('heading', { name: created.name }).parentElement!.parentElement!;
+  expect(screen.getByRole('heading', { name: 'Future Event 1' })).toBeTruthy();
+  fireEvent.click(within(newShow).getByRole('button', { name: 'Build Card' }));
+  expect(window.location.pathname).toBe('/show/new-show/book');
+  await screen.findByRole('heading', { name: `Card Builder: ${created.name}` });
+});
+
 it('shows written world news separately from the Live Feed', async () => {
   const headline = 'Weekly Dirt Sheet: Behind the Curtain';
   const rumors = [
@@ -137,4 +193,167 @@ it('shows written world news separately from the Live Feed', async () => {
   expect(screen.getByText('Live Feed')).toBeTruthy();
   expect(screen.getByText(liveEvent)).toBeTruthy();
   expect(article.queryByText(liveEvent)).toBeNull();
+});
+
+function deferredResponse() {
+  let resolve!: (response: Response) => void;
+  const promise = new Promise<Response>(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+async function renderRefreshDashboard() {
+  const worldPath = '/game/worlds/refresh-world';
+  const federationPath = '/game/federations/refresh-fed';
+  const routes = [
+    federationPath, `${federationPath}/roster`, `${worldPath}/free-agents`,
+    `${federationPath}/shows?limit=20`, `${federationPath}/championships`,
+    `${worldPath}/news?limit=20`, worldPath,
+    `${worldPath}/storylines?federation_id=refresh-fed`,
+    `${worldPath}/stables?federation_id=refresh-fed`,
+    `${worldPath}/manager-bonds?federation_id=refresh-fed`,
+    `${worldPath}/managers?federation_id=refresh-fed`,
+  ].sort();
+  class Socket {
+    static current: Socket;
+    onopen?: () => void;
+    onclose?: () => void;
+    onmessage?: (event: { data: string }) => void;
+    constructor() { Socket.current = this; }
+    close() {}
+  }
+  vi.stubGlobal('WebSocket', Socket);
+  const advance = deferredResponse();
+  let federationResponse: Promise<Response> | undefined;
+  const fetchMock = vi.fn(async (path: string) => {
+    if (path === `${worldPath}/tick?days=1`) return advance.promise;
+    if (path === federationPath && federationResponse) return federationResponse;
+    const responses: Record<string, unknown> = {
+      '/game/auth/me': { id: 'refresh-user', username: 'promoter' },
+      [worldPath]: { current_game_date: '2026-01-01', current_tick: 1 },
+      [federationPath]: { name: 'Summit Wrestling' },
+    };
+    return Response.json(responses[path] ?? []);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  Object.entries({ token: 'test-token', worldId: 'refresh-world', federationId: 'refresh-fed', playerType: 'promoter' })
+    .forEach(([key, value]) => localStorage.setItem(key, value));
+  window.history.replaceState(null, '', '/promoter');
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Summit Wrestling' });
+  await act(async () => Socket.current.onopen?.());
+  fetchMock.mockClear();
+  const emit = (type: string, tick?: number | string) =>
+    Socket.current.onmessage?.({ data: JSON.stringify({ type, tick }) });
+  return {
+    advance,
+    emit,
+    burst: (tick: number) => {
+      emit('tick', tick);
+      emit('show_completed');
+      emit('show_completed');
+    },
+    reconnect: async () => {
+      vi.useFakeTimers();
+      try {
+        Socket.current.onclose?.();
+        await vi.advanceTimersByTimeAsync(1000);
+        Socket.current.onopen?.();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+    blockRefresh: () => {
+      const response = deferredResponse();
+      federationResponse = response.promise;
+      return (result = Response.json({ name: 'Summit Wrestling' })) => {
+        federationResponse = undefined;
+        response.resolve(result);
+      };
+    },
+    expectRefreshes: (count: number) => expect(
+      fetchMock.mock.calls.map(([path]) => path).filter(path => routes.includes(path)).sort(),
+    ).toEqual(Array.from({ length: count }, () => routes).flat().sort()),
+  };
+}
+
+it.each(['before', 'after'] as const)('refreshes once when the tick burst arrives %s the Next Day response', async (when) => {
+  const { advance, burst, expectRefreshes } = await renderRefreshDashboard();
+  fireEvent.click(screen.getByRole('button', { name: 'Next Day' }));
+  if (when === 'before') await act(async () => burst(2));
+  await act(async () => advance.resolve(Response.json({ current_tick: 2 })));
+  if (when === 'after') await act(async () => burst(2));
+  expectRefreshes(1);
+});
+
+it('refreshes once for an external tick and its completed shows', async () => {
+  const { burst, expectRefreshes } = await renderRefreshDashboard();
+  await act(async () => burst(2));
+  expectRefreshes(1);
+});
+
+it('refreshes on reconnect and when a show arrives without a tick after reconnect', async () => {
+  const { burst, emit, reconnect, expectRefreshes } = await renderRefreshDashboard();
+  await act(async () => burst(2));
+  await act(reconnect);
+  expectRefreshes(2);
+  await act(async () => emit('show_completed'));
+  expectRefreshes(3);
+});
+
+it('coalesces genuinely newer requests during a load into one trailing refresh', async () => {
+  const { blockRefresh, burst, emit, expectRefreshes } = await renderRefreshDashboard();
+  const unblock = blockRefresh();
+  await act(async () => burst(2));
+  await act(async () => { burst(3); burst(4); });
+  expectRefreshes(1);
+  await act(async () => unblock());
+  expectRefreshes(2);
+  await act(async () => emit('show_completed'));
+  expectRefreshes(2);
+});
+
+it.each([10, 100])('refreshes after a non-increasing socket tick resets coverage to %i', async (tick) => {
+  const { blockRefresh, burst, expectRefreshes } = await renderRefreshDashboard();
+  const unblock = blockRefresh();
+  await act(async () => burst(100));
+  await act(async () => burst(tick));
+  expectRefreshes(1);
+  await act(async () => unblock());
+  expectRefreshes(2);
+  await act(async () => burst(tick + 1));
+  expectRefreshes(3);
+});
+
+it('refreshes after Next Day without a socket notification', async () => {
+  const { advance, expectRefreshes } = await renderRefreshDashboard();
+  fireEvent.click(screen.getByRole('button', { name: 'Next Day' }));
+  await act(async () => advance.resolve(Response.json({ current_tick: 2 })));
+  expectRefreshes(1);
+});
+
+it('retries a failed dashboard load on a later completed show for the same tick', async () => {
+  const { blockRefresh, burst, emit, expectRefreshes } = await renderRefreshDashboard();
+  const unblock = blockRefresh();
+  await act(async () => burst(2));
+  await act(async () => emit('show_completed'));
+  expectRefreshes(1);
+  await act(async () => unblock(Response.json({ message: 'Could not load federation' }, { status: 500 })));
+  expect(screen.getByText('Could not load federation')).toBeTruthy();
+  expectRefreshes(1);
+  await act(async () => emit('show_completed'));
+  expectRefreshes(2);
+  await act(async () => emit('show_completed'));
+  expectRefreshes(2);
+});
+
+it('still refreshes for malformed ticks and for deferred events when Next Day fails', async () => {
+  const { advance, burst, emit, expectRefreshes } = await renderRefreshDashboard();
+  await act(async () => emit('tick', 'unknown'));
+  expectRefreshes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Next Day' }));
+  await act(async () => burst(2));
+  expectRefreshes(1);
+  await act(async () => advance.resolve(Response.json({ message: 'Could not advance' }, { status: 500 })));
+  expect(screen.getByText('Could not advance')).toBeTruthy();
+  expectRefreshes(2);
 });
