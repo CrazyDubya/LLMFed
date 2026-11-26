@@ -27,6 +27,7 @@ function createRefreshState(scope: Scope) {
     inFlightTick: unknownTick,
     coveredTick: unknownTick,
     lastSocketTick: unknownTick,
+    timeline: 0,
     advancing: 0,
     deferredTick: null as number | null,
   };
@@ -60,7 +61,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
     return refresh?.scope === scope ? refresh : null;
   }, [scope]);
 
-  const fetchData = useCallback(async (refresh: RefreshState) => {
+  const fetchData = useCallback(async (refresh: RefreshState, timeline: number) => {
     const { worldId, federationId } = refresh.scope;
     if (!worldId || !federationId) return false;
     try {
@@ -92,7 +93,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
         const detail = await api.getWrestler(id).catch(() => null);
         if (detail?.wrestler?.name) wrestlerNames.set(id, detail.wrestler.name);
       }));
-      if (!refresh.active) return false;
+      if (!refresh.active || refresh.timeline !== timeline) return false;
       setFederation(fed);
       setRoster(rost);
       setFreeAgents(agents);
@@ -109,7 +110,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
       setManagers(mgrs);
       return true;
     } catch (err) {
-      if (refresh.active) setError(getErrorMessage(err));
+      if (refresh.active && refresh.timeline === timeline) setError(getErrorMessage(err));
       return false;
     }
   }, []);
@@ -120,9 +121,10 @@ export function usePromoterData(worldId: string | null, federationId: string | n
     return refresh.running ??= Promise.resolve().then(async () => {
       try {
         while (refresh.active && refresh.queuedTick !== null) {
+          const { timeline } = refresh;
           const tick = refresh.inFlightTick = refresh.queuedTick;
           refresh.queuedTick = null;
-          if (await fetchData(refresh)) {
+          if (await fetchData(refresh, timeline) && refresh.timeline === timeline) {
             refresh.coveredTick = Math.max(refresh.coveredTick, tick);
           }
           refresh.inFlightTick = unknownTick;
@@ -156,7 +158,14 @@ export function usePromoterData(worldId: string | null, federationId: string | n
   const onTick = useCallback((event: WorldEvent) => {
     const refresh = getRefresh();
     if (!refresh || (event.world_id && event.world_id !== worldId)) return;
-    const tick = refresh.lastSocketTick = tickNumber(event.tick);
+    const tick = tickNumber(event.tick);
+    if (tick !== unknownTick && tick <= refresh.lastSocketTick) {
+      refresh.timeline++;
+      refresh.coveredTick = refresh.inFlightTick = unknownTick;
+      if (refresh.queuedTick !== null) refresh.queuedTick = unknownTick;
+      if (refresh.deferredTick !== null) refresh.deferredTick = unknownTick;
+    }
+    refresh.lastSocketTick = tick;
     if (needsRefresh(refresh, tick)) refreshFromSocket(refresh, tick);
   }, [getRefresh, refreshFromSocket, worldId]);
 
@@ -177,13 +186,14 @@ export function usePromoterData(worldId: string | null, federationId: string | n
   const advanceDay = useCallback(async (days: number = 1) => {
     const refresh = getRefresh();
     if (!worldId || !refresh) return;
+    const { timeline } = refresh;
     setAdvancingScope(scope);
     refresh.advancing++;
     try {
       let tick: number;
       try {
         const result = await api.advanceWorld(worldId, days);
-        tick = tickNumber(result.current_tick);
+        tick = timeline === refresh.timeline ? tickNumber(result.current_tick) : unknownTick;
       } finally {
         refresh.advancing--;
       }

@@ -245,15 +245,27 @@ it('refreshes on reconnect and when a show arrives without a tick after reconnec
 });
 
 it('coalesces genuinely newer requests during a load into one trailing refresh', async () => {
-  const { blockRefresh, burst, expectRefreshes } = await renderRefreshDashboard();
+  const { blockRefresh, burst, emit, expectRefreshes } = await renderRefreshDashboard();
   const unblock = blockRefresh();
   await act(async () => burst(2));
   await act(async () => { burst(3); burst(4); });
   expectRefreshes(1);
   await act(async () => unblock());
   expectRefreshes(2);
-  await act(async () => burst(4));
+  await act(async () => emit('show_completed'));
   expectRefreshes(2);
+});
+
+it.each([10, 100])('refreshes after a non-increasing socket tick resets coverage to %i', async (tick) => {
+  const { blockRefresh, burst, expectRefreshes } = await renderRefreshDashboard();
+  const unblock = blockRefresh();
+  await act(async () => burst(100));
+  await act(async () => burst(tick));
+  expectRefreshes(1);
+  await act(async () => unblock());
+  expectRefreshes(2);
+  await act(async () => burst(tick + 1));
+  expectRefreshes(3);
 });
 
 it('refreshes after Next Day without a socket notification', async () => {
