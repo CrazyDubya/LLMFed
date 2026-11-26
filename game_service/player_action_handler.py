@@ -253,6 +253,10 @@ class PlayerActionHandler:
         if active_contract:
             raise ValueError("Wrestler already under contract")
 
+        federation = self.db.query(GameFederationDB).filter_by(id=federation_id, world_id=self.world.id).first()
+        if not federation:
+            raise ValueError("Federation not found in this world")
+
         contract = ContractDB(
             world_id=self.world.id,
             wrestler_id=wrestler_id,
@@ -263,7 +267,7 @@ class PlayerActionHandler:
         )
         self.db.add(contract)
         self.db.flush()
-        self._log_event("signing", f"{wrestler.name} signed with federation", [wrestler_id, federation_id])
+        self._log_event("signing", f"{wrestler.name} signed with {federation.name}", [wrestler_id, federation_id])
         return {"contract_id": contract.id, "wrestler": wrestler.name}
 
     def _action_book_show(self, data: dict) -> dict:
