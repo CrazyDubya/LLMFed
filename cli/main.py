@@ -160,8 +160,8 @@ def world_status(world_id: str = typer.Argument(..., help="World ID")):
     try:
         world = db.query(WorldDB).filter(WorldDB.id == world_id).first()
         if not world:
-            console.print(f"[red]World '{world_id}' not found.[/red]")
-            return
+            error_console.print(f"World '{world_id}' not found.", style="red", markup=False)
+            raise typer.Exit(1)
 
         fed_count = db.query(GameFederationDB).filter(
             GameFederationDB.world_id == world_id
@@ -366,8 +366,8 @@ def match_replay(match_id: str = typer.Argument(..., help="Match ID")):
     try:
         match = db.query(MatchDB).filter(MatchDB.id == match_id).first()
         if not match:
-            console.print(f"[red]Match '{match_id}' not found.[/red]")
-            return
+            error_console.print(f"Match '{match_id}' not found.", style="red", markup=False)
+            raise typer.Exit(1)
 
         console.print(Panel(
             f"Type: {match.match_type}\n"
