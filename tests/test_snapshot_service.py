@@ -85,8 +85,8 @@ class TestRestoreSnapshot:
         from fastapi.testclient import TestClient
         from agent_service.database import get_db_sync
         from api_gateway.routes.snapshot_routes import router
-        from api_gateway.security import get_current_user
-        from models.game_models import GameFederationDB, GameWrestlerDB
+        from api_gateway.security import get_current_user, TokenData
+        from models.game_models import GameFederationDB, GameWrestlerDB, PlayerDB, UserDB
 
         fed = GameFederationDB(world_id=world_with_data.id, name="Request Fed")
         wrestlers = [GameWrestlerDB(world_id=world_with_data.id, name=name) for name in ["A", "B"]]
@@ -104,10 +104,15 @@ class TestRestoreSnapshot:
         world_with_data.world_config = config
         db_session.commit()
         if via_http:
+            user = UserDB(username="branch-owner", email="branch@example.test", password_hash="unused")
+            db_session.add(user)
+            db_session.flush()
+            db_session.add(PlayerDB(user_id=user.id, world_id=world_with_data.id, player_type="promoter"))
+            db_session.commit()
             app = FastAPI()
             app.include_router(router)
             app.dependency_overrides[get_db_sync] = lambda: db_session
-            app.dependency_overrides[get_current_user] = lambda: object()
+            app.dependency_overrides[get_current_user] = lambda: TokenData(user_id=user.id)
             with TestClient(app, base_url="http://localhost") as client:
                 response = client.post("/game/snapshots", json={"world_id": world_with_data.id})
                 assert response.status_code == 201, response.text
