@@ -201,11 +201,10 @@ class TestManagerPromos:
                 db, world.id, f"Manager_{archetype}",
                 archetype=archetype, federation_id=federation.id,
             )
-            bond = assign_manager(db, world.id, mgr.id, wrestlers[0].id)
+            assign_manager(db, world.id, mgr.id, wrestlers[0].id)
             result = generate_manager_promo(db, mgr.id, wrestlers[0].id)
             assert result["content"], f"No content for archetype {archetype}"
             assert result["quality_rating"] > 0
-            remove_manager(db, bond.id)
 
     def test_nonexistent_manager_returns_empty(self, db):
         result = generate_manager_promo(db, "fake-id", "also-fake")

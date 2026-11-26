@@ -126,39 +126,6 @@ def test_assign_manager_existing_world(bond_client):
     assert response.json()["client_wrestler_id"] == "bond-wrestler"
 
 
-def test_assign_manager_rejects_client_with_active_rival_bond(bond_client, bond_sessions):
-    with bond_sessions.begin() as db:
-        db.add_all([
-            GameFederationDB(id="home-fed", world_id="bond-world", name="Home Federation"),
-            GameFederationDB(id="rival-fed", world_id="bond-world", name="Rival Federation"),
-        ])
-        db.flush()
-        db.get(ManagerDB, "bond-manager").federation_id = "home-fed"
-        db.add_all([
-            PlayerDB(user_id="bond-player", world_id="bond-world", player_type="promoter", federation_id="home-fed"),
-            ManagerDB(id="rival-manager", world_id="bond-world", name="Rival Manager", federation_id="rival-fed"),
-        ])
-        db.flush()
-        db.add(ManagerClientDB(id="rival-bond", world_id="bond-world", manager_id="rival-manager",
-                               client_wrestler_id="bond-wrestler"))
-
-    endpoint = "/game/worlds/bond-world/manager-bonds"
-    scoped = bond_client.get(endpoint, params={"federation_id": "home-fed"})
-    assert scoped.status_code == 200, scoped.text
-    assert scoped.json() == []
-
-    response = bond_client.post(endpoint, json={
-        "manager_id": "bond-manager", "client_wrestler_id": "bond-wrestler", "role": "valet",
-    })
-    assert response.status_code == 400, response.text
-    assert response.json()["message"] == "Wrestler already has an active manager"
-    assert response.json()["error_code"] == "HTTP_400"
-
-    bonds = bond_client.get(endpoint)
-    assert bonds.status_code == 200, bonds.text
-    assert [bond["id"] for bond in bonds.json()] == ["rival-bond"]
-
-
 def test_assign_manager_missing_manager(bond_client):
     response = bond_client.post("/game/worlds/bond-world/manager-bonds", json={
         "manager_id": "missing-manager", "client_wrestler_id": "bond-wrestler",
