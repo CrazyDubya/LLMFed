@@ -259,8 +259,7 @@ def plan_ppv_card_from_vision(
         elif not holder and len(challengers) >= 2:
             # The booking vision may still show a vacancy after TV crowns a champion.
             championship = db.get(ChampionshipDB, champ_id)
-            if (not championship or not championship.is_active or championship.current_holder_id is not None
-                    or championship.federation_id != ppv.federation_id or championship.world_id != ppv.world_id):
+            if not championship or championship.current_holder_id is not None:
                 continue
             wrestler_ids = challengers[:2]
         else:

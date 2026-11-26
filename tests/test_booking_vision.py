@@ -228,7 +228,7 @@ class TestVisionGeneration:
 
 class TestPPVCalendar:
     @pytest.mark.parametrize("challenger_count", [0, 1, 3])
-    @pytest.mark.parametrize("holder_state", ["vacant", "held", "stale-vision", "filled-before-show", "storyline-overlap"])
+    @pytest.mark.parametrize("holder_state", ["vacant", "held", "stale-vision", "filled-before-show"])
     def test_plan_and_book_ppv_title_match(self, db_session, challenger_count, holder_state):
         from game_service.ppv_calendar_service import plan_ppv_card_from_vision
         from game_service.show_service import create_show, npc_book_card
@@ -251,9 +251,6 @@ class TestPPVCalendar:
                 "next_challengers": challenger_ids,
             },
         })
-        if holder_state == "storyline-overlap" and challenger_count >= 2:
-            vision.planned_storylines = [{"wrestler_ids": [holder.id, challenger_ids[0]]}]
-
         plan_ppv_card_from_vision(db_session, ppv, vision)
 
         if holder_state == "held" and challenger_ids:

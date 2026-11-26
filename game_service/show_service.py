@@ -734,30 +734,20 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
             return None
         return title_id
 
-    main_event = ppv_event.planned_main_event or {}
-    title_id = title_id_for_match(main_event)
-    vacant_main_event_wrestlers = []
-    if main_event.get("for_vacant_title") and title_id:
-        contenders = available_wrestlers(main_event)
-        if len(contenders) >= 2:
-            vacant_main_event_wrestlers = contenders
-
     # Book planned undercard matches first
     for planned in (ppv_event.planned_matches or []):
         available = available_wrestlers(planned)
-        undercard_title_id = title_id_for_match(planned)
-        if len(available) < 2 or (
-            not undercard_title_id and any(wid in vacant_main_event_wrestlers for wid in available)
-        ):
+        if len(available) < 2:
             continue
         used.update(available)
 
+        title_id = title_id_for_match(planned)
         seg = _book_match(
             db, show, show.world_id,
             wrestler_ids=available,
             match_type=planned.get("match_type", "singles"),
-            is_title_match=bool(undercard_title_id),
-            championship_id=undercard_title_id,
+            is_title_match=bool(title_id),
+            championship_id=title_id,
             planned_winner_id=pick_winner(available).id,
             planned_finish="pinfall",
             position=position,
@@ -766,12 +756,14 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
         position += 1
 
     # Book the main event last (highest position)
+    main_event = ppv_event.planned_main_event or {}
     me_available = available_wrestlers(main_event)
 
     if len(me_available) >= 2:
         used.update(me_available)
 
         # Main event: champion usually retains at non-crown-jewel, 40% title change at crown jewel
+        title_id = title_id_for_match(main_event)
         champ = None
         if title_id:
             champ = db.query(ChampionshipDB).filter(ChampionshipDB.id == title_id).first()
