@@ -10,7 +10,9 @@ from agent_service.database import get_db_sync
 from api_gateway.main import app
 from api_gateway.security import TokenData, get_current_user
 from models.db_models import Base
-from models.game_models import WorldDB, GameWrestlerDB, StorylineDB, StorylineParticipantDB
+from models.game_models import (
+    WorldDB, GameWrestlerDB, StorylineDB, StorylineParticipantDB, PlayerDB, GameNarrativeLogDB,
+)
 
 
 @pytest.fixture
@@ -176,3 +178,37 @@ def test_update_storyline_missing(storyline_api):
     response = client.patch("/game/storylines/missing", json={"status": "climax"})
     assert response.status_code == 404
     assert response.json()["message"] == "Storyline not found"
+
+
+def test_promo_storyline_news_carries_world_date_and_tick(storyline_api):
+    client, sessions, _ = storyline_api
+    with sessions() as db:
+        world = db.get(WorldDB, "story-world")
+        world.current_game_date = "2026-03-14"
+        world.current_tick = 72
+        db.add(PlayerDB(id="story-player", user_id="story-user", world_id="story-world",
+                        player_type="wrestler", wrestler_id="hero"))
+        db.add(StorylineDB(id="rivalry", world_id="story-world", name="Rivalry", heat=40))
+        db.add_all([
+            StorylineParticipantDB(storyline_id="rivalry", wrestler_id="hero", role="protagonist"),
+            StorylineParticipantDB(storyline_id="rivalry", wrestler_id="villain", role="antagonist"),
+        ])
+        db.commit()
+
+    action = client.post("/game/worlds/story-world/actions", json={
+        "action_type": "cut_promo",
+        "action_data": {"wrestler_id": "hero", "target_wrestler_id": "villain"},
+    })
+    assert action.status_code == 202, action.text
+    tick = client.post("/game/worlds/story-world/tick")
+    assert tick.status_code == 200, tick.text
+    assert tick.json()["current_game_date"] == "2026-03-15"
+
+    narrative = client.get("/game/worlds/story-world/narrative?limit=500")
+    assert narrative.status_code == 200, narrative.text
+    storyline_rows = [row for row in narrative.json() if row["event_type"] == "storyline"]
+    print(f"HTTP {narrative.status_code} storyline rows: {storyline_rows}")
+    assert [row["game_date"] for row in storyline_rows] == ["2026-03-15"]
+    with sessions() as db:
+        log = db.query(GameNarrativeLogDB).filter_by(event_type="storyline").one()
+        assert log.tick == 73

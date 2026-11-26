@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from models.game_models import (
     StorylineDB, StorylineParticipantDB, GameWrestlerDB, GameFederationDB,
     ContractDB, MatchDB, MatchParticipantDB, GameNarrativeLogDB,
-    LifeEventDB, WrestlerRelationshipDB,
+    LifeEventDB, WrestlerRelationshipDB, WorldDB,
 )
 
 logger = logging.getLogger(__name__)
@@ -200,10 +200,11 @@ def progress_storyline(db: Session, storyline: StorylineDB, event_type: str,
         storyline.status = "climax"
 
     if description:
+        world = db.get(WorldDB, storyline.world_id)
         db.add(GameNarrativeLogDB(
             world_id=storyline.world_id,
-            game_date="",  # Caller should set this
-            tick=0,
+            game_date=world.current_game_date,
+            tick=world.current_tick,
             event_type="storyline",
             description=description,
             involved_entities=[storyline.id],
