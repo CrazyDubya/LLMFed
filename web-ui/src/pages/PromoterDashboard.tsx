@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useGame } from '../context/GameContext';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
@@ -89,11 +89,10 @@ export default function PromoterDashboard() {
   const [showStorylineForm, setShowStorylineForm] = useState(false);
   const [formData, setFormData] = useState<any>({});
 
-  // WebSocket: auto-refresh on tick and show completion events
-  const handleTick = useCallback(() => { loadData(); }, [loadData]);
   const { connected: wsConnected, eventLog } = useWorldSocket(worldId, {
-    onTick: handleTick,
-    onShowCompleted: handleTick,
+    onTick: loadData,
+    onShowCompleted: loadData,
+    onReconnect: loadData,
   });
 
   const exitGame = () => {

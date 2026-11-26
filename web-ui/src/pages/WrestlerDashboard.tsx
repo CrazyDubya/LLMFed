@@ -24,7 +24,7 @@ export default function WrestlerDashboard() {
   const [trainingStat, setTrainingStat] = useState('stamina');
   const [error, setError] = useState('');
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!worldId || !wrestlerId) return;
     try {
       const [wd, wData, narr, feds, stbl, mgr] = await Promise.all([
@@ -46,15 +46,14 @@ export default function WrestlerDashboard() {
     } catch (err) {
       setError(getErrorMessage(err));
     }
-  };
+  }, [worldId, wrestlerId]);
 
-  useEffect(() => { loadData(); }, [worldId, wrestlerId]);
+  useEffect(() => { loadData(); }, [loadData]);
 
-  // WebSocket: auto-refresh on tick and show completion events
-  const handleTick = useCallback(() => { loadData(); }, [worldId, wrestlerId]);
   const { connected: wsConnected, eventLog } = useWorldSocket(worldId, {
-    onTick: handleTick,
-    onShowCompleted: handleTick,
+    onTick: loadData,
+    onShowCompleted: loadData,
+    onReconnect: loadData,
   });
 
   const advanceDay = async (days: number = 1) => {

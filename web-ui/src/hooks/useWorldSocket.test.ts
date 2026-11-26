@@ -61,6 +61,28 @@ describe('world feed auth', () => {
   });
 });
 
+describe('world feed reconnect', () => {
+  it('notifies only after a retry opens, not during failed retries or on a new world', () => {
+    const onReconnect = vi.fn();
+    const { rerender } = renderHook(({ world }) => useWorldSocket(world, { onReconnect }), {
+      initialProps: { world: 'first' },
+    });
+    act(() => MockWebSocket.instances[0].open());
+    act(() => MockWebSocket.instances[0].onclose?.());
+    act(() => vi.advanceTimersByTime(1000));
+    act(() => MockWebSocket.instances[1].onclose?.());
+    act(() => vi.advanceTimersByTime(2000));
+    expect(onReconnect).not.toHaveBeenCalled();
+
+    act(() => MockWebSocket.instances[2].open());
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+
+    rerender({ world: 'next' });
+    act(() => MockWebSocket.instances[3].open());
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('world feed heartbeat', () => {
   it('sends recurring pings before the 60-second timeout only after opening', () => {
     renderHook(() => useWorldSocket('world'));
