@@ -80,11 +80,14 @@ def api_create_show(
         GameFederationDB.id == federation_id
     ).first()
 
-    show = svc_create_show(
-        db, fed.world_id, federation_id,
-        data.name, data.show_type, data.venue or "Arena",
-        data.capacity, data.game_date,
-    )
+    try:
+        show = svc_create_show(
+            db, fed.world_id, federation_id,
+            data.name, data.show_type, data.venue or "Arena",
+            data.capacity, data.game_date,
+        )
+    except ValueError as e:
+        _handle_value_error(e)
     db.commit()
     db.refresh(show)
     return ShowResponse.model_validate(show)

@@ -11,7 +11,7 @@ from models.db_models import Base
 from models.game_models import (
     GameWrestlerDB, MatchDB, WrestlerStatsDB, PlayerActionDB, UserDB,
     GameNarrativeLogDB, PPVEventDB, ShowDB,
-    ContractDB, GameFederationDB, WorldDB,
+    ContractDB, GameFederationDB, TagTeamDB, WorldDB,
 )
 from game_service import ppv_calendar_service
 from game_service.show_service import book_match, create_show
@@ -202,6 +202,47 @@ class TestWorldTicker:
         assert not returning.is_injured
         assert returning.injury_return_date is None
         assert day["events"].count("Returning competitor returns from injury") == 1
+
+    def test_tuesday_tick_disbands_tag_team_once_across_npc_federations(self, db_session):
+        db_session.autoflush = False
+        world = WorldDB(name="Tag Team Test World", current_game_date="2026-01-05")
+        db_session.add(world)
+        db_session.flush()
+
+        federations = [
+            GameFederationDB(world_id=world.id, name=f"NPC Fed {i}", is_npc=True)
+            for i in range(3)
+        ]
+        face = GameWrestlerDB(world_id=world.id, name="Face", alignment="face")
+        heel = GameWrestlerDB(world_id=world.id, name="Heel", alignment="heel")
+        db_session.add_all([*federations, face, heel])
+        db_session.flush()
+
+        member_ids = [face.id, heel.id]
+        db_session.add_all(
+            ContractDB(
+                world_id=world.id, federation_id=federations[0].id,
+                wrestler_id=wrestler_id, start_date="2026-01-01",
+            )
+            for wrestler_id in member_ids
+        )
+        team = TagTeamDB(
+            world_id=world.id, name="Split Decision", wrestler1_id=face.id, wrestler2_id=heel.id,
+        )
+        db_session.add(team)
+        db_session.commit()
+
+        day = WorldTicker(db_session, world.id).tick()["day_results"][0]
+
+        assert day["game_date"] == "2026-01-06"
+        assert not team.is_active
+        assert team.dissolved_date == day["game_date"]
+        emitted = day["events"].count("Tag team split: Split Decision")
+        persisted = db_session.query(GameNarrativeLogDB).filter_by(
+            world_id=world.id, tick=day["tick"], event_type="tag_team_dissolved",
+        ).all()
+        assert (emitted, len(persisted)) == (1, 1)
+        assert persisted[0].involved_entities == member_ids
 
     def test_tick_advances_date(self, db_session, world_with_player):
         world, _ = world_with_player

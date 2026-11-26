@@ -11,6 +11,8 @@ A promoter can:
 
 import random
 import logging
+from datetime import date
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
@@ -102,11 +104,35 @@ def _get_available_wrestlers(db: Session, wrestler_ids: list):
 # Show management
 # ---------------------------------------------------------------------------
 
+def validate_show_date(game_date: str, current_game_date: str | None = None) -> str:
+    """Validate a canonical YYYY-MM-DD show date not before current_game_date."""
+    invalid_msg = "Invalid show date: expected a valid YYYY-MM-DD date"
+    if not isinstance(game_date, str) or len(game_date) != 10:
+        raise ValueError(invalid_msg)
+    try:
+        parsed = date.fromisoformat(game_date)
+    except ValueError:
+        raise ValueError(invalid_msg) from None
+    if parsed.isoformat() != game_date:
+        raise ValueError(invalid_msg)
+    if current_game_date is not None:
+        current = date.fromisoformat(current_game_date)
+        if parsed < current:
+            raise ValueError(
+                f"Show date {game_date} cannot be before the current game date ({current_game_date})"
+            )
+    return game_date
+
+
 def create_show(db: Session, world_id: str, federation_id: str,
                 name: str, show_type: str = "weekly",
                 venue: str = "Arena", capacity: int = 5000,
                 game_date: str = None) -> ShowDB:
     """Create a new show for a federation."""
+    world = db.get(WorldDB, world_id)
+    current_game_date = world.current_game_date if world else None
+    resolved_date = game_date if game_date is not None else (current_game_date or "2026-01-01")
+    validate_show_date(resolved_date, current_game_date)
     show = ShowDB(
         world_id=world_id,
         federation_id=federation_id,
@@ -114,7 +140,7 @@ def create_show(db: Session, world_id: str, federation_id: str,
         show_type=show_type,
         venue=venue,
         capacity=capacity,
-        game_date=game_date or "2026-01-01",
+        game_date=resolved_date,
     )
     db.add(show)
     db.flush()

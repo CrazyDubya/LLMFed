@@ -787,7 +787,7 @@ class WorldTicker:
     # ------------------------------------------------------------------
 
     def _manage_tag_teams(self, game_date: str):
-        """NPC feds form/dissolve tag teams (Tuesdays)."""
+        """Form tag teams per NPC federation and check dissolution world-wide (Tuesdays)."""
         if get_day_of_week(game_date) != TUESDAY:
             return
 
@@ -795,7 +795,8 @@ class WorldTicker:
 
         for fed in npc_feds:
             self._npc_form_tag_teams(fed, game_date)
-            self._check_tag_team_dissolution(fed, game_date)
+        if npc_feds:
+            self._check_tag_team_dissolution(game_date)
 
     def _npc_form_tag_teams(self, fed: GameFederationDB, game_date: str):
         """Form tag teams from wrestlers with high chemistry."""
@@ -856,7 +857,7 @@ class WorldTicker:
             self.events.append(f"New tag team: {team_name}")
             break  # One new team per week per fed max
 
-    def _check_tag_team_dissolution(self, fed: GameFederationDB, game_date: str):
+    def _check_tag_team_dissolution(self, game_date: str):
         """Dissolve tag teams where members have diverged."""
         teams = self.db.query(TagTeamDB).filter(
             TagTeamDB.world_id == self.world.id,
