@@ -17,6 +17,8 @@ from game_service.snapshot_service import (
     create_snapshot,
     restore_snapshot,
 )
+from game_service.world_service import get_player_for_user
+from models.game_models import PlayerDB
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +67,13 @@ class SnapshotDiff(BaseModel):
 # Endpoints
 # ---------------------------------------------------------------------------
 
+def _require_world_access(db: Session, user_id: str, world_id: str) -> None:
+    try:
+        get_player_for_user(db, user_id, world_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="No player in this world")
+
+
 @router.post("", response_model=SnapshotMeta, status_code=201)
 def api_create_snapshot(
     body: SnapshotCreate,
@@ -72,6 +81,7 @@ def api_create_snapshot(
     db: Session = Depends(get_db_sync),
 ):
     """Create a snapshot of the current world state."""
+    _require_world_access(db, current_user.user_id, body.world_id)
     try:
         result = create_snapshot(
             db,
@@ -103,12 +113,21 @@ def api_create_snapshot(
 def api_list_snapshots(
     world_id: Optional[str] = Query(None),
     current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db_sync),
 ):
-    """List all saved snapshots, optionally filtered by world_id."""
+    """List saved snapshots in worlds the user can access."""
+    if world_id is not None:
+        _require_world_access(db, current_user.user_id, world_id)
+        accessible_worlds = {world_id}
+    else:
+        accessible_worlds = {
+            player_world_id
+            for (player_world_id,) in db.query(PlayerDB.world_id).filter(PlayerDB.user_id == current_user.user_id)
+        }
     results = []
     for sid, snap in _snapshots.items():
         meta = snap["metadata"]
-        if world_id and meta["world_id"] != world_id:
+        if meta["world_id"] not in accessible_worlds:
             continue
         results.append(SnapshotMeta(
             snapshot_id=sid,
@@ -135,6 +154,7 @@ def api_restore_snapshot(
     snap = _snapshots.get(body.snapshot_id)
     if snap is None:
         raise HTTPException(status_code=404, detail="Snapshot not found")
+    _require_world_access(db, current_user.user_id, snap["metadata"]["world_id"])
     result = restore_snapshot(
         db,
         snapshot_data=snap["data"],
@@ -148,12 +168,15 @@ def api_compare_snapshots(
     snapshot_a: str = Query(..., description="First snapshot ID"),
     snapshot_b: str = Query(..., description="Second snapshot ID"),
     current_user: TokenData = Depends(get_current_user),
+    db: Session = Depends(get_db_sync),
 ):
     """Compare table counts between two snapshots to visualize divergence."""
     a = _snapshots.get(snapshot_a)
     b = _snapshots.get(snapshot_b)
     if a is None or b is None:
         raise HTTPException(status_code=404, detail="One or both snapshots not found")
+    for world_id in {a["metadata"]["world_id"], b["metadata"]["world_id"]}:
+        _require_world_access(db, current_user.user_id, world_id)
 
     counts_a = a["metadata"].get("table_counts", {})
     counts_b = b["metadata"].get("table_counts", {})
