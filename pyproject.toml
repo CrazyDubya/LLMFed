@@ -47,3 +47,6 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["api_gateway", "agent_service", "core_engine", "llm_abstraction", "models"]
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "session"
