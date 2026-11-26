@@ -9,7 +9,7 @@ import logging
 from typing import Dict, Any, List, Optional
 from collections import defaultdict
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -241,37 +241,37 @@ def top_performers(
         GameWrestlerDB.world_id == world_id
     ).all()
 
-    all_parts = (
-        db.query(MatchParticipantDB, MatchDB)
+    stats = (
+        db.query(
+            MatchParticipantDB.wrestler_id,
+            func.count(MatchParticipantDB.id),
+            func.sum(case((MatchDB.winner_id == MatchParticipantDB.wrestler_id, 1), else_=0)),
+            func.avg(func.nullif(MatchDB.match_rating, 0)),
+        )
         .join(MatchDB, MatchParticipantDB.match_id == MatchDB.id)
         .filter(
-            MatchParticipantDB.wrestler_id.in_([w.id for w in wrestlers]),
             MatchDB.world_id == world_id,
             MatchDB.is_completed,
             MatchDB.winner_id.isnot(None),
         )
+        .group_by(MatchParticipantDB.wrestler_id)
         .all()
     )
-    parts_by_wrestler: Dict[str, list] = {}
-    for p, m in all_parts:
-        parts_by_wrestler.setdefault(p.wrestler_id, []).append((p, m))
+    stats_by_wrestler = {wrestler_id: row for wrestler_id, *row in stats}
 
     leaderboard = []
     for w in wrestlers:
-        parts = parts_by_wrestler.get(w.id, [])
-        total = len(parts)
-        if total == 0:
+        row = stats_by_wrestler.get(w.id)
+        if row is None:
             continue
-        wins = sum(1 for p, m in parts if m.winner_id == w.id)
-        ratings = [m.match_rating for p, m in parts if m.match_rating]
-        avg_rating = round(sum(ratings) / len(ratings), 2) if ratings else 0.0
+        total, wins, avg_rating = row
         leaderboard.append({
             "wrestler_id": w.id,
             "name": w.name,
             "total_matches": total,
             "wins": wins,
             "win_rate": round(wins / total, 3),
-            "avg_match_rating": avg_rating,
+            "avg_match_rating": round(avg_rating, 2) if avg_rating is not None else 0.0,
         })
 
     # Sort by requested metric
