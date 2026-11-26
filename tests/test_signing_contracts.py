@@ -1,4 +1,4 @@
-"""Signing actions must see contracts created earlier in the same tick."""
+"""Contract and manager bond behavior when wrestlers sign."""
 
 import json
 from unittest.mock import patch
@@ -16,7 +16,7 @@ from game_service.player_action_handler import PlayerActionHandler
 from game_service.world_ticker import WorldTicker
 from models.game_models import (
     Base, WorldDB, GameFederationDB, GameWrestlerDB, PlayerDB,
-    PlayerActionDB, ContractDB, GameNarrativeLogDB,
+    PlayerActionDB, ContractDB, GameNarrativeLogDB, ManagerClientDB, ManagerDB, TalentOfferDB,
 )
 
 
@@ -164,3 +164,51 @@ def test_signing_missing_wrestler_does_not_create_contract(db):
         handler.execute(PlayerActionDB(action_type="sign_wrestler", action_data={}))
     db.commit()
     assert db.query(ContractDB).count() == 0
+
+
+@pytest.mark.parametrize("via_talent_offer", [False, True], ids=["promoter-signing", "talent-offer"])
+def test_signing_ends_only_rival_manager_bonds(db, signing_api, via_talent_offer):
+    db.add(GameFederationDB(id="rival", world_id="world", name="Rival Fed", is_npc=False))
+    db.flush()
+    for label, federation in [("rival", "rival"), ("home", "fed"), ("independent", None)]:
+        db.add(ManagerDB(id=f"{label}-manager", world_id="world", name=f"{label.title()} Manager",
+                         federation_id=federation))
+        db.flush()
+        db.add(ManagerClientDB(id=f"{label}-bond", world_id="world", manager_id=f"{label}-manager",
+                               client_wrestler_id="wrestler"))
+
+    if via_talent_offer:
+        db.get(WorldDB, "world").current_game_date = "2026-01-03"
+        db.get(GameWrestlerDB, "wrestler").is_npc = True
+        db.add_all([
+            ContractDB(world_id="world", wrestler_id="wrestler", federation_id="rival",
+                       start_date="2026-01-01"),
+            TalentOfferDB(world_id="world", wrestler_id="wrestler", federation_id="fed",
+                          offered_date="2026-01-03", salary_offered=2500),
+        ])
+    db.commit()
+
+    if not via_talent_offer:
+        response = signing_api.post("/game/worlds/world/actions", json={
+            "action_type": "sign_wrestler",
+            "action_data": {"wrestler_id": "wrestler", "federation_id": "fed"},
+        })
+        assert response.status_code == 202, response.text
+    with patch("game_service.inter_federation_service.random") as rng:
+        rng.random.return_value = 0.0
+        tick = signing_api.post("/game/worlds/world/tick")
+    assert tick.status_code == 200, tick.text
+    signing_date = tick.json()["current_game_date"]
+    assert db.query(ContractDB).filter_by(status="active").one().federation_id == "fed"
+    if via_talent_offer:
+        assert db.query(TalentOfferDB).one().status == "accepted"
+
+    bonds = signing_api.get("/game/worlds/world/manager-bonds")
+    assert bonds.status_code == 200, bonds.text
+    assert {bond["id"] for bond in bonds.json()} == {"home-bond", "independent-bond"}
+    rival_bond = db.get(ManagerClientDB, "rival-bond")
+    assert rival_bond.is_active is False
+    assert rival_bond.contract_ended == signing_date
+    event = db.query(GameNarrativeLogDB).filter_by(event_type="manager_removed").one()
+    assert event.game_date == signing_date
+    assert event.description == "Rival Manager has parted ways with Free Agent!"

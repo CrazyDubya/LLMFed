@@ -68,6 +68,8 @@ def generate_ppv_calendar(
 ) -> List[PPVEventDB]:
     """Generate a full year of PPV events for a federation.
 
+    The first bookable day is the day after year_start_date.
+
     Number of PPVs scales with prestige:
       70+: 8-12
       40-69: 4-6
@@ -108,7 +110,8 @@ def generate_ppv_calendar(
             # even spacing used for the rest of the calendar.
             ppv_date = datetime(start.year, crown_jewel_month, random.randint(1, 28))
         else:
-            ppv_date = start + timedelta(days=spacing * i + random.randint(-7, 7))
+            day_offset = max(1, spacing * i + random.randint(-7, 7))
+            ppv_date = start + timedelta(days=day_offset)
         date_str = ppv_date.strftime("%Y-%m-%d")
 
         if i == num_ppvs - 1:

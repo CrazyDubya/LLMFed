@@ -52,10 +52,10 @@ function ShowsHub({ worldId }: { worldId: string | null }) {
   const totalPages = Math.ceil((data?.counts[filter] ?? 0) / pageSize);
   const refreshShows = () => queryClient.invalidateQueries({ queryKey: ['world-shows', worldId] });
 
-  // Auto-refresh when ticks or show completions arrive
   const { connected, eventLog } = useWorldSocket(worldId, {
     onTick: refreshShows,
     onShowCompleted: refreshShows,
+    onReconnect: refreshShows,
   });
 
   if (isPending) {

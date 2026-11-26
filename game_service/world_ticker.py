@@ -19,6 +19,7 @@ from game_service.ticker_query_helpers import (
 )
 from game_service import inter_federation_service
 from game_service.player_action_handler import PlayerActionHandler
+from game_service.wrestler_lifecycle_service import recover_injury
 import logging
 import os
 import random
@@ -689,14 +690,9 @@ class WorldTicker:
         wrestlers = get_active_wrestlers(self.db, self.world.id)
 
         for w in wrestlers:
-            if w.is_injured:
-                # Check if injury is healed
-                if w.injury_return_date and w.injury_return_date <= self.world.current_game_date:
-                    w.is_injured = False
-                    w.injury_return_date = None
-                    w.condition = 70
-                    self.events.append(f"{w.name} returns from injury")
-            else:
+            if recover_injury(w, self.world.current_game_date):
+                self.events.append(f"{w.name} returns from injury")
+            elif not w.is_injured:
                 # Natural condition recovery
                 w.condition = min(100, w.condition + random.randint(1, 3))
 

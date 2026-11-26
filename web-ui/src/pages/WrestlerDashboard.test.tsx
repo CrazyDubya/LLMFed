@@ -1,12 +1,56 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import App from '../App';
 
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+it('refreshes the world date when the live feed reconnects without another tick', async () => {
+  const before = '2026-01-01';
+  const after = '2026-01-02';
+  let worldDate = before;
+  const getWorld = vi.fn(() => Response.json({ current_game_date: worldDate }));
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => {
+    if (path === '/game/worlds/career-world') return getWorld();
+    if (path === '/game/auth/me') return Response.json({ id: 'career-user', username: 'career' });
+    if (path === '/game/wrestlers/career-wrestler') {
+      return Response.json({ wrestler: { name: 'Alex Summit' }, stats: null });
+    }
+    return Response.json([]);
+  }));
+  const sockets: TestSocket[] = [];
+  class TestSocket {
+    onopen: (() => void) | null = null;
+    onclose: (() => void) | null = null;
+
+    constructor() { sockets.push(this); }
+    close() { this.onclose?.(); }
+  }
+  vi.stubGlobal('WebSocket', TestSocket);
+  Object.entries({ token: 'test-token', worldId: 'career-world', wrestlerId: 'career-wrestler', playerType: 'wrestler' })
+    .forEach(([key, value]) => localStorage.setItem(key, value));
+  window.history.replaceState(null, '', '/wrestler');
+  render(<App />);
+  await screen.findByText(new RegExp(before));
+  vi.useFakeTimers();
+  act(() => sockets[0].onopen?.());
+  expect(screen.getByText('LIVE')).toBeDefined();
+  expect(getWorld).toHaveBeenCalledTimes(1);
+
+  act(() => sockets[0].close());
+  expect(screen.getByText('OFFLINE')).toBeDefined();
+  worldDate = after;
+  act(() => vi.advanceTimersByTime(1000));
+  expect(getWorld).toHaveBeenCalledTimes(1);
+  await act(async () => sockets[1].onopen?.());
+
+  expect(screen.getByText('LIVE')).toBeDefined();
+  expect(screen.getByText(new RegExp(after))).toBeDefined();
 });
 
 it.each([
