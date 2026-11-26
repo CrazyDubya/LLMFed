@@ -81,6 +81,26 @@ describe('world feed heartbeat', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('keeps heartbeat replies out of the event log without evicting real events', () => {
+    const onTick = vi.fn();
+    const { result } = renderHook(() => useWorldSocket('world', { onTick }));
+    const ws = MockWebSocket.instances[0];
+    const tick = { type: 'tick', tick: 1 };
+    act(() => {
+      ws.open();
+      ws.onmessage?.({ data: JSON.stringify(tick) });
+      for (let i = 0; i < 200; i++) {
+        ws.onmessage?.({ data: '{"type":"pong"}' });
+      }
+    });
+
+    expect(result.current.eventLog).toHaveLength(1);
+    expect(result.current.eventLog).toEqual([tick]);
+    expect(result.current.lastEvent).toEqual(tick);
+    expect(onTick).toHaveBeenCalledExactlyOnceWith(tick);
+    expect(result.current.connected).toBe(true);
+  });
+
   it.each(['close', 'error', 'unmount'] as const)('clears the heartbeat on %s', (event) => {
     const { unmount } = renderHook(() => useWorldSocket('world', { reconnect: false }));
     const ws = MockWebSocket.instances[0];
