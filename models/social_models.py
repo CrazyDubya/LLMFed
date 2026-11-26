@@ -7,7 +7,7 @@ from sqlalchemy import (
     Column, String, Integer, Float, DateTime, JSON, ForeignKey, Text, Boolean,
     UniqueConstraint, Index,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 from datetime import datetime, timezone
 import uuid
 
@@ -94,6 +94,26 @@ class StorylineDB(Base):
     world = relationship("WorldDB", back_populates="storylines")
     participants = relationship("StorylineParticipantDB", back_populates="storyline",
                                 cascade="all, delete-orphan")
+
+    @property
+    def zero_heat_since(self) -> str | None:
+        return (self.ai_notes or {}).get("zero_heat_since")
+
+    @zero_heat_since.setter
+    def zero_heat_since(self, game_date: str | None):
+        notes = dict(self.ai_notes or {})
+        if game_date is None:
+            notes.pop("zero_heat_since", None)
+        else:
+            notes["zero_heat_since"] = game_date
+        self.ai_notes = notes
+
+    @validates("heat", "status")
+    def _reset_zero_heat_timer(self, key, value):
+        if ((key == "heat" and value is not None and value > 0)
+                or (key == "status" and value == "resolved")) and self.zero_heat_since:
+            self.zero_heat_since = None
+        return value
 
 
 class StorylineParticipantDB(Base):

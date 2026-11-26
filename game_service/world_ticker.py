@@ -62,6 +62,7 @@ THURSDAY = 3
 FRIDAY = 4
 SATURDAY = 5
 SUNDAY = 6
+ZERO_HEAT_GRACE_DAYS = 7
 
 
 # ---------------------------------------------------------------------------
@@ -439,6 +440,8 @@ class WorldTicker:
     def _advance_storylines(self):
         """Progress active storylines and periodically generate new ones."""
         sl_svc = _get_storyline_service()
+        game_date = self.world.current_game_date
+        expired_cold_arcs = False
 
         active = self.db.query(StorylineDB).filter(
             StorylineDB.world_id == self.world.id,
@@ -464,12 +467,20 @@ class WorldTicker:
             # Long-running climax storylines auto-resolve
             if storyline.status == "climax" and storyline.heat < 30:
                 sl_svc.resolve_storyline(self.db, storyline, "Fizzled out")
+            elif storyline.status in ("brewing", "active") and storyline.heat == 0:
+                if storyline.zero_heat_since is None:
+                    storyline.zero_heat_since = game_date
+                elif game_date >= advance_game_date(storyline.zero_heat_since, ZERO_HEAT_GRACE_DAYS):
+                    sl_svc.resolve_storyline(self.db, storyline, "Fizzled out after a week at zero heat")
+                    storyline.end_date = game_date
+                    expired_cold_arcs = True
+
+        if expired_cold_arcs:
+            self.db.flush()
 
         # Weekly storyline generation (on Wednesdays)
-        if get_day_of_week(self.world.current_game_date) == WEDNESDAY:
-            new_sls = sl_svc.auto_generate_storylines(
-                self.db, self.world.id, self.world.current_game_date
-            )
+        if get_day_of_week(game_date) == WEDNESDAY:
+            new_sls = sl_svc.auto_generate_storylines(self.db, self.world.id, game_date)
             for sl in new_sls:
                 self.events.append(f"New storyline: {sl.name}")
 
@@ -665,6 +676,9 @@ class WorldTicker:
 
                 self._adapt_vision_for_departure(wrestler.id, contract.federation_id, game_date)
 
+        if expiring:
+            self.db.flush()
+
     def _adapt_vision_for_departure(self, wrestler_id: str, federation_id: str, game_date: str):
         """Drop a departing wrestler from the federation's booking vision."""
         def _tick_vision_departure():
@@ -773,7 +787,7 @@ class WorldTicker:
     # ------------------------------------------------------------------
 
     def _manage_tag_teams(self, game_date: str):
-        """NPC feds form/dissolve tag teams (Tuesdays)."""
+        """Form tag teams per NPC federation and check dissolution world-wide (Tuesdays)."""
         if get_day_of_week(game_date) != TUESDAY:
             return
 
@@ -781,7 +795,8 @@ class WorldTicker:
 
         for fed in npc_feds:
             self._npc_form_tag_teams(fed, game_date)
-            self._check_tag_team_dissolution(fed, game_date)
+        if npc_feds:
+            self._check_tag_team_dissolution(game_date)
 
     def _npc_form_tag_teams(self, fed: GameFederationDB, game_date: str):
         """Form tag teams from wrestlers with high chemistry."""
@@ -842,7 +857,7 @@ class WorldTicker:
             self.events.append(f"New tag team: {team_name}")
             break  # One new team per week per fed max
 
-    def _check_tag_team_dissolution(self, fed: GameFederationDB, game_date: str):
+    def _check_tag_team_dissolution(self, game_date: str):
         """Dissolve tag teams where members have diverged."""
         teams = self.db.query(TagTeamDB).filter(
             TagTeamDB.world_id == self.world.id,
