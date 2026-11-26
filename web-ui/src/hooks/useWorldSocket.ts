@@ -31,6 +31,8 @@ interface UseWorldSocketOptions {
   onTick?: (event: WorldEvent) => void;
   /** Called when a show completes */
   onShowCompleted?: (event: WorldEvent) => void;
+  /** Called after an automatic reconnect opens successfully */
+  onReconnect?: () => void;
   /** Auto-reconnect (default true) */
   reconnect?: boolean;
 }
@@ -47,7 +49,7 @@ export function useWorldSocket(worldId: string | null, options: UseWorldSocketOp
   const optionsRef = useRef(options);
   optionsRef.current = options;
 
-  const connect = useCallback(() => {
+  const connect = useCallback((isReconnect = false) => {
     if (!worldId || !token) return;
 
     // Build WebSocket URL relative to current host. Browsers can't set an
@@ -71,6 +73,7 @@ export function useWorldSocket(worldId: string | null, options: UseWorldSocketOp
           ws.send(JSON.stringify({ type: 'ping' }));
         }
       }, HEARTBEAT_INTERVAL_MS);
+      if (isReconnect) optionsRef.current.onReconnect?.();
     };
 
     ws.onmessage = (e) => {
@@ -102,7 +105,7 @@ export function useWorldSocket(worldId: string | null, options: UseWorldSocketOp
       if (optionsRef.current.reconnect !== false) {
         const delay = Math.min(1000 * 2 ** retryCount.current, 30000);
         retryCount.current++;
-        reconnectTimer.current = setTimeout(connect, delay);
+        reconnectTimer.current = setTimeout(() => connect(true), delay);
       }
     };
 
