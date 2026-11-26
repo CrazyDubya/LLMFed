@@ -34,3 +34,6 @@ async def _create_agent_service_tables():
     yield
     await agent_db_engine.dispose()
     _TEST_DB_PATH.unlink(missing_ok=True)
+
+import warnings
+warnings.filterwarnings("ignore", category=ResourceWarning)
