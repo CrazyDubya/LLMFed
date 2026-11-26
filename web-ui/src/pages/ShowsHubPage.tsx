@@ -41,7 +41,7 @@ function ShowsHub({ worldId }: { worldId: string | null }) {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<ShowStatus>('all');
   const [page, setPage] = useState(0);
-  const { data, error, isPending, isPlaceholderData } = useQuery({
+  const { data, error, isFetching, isPending, isPlaceholderData, refetch } = useQuery({
     queryKey: ['world-shows', worldId, filter, page],
     queryFn: worldId
       ? ({ signal }) => api.getWorldShowsPage(worldId, filter, pageSize, page * pageSize, signal)
@@ -135,8 +135,16 @@ function ShowsHub({ worldId }: { worldId: string | null }) {
 
             {/* Shows grid */}
             {error !== null ? (
-              <div role="alert" className="rounded-lg border border-red-800/50 bg-red-900/20 p-4 text-sm text-red-400">
-                Could not load shows: {getErrorMessage(error)}
+              <div className="rounded-lg border border-red-800/50 bg-red-900/20 p-4 text-sm text-red-400">
+                <p role="alert">Could not load shows: {getErrorMessage(error)}</p>
+                <button
+                  type="button"
+                  className={`mt-3 ${pageButtonClass}`}
+                  disabled={isFetching}
+                  onClick={() => void refetch()}
+                >
+                  Retry
+                </button>
               </div>
             ) : isPlaceholderData ? (
               <div role="status" className="py-12 text-center text-gray-400">Loading shows...</div>

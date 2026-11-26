@@ -50,3 +50,34 @@ it('shows world-wide counts and reaches the last completed show', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Upcoming (101)' }));
   expect(await screen.findByRole('heading', { name: 'Show 205' })).toBeDefined();
 });
+
+it('retries the requested page after a Next request fails', async () => {
+  let nextRequests = 0;
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => {
+    const url = new URL(path, window.location.origin);
+    if (url.pathname === '/game/auth/me') return Response.json({ id: 'shows-user' });
+    if (url.pathname === '/scheduler/status') return Response.json({ running: false });
+    const offset = Number(url.searchParams.get('offset'));
+    if (offset === 25 && ++nextRequests === 1) {
+      return Response.json({ message: 'Temporarily unavailable' }, { status: 503 });
+    }
+    return Response.json({
+      shows: [{ id: String(offset), name: `Show at offset ${offset}`, show_type: 'weekly' }],
+      counts: { all: 26, completed: 0, upcoming: 26 },
+    });
+  }));
+  vi.stubGlobal('WebSocket', class { close() {} });
+  localStorage.setItem('token', 'shows-test-token');
+  localStorage.setItem('worldId', 'shows-retry-world');
+  window.history.replaceState(null, '', '/shows');
+  render(<App />);
+
+  expect(await screen.findByRole('heading', { name: 'Show at offset 0' })).toBeDefined();
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('Temporarily unavailable');
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByRole('heading', { name: 'Show at offset 25' })).toBeDefined();
+  expect(screen.getByText('Page 2 of 2')).toBeDefined();
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(nextRequests).toBe(2);
+});
