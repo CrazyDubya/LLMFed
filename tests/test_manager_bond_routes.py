@@ -11,19 +11,19 @@ from agent_service.database import get_db, get_db_sync
 from api_gateway.main import app
 from api_gateway.security import create_access_token
 from models.db_models import Base
-from models.game_models import GameWrestlerDB, ManagerDB, UserDB, WorldDB
+from models.game_models import (
+    GameFederationDB, GameWrestlerDB, ManagerClientDB, ManagerDB, PlayerDB, UserDB, WorldDB,
+)
 
 
-@pytest_asyncio.fixture
-async def bond_client(tmp_path, monkeypatch):
+@pytest.fixture
+def bond_sessions(tmp_path):
     db_path = tmp_path / "bonds.db"
     engine = create_engine(f"sqlite:///{db_path}")
-    auth_engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
     sessions = sessionmaker(bind=engine)
-    auth_sessions = async_sessionmaker(bind=auth_engine)
     Base.metadata.create_all(engine)
     with sessions.begin() as db:
-        user = UserDB(username="bond-player", email="bond@example.test", password_hash="unused")
+        user = UserDB(id="bond-player", username="bond-player", email="bond@example.test", password_hash="unused")
         db.add_all([
             user,
             WorldDB(id="bond-world", name="Bond World", current_game_date="2026-01-10"),
@@ -35,10 +35,20 @@ async def bond_client(tmp_path, monkeypatch):
             GameWrestlerDB(id="bond-wrestler", world_id="bond-world", name="The Hero"),
             GameWrestlerDB(id="other-wrestler", world_id="other-world", name="The Outsider"),
         ])
-        token = create_access_token({"sub": user.id})
+    try:
+        yield sessions
+    finally:
+        engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def bond_client(tmp_path, monkeypatch, bond_sessions):
+    auth_engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'bonds.db'}")
+    auth_sessions = async_sessionmaker(bind=auth_engine)
+    token = create_access_token({"sub": "bond-player"})
 
     def override_db_sync():
-        with sessions() as db:
+        with bond_sessions() as db:
             yield db
 
     async def override_db():
@@ -54,7 +64,48 @@ async def bond_client(tmp_path, monkeypatch):
     finally:
         client.close()
         await auth_engine.dispose()
-        engine.dispose()
+
+
+def test_list_manager_bonds_filters_by_manager_federation(bond_client, bond_sessions):
+    with bond_sessions.begin() as db:
+        db.add_all([
+            GameFederationDB(id="home-fed", world_id="bond-world", name="Home Federation"),
+            GameFederationDB(id="rival-fed", world_id="bond-world", name="Rival Federation"),
+            UserDB(id="rival-user", username="rival", email="rival@example.test", password_hash="unused"),
+        ])
+        db.flush()
+        db.add_all([
+            PlayerDB(user_id="bond-player", world_id="bond-world", player_type="promoter", federation_id="home-fed"),
+            PlayerDB(user_id="rival-user", world_id="bond-world", player_type="promoter", federation_id="rival-fed"),
+            ManagerDB(id="home-manager", world_id="bond-world", name="Home Manager", federation_id="home-fed"),
+            ManagerDB(id="rival-manager", world_id="bond-world", name="Rival Manager", federation_id="rival-fed"),
+        ])
+        db.flush()
+        db.add_all([
+            ManagerClientDB(id="home-bond", world_id="bond-world", manager_id="home-manager",
+                            client_wrestler_id="bond-wrestler"),
+            ManagerClientDB(id="rival-bond", world_id="bond-world", manager_id="rival-manager",
+                            client_wrestler_id="bond-wrestler"),
+            ManagerClientDB(id="freelance-bond", world_id="bond-world", manager_id="bond-manager",
+                            client_wrestler_id="bond-wrestler"),
+        ])
+
+    endpoint = "/game/worlds/bond-world/manager-bonds"
+    scoped = bond_client.get(endpoint, params={"federation_id": "home-fed"})
+    assert scoped.status_code == 200, scoped.text
+    assert [bond["id"] for bond in scoped.json()] == ["home-bond"]
+    assert scoped.json()[0]["manager_name"] == "Home Manager"
+
+    unscoped = bond_client.get(endpoint)
+    assert unscoped.status_code == 200, unscoped.text
+    assert {bond["id"] for bond in unscoped.json()} == {"home-bond", "rival-bond", "freelance-bond"}
+
+    empty = bond_client.get(endpoint, params={"federation_id": "missing-fed"})
+    assert empty.status_code == 200, empty.text
+    assert empty.json() == []
+
+    forbidden = bond_client.delete("/game/manager-bonds/rival-bond")
+    assert forbidden.status_code == 403, forbidden.text
 
 
 def test_assign_manager_missing_world(bond_client):

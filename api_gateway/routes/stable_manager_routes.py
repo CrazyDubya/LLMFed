@@ -97,11 +97,12 @@ def api_create_manager(
 @router.get("/worlds/{world_id}/manager-bonds")
 def api_list_manager_bonds(
     world_id: str,
+    federation_id: Optional[str] = None,
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
 ):
-    """List all manager-client bonds in a world."""
-    bonds = manager_service.list_manager_bonds(db, world_id)
+    """List manager-client bonds in a world, optionally filtered by manager federation."""
+    bonds = manager_service.list_manager_bonds(db, world_id, federation_id=federation_id)
     results = []
     for item in bonds:
         bond = item["bond"]

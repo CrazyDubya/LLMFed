@@ -35,7 +35,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
         api.getWorld(worldId),
         api.listStorylines(worldId, undefined, federationId),
         api.listStables(worldId, federationId).catch(() => []),
-        api.listManagerBonds(worldId).catch(() => []),
+        api.listManagerBonds(worldId, federationId).catch(() => []),
         api.listManagers(worldId, federationId).catch(() => []),
       ]);
       setFederation(fed);
