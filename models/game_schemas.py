@@ -76,8 +76,7 @@ class WorldResponse(BaseModel):
 # Player
 # ---------------------------------------------------------------------------
 
-class PlayerCreate(BaseModel):
-    world_id: str
+class PlayerOptions(BaseModel):
     player_type: str = Field(pattern=r"^(promoter|wrestler)$")
     # If promoter: create or join a federation
     federation_name: Optional[str] = Field(default=None, max_length=100)
@@ -87,6 +86,15 @@ class PlayerCreate(BaseModel):
     wrestler_gimmick: Optional[str] = None
     wrestler_alignment: Optional[str] = Field(default="face", pattern=r"^(face|heel|tweener)$")
     wrestler_style: Optional[str] = None  # technical, brawler, highflyer, powerhouse, allrounder
+
+
+class PlayerCreate(PlayerOptions):
+    world_id: str
+
+
+class NewGameCreate(BaseModel):
+    world: WorldCreate
+    player: PlayerOptions
 
 
 class PlayerResponse(BaseModel):

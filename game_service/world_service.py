@@ -284,6 +284,16 @@ def create_world(db: Session, name: str, description: str = None,
                  is_multiplayer: bool = False, max_players: int = 1,
                  world_config: dict = None) -> WorldDB:
     """Create a new game world with NPC federations and wrestlers."""
+    world = _stage_world(db, name, description, is_multiplayer, max_players, world_config)
+    db.commit()
+    db.refresh(world)
+    logger.info("Created world '%s'", name)
+    return world
+
+
+def _stage_world(db: Session, name: str, description: str = None,
+                 is_multiplayer: bool = False, max_players: int = 1,
+                 world_config: dict = None) -> WorldDB:
     world = WorldDB(
         name=name,
         description=description,
@@ -405,10 +415,15 @@ def create_world(db: Session, name: str, description: str = None,
             # Generate PPV calendar for the year
             generate_ppv_calendar(db, fed, world.current_game_date)
 
-    db.commit()
-    db.refresh(world)
-    logger.info(f"Created world '{name}' with {len(federations)} federations and {num_wrestlers} wrestlers")
     return world
+
+
+def create_new_game(db: Session, user_id: str, world_options: dict, player_options: dict) -> PlayerDB:
+    """Create the world and its first player in one transaction."""
+    with db.begin():
+        world = _stage_world(db, **world_options)
+        player = _stage_player(db, user_id, world.id, **player_options)
+    return player
 
 
 # ---------------------------------------------------------------------------
@@ -418,6 +433,14 @@ def create_world(db: Session, name: str, description: str = None,
 def create_player(db: Session, user_id: str, world_id: str, player_type: str,
                   **kwargs) -> PlayerDB:
     """Create a player in a world (promoter or wrestler)."""
+    player = _stage_player(db, user_id, world_id, player_type, **kwargs)
+    db.commit()
+    db.refresh(player)
+    return player
+
+
+def _stage_player(db: Session, user_id: str, world_id: str, player_type: str,
+                  **kwargs) -> PlayerDB:
     world = db.query(WorldDB).filter(WorldDB.id == world_id).first()
     if not world:
         raise ValueError("World not found")
@@ -452,8 +475,6 @@ def create_player(db: Session, user_id: str, world_id: str, player_type: str,
         raise ValueError(f"Invalid player type: {player_type}")
 
     db.add(player)
-    db.commit()
-    db.refresh(player)
     return player
 
 
