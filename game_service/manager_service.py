@@ -183,6 +183,12 @@ def assign_manager(
     if wrestler is None:
         raise WrestlerNotFoundError("Wrestler not found in this world")
 
+    other_active_bond = db.query(ManagerClientDB.id).filter_by(
+        world_id=world_id, client_wrestler_id=client_wrestler_id, is_active=True,
+    ).filter(ManagerClientDB.manager_id != manager_id).first()
+    if other_active_bond:
+        raise ValueError("Wrestler already has an active manager")
+
     # Calculate initial bonuses based on manager stats and specialization
     charisma_bonus, heat_bonus = _calculate_bonuses(manager, specialization)
 
