@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from models.db_models import Base
 from models.game_models import (
-    ContractDB, MatchDB, MatchParticipantDB, GameFederationDB, GameWrestlerDB, PPVEventDB, WorldDB,
+    ChampionshipDB, ContractDB, MatchDB, MatchParticipantDB, GameFederationDB, GameWrestlerDB, PPVEventDB, WorldDB,
 )
 from game_service.world_service import create_world
 from game_service.show_service import (
@@ -118,6 +118,41 @@ class TestShowCreation:
 
 
 class TestNPCBooking:
+    @pytest.mark.parametrize("holder", [None, 0, 2], ids=["vacant", "holder-booked", "holder-absent"])
+    def test_npc_weekly_title_match(self, db_session, monkeypatch, holder):
+        from game_service import show_service
+
+        world = WorldDB(name="Weekly world")
+        db_session.add(world)
+        db_session.flush()
+        fed = GameFederationDB(world_id=world.id, name="Weekly federation", is_npc=True)
+        wrestlers = [
+            GameWrestlerDB(world_id=world.id, name=f"Wrestler {i}", is_injured=i == 2)
+            for i in range(3)
+        ]
+        db_session.add_all([fed, *wrestlers])
+        db_session.flush()
+        db_session.add_all(
+            ContractDB(world_id=world.id, federation_id=fed.id, wrestler_id=w.id, start_date="2026-01-01")
+            for w in wrestlers
+        )
+        champ = ChampionshipDB(
+            world_id=world.id, federation_id=fed.id, name="World title",
+            current_holder_id=wrestlers[holder].id if holder is not None else None,
+        )
+        db_session.add(champ)
+        show = create_show(db_session, world.id, fed.id, "Weekly")
+        monkeypatch.setattr(show_service.random, "choices", lambda *args, **kwargs: ["count_out"])
+
+        segment, = npc_book_card(db_session, show)
+
+        match = db_session.get(MatchDB, segment.match_id)
+        assert {p.wrestler_id for p in match.participants} == {w.id for w in wrestlers[:2]}
+        assert match.is_title_match is (holder != 2)
+        assert match.championship_id == (champ.id if holder != 2 else None)
+        assert match.finish_type == ("pinfall" if holder != 2 else "count_out")
+        assert champ.current_holder_id == (wrestlers[holder].id if holder is not None else None)
+
     def test_completed_show_rejects_booking(self, db_session, world_with_fed):
         world, fed = world_with_fed
         show = create_show(db_session, world.id, fed.id, "Completed show")

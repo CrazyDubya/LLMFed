@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from models.db_models import Base
 from models.game_models import (
     WorldDB, GameFederationDB, GameWrestlerDB, WrestlerStatsDB,
-    ContractDB, ChampionshipDB, WrestlerPushDB, PPVEventDB,
+    BookingVisionDB, ContractDB, ChampionshipDB, MatchDB, WrestlerPushDB, PPVEventDB,
 )
 
 
@@ -227,6 +227,56 @@ class TestVisionGeneration:
 # =========================================================================
 
 class TestPPVCalendar:
+    @pytest.mark.parametrize("challenger_count", [0, 1, 3])
+    @pytest.mark.parametrize("holder_state", ["vacant", "held", "stale-vision", "filled-before-show", "storyline-overlap"])
+    def test_plan_and_book_ppv_title_match(self, db_session, challenger_count, holder_state):
+        from game_service.ppv_calendar_service import plan_ppv_card_from_vision
+        from game_service.show_service import create_show, npc_book_card
+
+        world = _create_world(db_session)
+        fed = _create_fed(db_session)
+        holder, *challengers = _create_roster(db_session, fed, count=4)
+        starts_held = holder_state in ("held", "stale-vision")
+        champ = ChampionshipDB(
+            world_id=world.id, federation_id=fed.id, name="World title",
+            current_holder_id=holder.id if starts_held else None,
+        )
+        ppv = PPVEventDB(world_id=world.id, federation_id=fed.id, name="PPV", scheduled_date="2026-03-15")
+        db_session.add_all([champ, ppv])
+        db_session.flush()
+        challenger_ids = [w.id for w in challengers[:challenger_count]]
+        vision = BookingVisionDB(title_pipelines={
+            champ.id: {
+                "current_holder": holder.id if holder_state == "held" else None,
+                "next_challengers": challenger_ids,
+            },
+        })
+        if holder_state == "storyline-overlap" and challenger_count >= 2:
+            vision.planned_storylines = [{"wrestler_ids": [holder.id, challenger_ids[0]]}]
+
+        plan_ppv_card_from_vision(db_session, ppv, vision)
+
+        if holder_state == "held" and challenger_ids:
+            expected_pair = [holder.id, challenger_ids[0]]
+        elif not starts_held and len(challenger_ids) >= 2:
+            expected_pair = challenger_ids[:2]
+        else:
+            assert not ppv.planned_main_event
+            return
+        assert ppv.planned_main_event.get("title_id") == champ.id
+        assert ppv.planned_main_event["wrestler_ids"] == expected_pair
+        assert ppv.planned_main_event["status"] == "penciled"
+
+        if holder_state == "filled-before-show":
+            champ.current_holder_id = holder.id
+        show = create_show(db_session, world.id, fed.id, ppv.name, show_type="ppv", game_date=ppv.scheduled_date)
+        segments = npc_book_card(db_session, show, ppv_event=ppv)
+
+        planned_match = db_session.get(MatchDB, segments[0].match_id)
+        assert {p.wrestler_id for p in planned_match.participants} == set(expected_pair)
+        assert planned_match.is_title_match is (holder_state != "filled-before-show")
+        assert planned_match.championship_id == (None if holder_state == "filled-before-show" else champ.id)
+
     def test_high_prestige_gets_more_ppvs(self, db_session):
         random.seed(42)
         _create_world(db_session)

@@ -634,12 +634,12 @@ def npc_book_card(db: Session, show: ShowDB, ppv_event=None, **_kwargs) -> list:
             w1, push_map, PUSH_TIERS) >= _calculate_wrestler_score(
             w2, push_map, PUSH_TIERS) else w2
 
-        # Title match for main event if champion is available
+        # Title match for main event if the belt is vacant or the champion is available
         is_title = False
         champ_id = None
         if is_main_event_slot and championships:
             champ = championships[0]
-            if champ.current_holder_id in (w1.id, w2.id):
+            if champ.current_holder_id is None or champ.current_holder_id in (w1.id, w2.id):
                 is_title = True
                 champ_id = champ.id
 
@@ -726,10 +726,29 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
     def pick_winner(wids):
         return max((wrestler_map[wid] for wid in wids), key=lambda w: _calculate_wrestler_score(w, push_map, PUSH_TIERS))
 
+    vacant_title_ids = {champ.id for champ in championships if champ.current_holder_id is None}
+
+    def title_id_for_match(planned):
+        title_id = planned.get("title_id")
+        if planned.get("for_vacant_title") and title_id not in vacant_title_ids:
+            return None
+        return title_id
+
+    main_event = ppv_event.planned_main_event or {}
+    title_id = title_id_for_match(main_event)
+    vacant_main_event_wrestlers = []
+    if main_event.get("for_vacant_title") and title_id:
+        contenders = available_wrestlers(main_event)
+        if len(contenders) >= 2:
+            vacant_main_event_wrestlers = contenders
+
     # Book planned undercard matches first
     for planned in (ppv_event.planned_matches or []):
         available = available_wrestlers(planned)
-        if len(available) < 2:
+        undercard_title_id = title_id_for_match(planned)
+        if len(available) < 2 or (
+            not undercard_title_id and any(wid in vacant_main_event_wrestlers for wid in available)
+        ):
             continue
         used.update(available)
 
@@ -737,8 +756,8 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
             db, show, show.world_id,
             wrestler_ids=available,
             match_type=planned.get("match_type", "singles"),
-            is_title_match=bool(planned.get("title_id")),
-            championship_id=planned.get("title_id"),
+            is_title_match=bool(undercard_title_id),
+            championship_id=undercard_title_id,
             planned_winner_id=pick_winner(available).id,
             planned_finish="pinfall",
             position=position,
@@ -747,14 +766,12 @@ def _book_ppv_card(db, show, fed, ppv_event, wrestlers, championships, push_map,
         position += 1
 
     # Book the main event last (highest position)
-    main_event = ppv_event.planned_main_event or {}
     me_available = available_wrestlers(main_event)
 
     if len(me_available) >= 2:
         used.update(me_available)
 
         # Main event: champion usually retains at non-crown-jewel, 40% title change at crown jewel
-        title_id = main_event.get("title_id")
         champ = None
         if title_id:
             champ = db.query(ChampionshipDB).filter(ChampionshipDB.id == title_id).first()
