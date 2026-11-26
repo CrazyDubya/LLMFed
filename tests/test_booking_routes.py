@@ -220,16 +220,17 @@ def test_tick_runs_show_booked_for_current_game_date(booking_client):
     [
         ("2026-01-03", "Show date 2026-01-03 cannot be before the current game date (2026-01-04)"),
         ("2025-12-31", "Show date 2025-12-31 cannot be before the current game date (2026-01-04)"),
-        ("2026-02-30", "Invalid show date '2026-02-30': expected a valid YYYY-MM-DD date"),
-        ("2026-02-29", "Invalid show date '2026-02-29': expected a valid YYYY-MM-DD date"),
-        ("2026-1-05", "Invalid show date '2026-1-05': expected a valid YYYY-MM-DD date"),
-        ("2026-W02-1", "Invalid show date '2026-W02-1': expected a valid YYYY-MM-DD date"),
-        ("not-a-date", "Invalid show date 'not-a-date': expected a valid YYYY-MM-DD date"),
-        ("", "Invalid show date '': expected a valid YYYY-MM-DD date"),
+        ("2026-02-30", "Invalid show date: expected a valid YYYY-MM-DD date"),
+        ("2026-02-29", "Invalid show date: expected a valid YYYY-MM-DD date"),
+        ("2026-1-05", "Invalid show date: expected a valid YYYY-MM-DD date"),
+        ("2026-W02-1", "Invalid show date: expected a valid YYYY-MM-DD date"),
+        ("2026-01-05\nINFO forged", "Invalid show date: expected a valid YYYY-MM-DD date"),
+        ("not-a-date", "Invalid show date: expected a valid YYYY-MM-DD date"),
+        ("", "Invalid show date: expected a valid YYYY-MM-DD date"),
     ],
     ids=[
         "yesterday", "prior-year", "feb-30", "non-leap-feb-29",
-        "non-canonical-month", "iso-week", "malformed", "empty",
+        "non-canonical-month", "iso-week", "newline-injection", "malformed", "empty",
     ],
 )
 @pytest.mark.parametrize("via_http", [False, True], ids=["service", "http"])

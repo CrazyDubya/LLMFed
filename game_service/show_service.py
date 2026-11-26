@@ -92,14 +92,15 @@ def _get_available_wrestlers(db: Session, wrestler_ids: list):
 
 def validate_show_date(game_date: str, current_game_date: str | None = None) -> str:
     """Validate a canonical YYYY-MM-DD show date not before current_game_date."""
+    invalid_msg = "Invalid show date: expected a valid YYYY-MM-DD date"
     if not isinstance(game_date, str) or len(game_date) != 10:
-        raise ValueError(f"Invalid show date '{game_date}': expected a valid YYYY-MM-DD date")
+        raise ValueError(invalid_msg)
     try:
         parsed = date.fromisoformat(game_date)
     except ValueError:
-        raise ValueError(f"Invalid show date '{game_date}': expected a valid YYYY-MM-DD date") from None
+        raise ValueError(invalid_msg) from None
     if parsed.isoformat() != game_date:
-        raise ValueError(f"Invalid show date '{game_date}': expected a valid YYYY-MM-DD date")
+        raise ValueError(invalid_msg)
     if current_game_date is not None:
         current = date.fromisoformat(current_game_date)
         if parsed < current:
