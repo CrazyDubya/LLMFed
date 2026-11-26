@@ -209,9 +209,9 @@ async function renderRefreshDashboard() {
     blockRefresh: () => {
       const response = deferredResponse();
       federationResponse = response.promise;
-      return () => {
+      return (result = Response.json({ name: 'Summit Wrestling' })) => {
         federationResponse = undefined;
-        response.resolve(Response.json({ name: 'Summit Wrestling' }));
+        response.resolve(result);
       };
     },
     expectRefreshes: (count: number) => expect(
@@ -261,6 +261,21 @@ it('refreshes after Next Day without a socket notification', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Next Day' }));
   await act(async () => advance.resolve(Response.json({ current_tick: 2 })));
   expectRefreshes(1);
+});
+
+it('retries a failed dashboard load on a later completed show for the same tick', async () => {
+  const { blockRefresh, burst, emit, expectRefreshes } = await renderRefreshDashboard();
+  const unblock = blockRefresh();
+  await act(async () => burst(2));
+  await act(async () => emit('show_completed'));
+  expectRefreshes(1);
+  await act(async () => unblock(Response.json({ message: 'Could not load federation' }, { status: 500 })));
+  expect(screen.getByText('Could not load federation')).toBeTruthy();
+  expectRefreshes(1);
+  await act(async () => emit('show_completed'));
+  expectRefreshes(2);
+  await act(async () => emit('show_completed'));
+  expectRefreshes(2);
 });
 
 it('still refreshes for malformed ticks and for deferred events when Next Day fails', async () => {

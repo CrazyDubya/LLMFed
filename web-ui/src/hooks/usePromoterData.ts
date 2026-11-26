@@ -24,6 +24,7 @@ function createRefreshState(scope: Scope) {
     active: true,
     running: null as Promise<void> | null,
     queuedTick: null as number | null,
+    inFlightTick: unknownTick,
     coveredTick: unknownTick,
     lastSocketTick: unknownTick,
     advancing: 0,
@@ -32,6 +33,10 @@ function createRefreshState(scope: Scope) {
 }
 
 type RefreshState = ReturnType<typeof createRefreshState>;
+
+function needsRefresh(refresh: RefreshState, tick: number) {
+  return tick === unknownTick || tick > Math.max(refresh.coveredTick, refresh.inFlightTick);
+}
 
 export function usePromoterData(worldId: string | null, federationId: string | null) {
   const [federation, setFederation] = useState<any>(null);
@@ -57,7 +62,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
 
   const fetchData = useCallback(async (refresh: RefreshState) => {
     const { worldId, federationId } = refresh.scope;
-    if (!worldId || !federationId) return;
+    if (!worldId || !federationId) return false;
     try {
       const requests = [
         api.getFederation(federationId),
@@ -87,7 +92,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
         const detail = await api.getWrestler(id).catch(() => null);
         if (detail?.wrestler?.name) wrestlerNames.set(id, detail.wrestler.name);
       }));
-      if (!refresh.active) return;
+      if (!refresh.active) return false;
       setFederation(fed);
       setRoster(rost);
       setFreeAgents(agents);
@@ -102,8 +107,10 @@ export function usePromoterData(worldId: string | null, federationId: string | n
       setStables(stbs);
       setManagerBonds(bonds);
       setManagers(mgrs);
+      return true;
     } catch (err) {
       if (refresh.active) setError(getErrorMessage(err));
+      return false;
     }
   }, []);
 
@@ -113,9 +120,12 @@ export function usePromoterData(worldId: string | null, federationId: string | n
     return refresh.running ??= Promise.resolve().then(async () => {
       try {
         while (refresh.active && refresh.queuedTick !== null) {
-          refresh.coveredTick = Math.max(refresh.coveredTick, refresh.queuedTick);
+          const tick = refresh.inFlightTick = refresh.queuedTick;
           refresh.queuedTick = null;
-          await fetchData(refresh);
+          if (await fetchData(refresh)) {
+            refresh.coveredTick = Math.max(refresh.coveredTick, tick);
+          }
+          refresh.inFlightTick = unknownTick;
         }
       } finally {
         refresh.running = null;
@@ -147,7 +157,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
     const refresh = getRefresh();
     if (!refresh || (event.world_id && event.world_id !== worldId)) return;
     const tick = refresh.lastSocketTick = tickNumber(event.tick);
-    if (tick === unknownTick || tick > refresh.coveredTick) refreshFromSocket(refresh, tick);
+    if (needsRefresh(refresh, tick)) refreshFromSocket(refresh, tick);
   }, [getRefresh, refreshFromSocket, worldId]);
 
   const onShowCompleted = useCallback((event: WorldEvent) => {
@@ -155,7 +165,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
     if (!refresh || (event.world_id && event.world_id !== worldId)) return;
     const tick = refresh.lastSocketTick;
     // The server commits the show's data before broadcasting its tick.
-    if (tick === unknownTick || tick > refresh.coveredTick) refreshFromSocket(refresh, tick);
+    if (needsRefresh(refresh, tick)) refreshFromSocket(refresh, tick);
   }, [getRefresh, refreshFromSocket, worldId]);
 
   const onReconnect = useCallback(() => {
