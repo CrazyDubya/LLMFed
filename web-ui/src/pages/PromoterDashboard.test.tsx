@@ -35,7 +35,13 @@ it.each([
 
 it('shows written world news separately from the Live Feed', async () => {
   const headline = 'Weekly Dirt Sheet: Behind the Curtain';
-  const body = "- Summit Wrestling is looking to make a big signing.\n\n- Its talent is optimistic.";
+  const rumors = [
+    'Summit Wrestling is looking to make a big signing.',
+    'Its talent is optimistic.',
+    'Rival promoters are watching closely.',
+  ];
+  const reportHeadline = 'Summit Weekly delivers solid action';
+  const reportParagraph = 'Summit Weekly earned an overall rating of 3.5 stars.';
   const liveEvent = 'Summit Wrestling completed a show';
   const rawNarrative = 'The main event drew a big crowd';
   let emitLiveEvent: () => void;
@@ -55,11 +61,19 @@ it('shows written world news separately from the Live Feed', async () => {
       '/game/worlds/news-world/news?limit=20': [{
         id: 'article',
         headline,
-        body,
+        body: `- ${rumors[0]}\n\n- ${rumors[1]}\n- ${rumors[2]}`,
         category: 'dirt_sheet',
         game_date: '2026-01-07',
         source: 'Wrestling Observer Newsletter',
         is_kayfabe: false,
+      }, {
+        id: 'report',
+        headline: reportHeadline,
+        body: 'Summit Weekly earned an overall\nrating of 3.5 stars.\n\nFans filled the arena.',
+        category: 'show_results',
+        game_date: '2026-01-06',
+        source: 'Summit Report',
+        is_kayfabe: true,
       }],
     };
     return Response.json(responses[path] ?? []);
@@ -71,9 +85,14 @@ it('shows written world news separately from the Live Feed', async () => {
   await screen.findByRole('heading', { name: 'Summit Wrestling' });
   fireEvent.click(screen.getByRole('button', { name: 'News' }));
 
-  const article = within(await screen.findByRole('article'));
+  const [dirtSheet, showResults] = await screen.findAllByRole('article');
+  const article = within(dirtSheet);
   expect(article.getByRole('heading', { name: headline })).toBeTruthy();
-  expect(article.getByText(body, { normalizer: text => text })).toBeTruthy();
+  const list = within(article.getByRole('list'));
+  expect(list.getAllByRole('listitem').map(item => item.textContent)).toEqual(rumors);
+  expect(within(showResults).getByRole('heading', { name: reportHeadline })).toBeTruthy();
+  expect(Array.from(showResults.querySelectorAll('p')).map(p => p.textContent))
+    .toEqual(['Summit Report', reportParagraph, 'Fans filled the arena.']);
   expect(article.getByText('dirt sheet')).toBeTruthy();
   expect(article.getByText('Wrestling Observer Newsletter')).toBeTruthy();
   expect(article.getByText('2026-01-07').getAttribute('datetime')).toBe('2026-01-07');

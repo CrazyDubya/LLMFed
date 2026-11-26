@@ -1,5 +1,24 @@
 import type { WorldNewsArticle } from '../../api/client';
 
+type BodyBlock = { kind: 'list'; items: string[] } | { kind: 'paragraph'; text: string };
+
+function splitArticleBody(body: string): BodyBlock[] {
+  const blocks: BodyBlock[] = [];
+  for (const block of body.trim().split(/\r?\n\s*\r?\n/)) {
+    if (!block) continue;
+    const lines = block.split(/\r?\n/).map(line => line.trim());
+    if (lines.every(line => line.startsWith('- '))) {
+      const items = lines.map(line => line.slice(2));
+      const previous = blocks.at(-1);
+      if (previous?.kind === 'list') previous.items.push(...items);
+      else blocks.push({ kind: 'list', items });
+    } else {
+      blocks.push({ kind: 'paragraph', text: lines.join(' ') });
+    }
+  }
+  return blocks;
+}
+
 export default function NewsTab({ news }: { news: WorldNewsArticle[] | 'error' | null }) {
   const status = news === null ? 'Loading world news…'
     : news === 'error' ? 'World news is unavailable right now.'
@@ -39,7 +58,15 @@ export default function NewsTab({ news }: { news: WorldNewsArticle[] | 'error' |
               <h3 className="text-lg font-semibold leading-snug text-white">{article.headline}</h3>
               <p className="mt-1 text-xs text-gray-400">{article.source}</p>
             </header>
-            <p className="max-w-prose whitespace-pre-line text-sm leading-relaxed text-gray-300">{article.body}</p>
+            <div className="max-w-prose space-y-3 text-sm leading-relaxed text-gray-300">
+              {splitArticleBody(article.body).map((block, index) => block.kind === 'list' ? (
+                <ul key={index} className="list-disc space-y-1 pl-5 marker:text-gray-500">
+                  {block.items.map((item, itemIndex) => <li key={itemIndex}>{item}</li>)}
+                </ul>
+              ) : (
+                <p key={index}>{block.text}</p>
+              ))}
+            </div>
           </article>
         ))}
       </div>
