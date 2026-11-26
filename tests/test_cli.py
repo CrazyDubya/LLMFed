@@ -78,8 +78,9 @@ class TestMatchReplay:
     def test_missing_match(self, replay_db):
         result = runner.invoke(app, ["match", "missing-match"])
 
-        assert result.exit_code == 0
-        assert "Match 'missing-match' not found." in result.stdout
+        assert result.exit_code == 1, result.output
+        assert "Match 'missing-match' not found." in result.stderr
+        assert not result.stdout
 
     def test_query_error_is_not_hidden(self, replay_db, monkeypatch):
         from sqlalchemy.orm import Query
@@ -133,6 +134,14 @@ class TestFedRoster:
 
 
 class TestCLIExitCodes:
+    @pytest.mark.parametrize("group", ["world", "sim"])
+    def test_status_missing_world(self, replay_db, group):
+        result = runner.invoke(app, [group, "status", "missing-world"])
+
+        assert result.exit_code == 1, result.output
+        assert "World 'missing-world' not found." in result.stderr
+        assert not result.stdout
+
     def test_advance_missing_world(self, replay_db):
         result = runner.invoke(app, ["world", "advance", "missing-world"])
 
