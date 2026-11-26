@@ -241,14 +241,26 @@ class TestRestoreSnapshot:
 
         restored_fed = db_session.query(GameFederationDB).filter_by(world_id=world_id).one()
         restored_wrestler = db_session.query(GameWrestlerDB).filter_by(world_id=world_id).one()
-        assert restored_fed.id != old_fed_id
-        assert restored_wrestler.id != old_wrestler_id
+        assert restored_fed.id == old_fed_id
+        assert restored_wrestler.id == old_wrestler_id
 
         db_session.expire_all()
         assert db_session.get(PlayerDB, promoter_id).federation_id == restored_fed.id
         assert db_session.get(PlayerDB, promoter_id).wrestler_id is None
         assert db_session.get(PlayerDB, wrestler_player_id).wrestler_id == restored_wrestler.id
         assert db_session.get(PlayerDB, wrestler_player_id).federation_id is None
+        assert db_session.get(PlayerDB, late_player_id).federation_id is None
+        assert db_session.get(PlayerDB, other_player_id).federation_id == other_fed_id
+
+        # Restoring the same backup a second time must keep the same player links intact.
+        result_repeat = restore_snapshot(
+            db_session, snapshot["data"], target_world_id=world_id, create_new_world=False,
+        )
+        assert result_repeat["world_id"] == world_id
+        assert db_session.execute(text("PRAGMA foreign_key_check")).fetchall() == []
+        db_session.expire_all()
+        assert db_session.get(PlayerDB, promoter_id).federation_id == old_fed_id
+        assert db_session.get(PlayerDB, wrestler_player_id).wrestler_id == old_wrestler_id
         assert db_session.get(PlayerDB, late_player_id).federation_id is None
         assert db_session.get(PlayerDB, other_player_id).federation_id == other_fed_id
 

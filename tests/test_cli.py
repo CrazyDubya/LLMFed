@@ -215,16 +215,16 @@ class TestCLIExitCodes:
         path = tmp_path / "backup.gz"
         path.write_bytes(data)
 
-        result = runner.invoke(app, ["snapshot", "import", str(path), "--target", "replay-world"])
-
-        assert result.exit_code == 0
-        assert "Restored:" in result.stdout
-        with replay_db() as db:
-            assert db.execute(text("PRAGMA foreign_key_check")).fetchall() == []
-            restored_fed = db.query(GameFederationDB).filter_by(world_id="replay-world").one()
-            restored_player = db.get(PlayerDB, player_id)
-            assert restored_fed.id != old_fed_id
-            assert restored_player.federation_id == restored_fed.id
+        for _ in range(2):
+            result = runner.invoke(app, ["snapshot", "import", str(path), "--target", "replay-world"])
+            assert result.exit_code == 0
+            assert "Restored:" in result.stdout
+            with replay_db() as db:
+                assert db.execute(text("PRAGMA foreign_key_check")).fetchall() == []
+                restored_fed = db.query(GameFederationDB).filter_by(world_id="replay-world").one()
+                restored_player = db.get(PlayerDB, player_id)
+                assert restored_fed.id == old_fed_id
+                assert restored_player.federation_id == restored_fed.id
 
     def test_export_missing_world(self, replay_db, tmp_path):
         result = runner.invoke(app, [
