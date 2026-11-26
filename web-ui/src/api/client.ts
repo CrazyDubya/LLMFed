@@ -55,6 +55,14 @@ export interface ShowSummary {
   federation_name: string;
 }
 
+export interface Championship {
+  id: string;
+  name: string;
+  current_holder_id: string | null;
+  prestige: number;
+  defenses: number;
+}
+
 export interface SchedulerStatus {
   running: boolean;
   interval_seconds: number;
@@ -136,7 +144,7 @@ export const api = {
     request<any[]>(`/federations/${fedId}/roster`),
 
   getChampionships: (fedId: string) =>
-    request<any[]>(`/federations/${fedId}/championships`),
+    request<Championship[]>(`/federations/${fedId}/championships`),
 
   getShows: (fedId: string, limit = 20) =>
     request<any[]>(`/federations/${fedId}/shows?limit=${limit}`),

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api, type World } from '../api/client';
+import { api, type Championship, type World } from '../api/client';
 import { getErrorMessage } from '../utils/errors';
 
 interface Wrestler {
@@ -7,12 +7,14 @@ interface Wrestler {
   condition: number; is_injured: boolean; is_npc: boolean;
 }
 
+type PromoterChampionship = Championship & { holderName: string | null };
+
 export function usePromoterData(worldId: string | null, federationId: string | null) {
   const [federation, setFederation] = useState<any>(null);
   const [roster, setRoster] = useState<Wrestler[]>([]);
   const [freeAgents, setFreeAgents] = useState<Wrestler[]>([]);
   const [shows, setShows] = useState<any[]>([]);
-  const [championships, setChampionships] = useState<any[]>([]);
+  const [championships, setChampionships] = useState<PromoterChampionship[]>([]);
   const [narrative, setNarrative] = useState<any[]>([]);
   const [worldData, setWorldData] = useState<World | null>(null);
   const [storylines, setStorylines] = useState<any[]>([]);
@@ -25,7 +27,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
   const loadData = useCallback(async () => {
     if (!worldId || !federationId) return;
     try {
-      const [fed, rost, agents, sh, champs, narr, world, sls, stbs, bonds, mgrs] = await Promise.all([
+      const [fed, roster, freeAgents, sh, champs, narr, world, sls, stbs, bonds, mgrs] = await Promise.all([
         api.getFederation(federationId),
         api.getRoster(federationId),
         api.listFreeAgents(worldId),
@@ -38,11 +40,24 @@ export function usePromoterData(worldId: string | null, federationId: string | n
         api.listManagerBonds(worldId).catch(() => []),
         api.listManagers(worldId, federationId).catch(() => []),
       ]);
+      const wrestlerNames = new Map<string, string>(
+        [...freeAgents, ...roster].map((w: Wrestler) => [w.id, w.name]),
+      );
+      const missingHolderIds = new Set(champs.flatMap(({ current_holder_id }) =>
+        current_holder_id && !wrestlerNames.has(current_holder_id) ? [current_holder_id] : [],
+      ));
+      await Promise.all([...missingHolderIds].map(async id => {
+        const detail = await api.getWrestler(id).catch(() => null);
+        if (detail?.wrestler?.name) wrestlerNames.set(id, detail.wrestler.name);
+      }));
       setFederation(fed);
-      setRoster(rost);
-      setFreeAgents(agents);
+      setRoster(roster);
+      setFreeAgents(freeAgents);
       setShows(sh);
-      setChampionships(champs);
+      setChampionships(champs.map(champ => ({
+        ...champ,
+        holderName: champ.current_holder_id ? wrestlerNames.get(champ.current_holder_id) ?? null : null,
+      })));
       setNarrative(narr);
       setWorldData(world);
       setStorylines(sls);
