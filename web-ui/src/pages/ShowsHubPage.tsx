@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api, type ShowSummary } from '../api/client';
 import { useGame } from '../context/GameContext';
 import { useWorldSocket } from '../hooks/useWorldSocket';
@@ -131,10 +131,10 @@ export default function ShowsHubPage() {
             ) : (
               <div className="space-y-3">
                 {filtered.map(show => (
-                  <div
+                  <Link
                     key={show.id}
-                    onClick={() => navigate(`/show/${show.id}`)}
-                    className="bg-[#1a1a24] rounded-lg border border-gray-800 hover:border-gray-700 cursor-pointer transition overflow-hidden"
+                    to={`/show/${show.id}`}
+                    className="block bg-[#1a1a24] rounded-lg border border-gray-800 hover:border-gray-700 transition overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                   >
                     <div className="flex items-center justify-between p-4">
                       {/* Left: show info */}
@@ -197,7 +197,7 @@ export default function ShowsHubPage() {
                         </div>
                       )}
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}
