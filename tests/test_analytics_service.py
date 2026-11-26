@@ -264,6 +264,44 @@ class TestAnalyticsRoutes:
         assert body["avg_match_rating"] == 4.33
         assert body["best_match_rating"] == 5.0
 
+    @pytest.mark.parametrize("compare_self", [False, True])
+    def test_head_to_head_separates_third_party_wins(
+        self, analytics_client, db_session, world_with_matches, compare_self
+    ):
+        world, wrestler_a, wrestler_b, _ = world_with_matches
+        wrestler_c = GameWrestlerDB(world_id=world.id, name="The Third Wrestler")
+        db_session.add(wrestler_c)
+        db_session.flush()
+        db_session.add_all([
+            MatchDB(
+                world_id=world.id, finish_type="time_limit_draw", is_completed=True,
+                participants=[
+                    MatchParticipantDB(wrestler_id=wrestler.id)
+                    for wrestler in (wrestler_a, wrestler_b)
+                ],
+            ),
+            MatchDB(
+                world_id=world.id, match_type="triple_threat",
+                winner_id=wrestler_c.id, finish_type="pinfall", is_completed=True,
+                participants=[
+                    MatchParticipantDB(wrestler_id=wrestler.id, is_winner=wrestler == wrestler_c)
+                    for wrestler in (wrestler_a, wrestler_b, wrestler_c)
+                ],
+            ),
+        ])
+        db_session.commit()
+
+        response = analytics_client.get(
+            f"/game/analytics/world/{world.id}/head-to-head",
+            params={"a": wrestler_a.id, "b": (wrestler_a if compare_self else wrestler_b).id},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["draws"] == 1
+        assert body["other_wins"] == 1
+        assert (body["total_matches"], body["a_wins"], body["b_wins"]) == (3, 1, 0)
+
     @pytest.mark.parametrize("route", ["wrestler", "head-to-head", "leaderboard"])
     def test_booked_winner_not_counted(self, analytics_client, db_session, world_with_matches, route):
         world, winner, loser, played = world_with_matches

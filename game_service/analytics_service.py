@@ -187,11 +187,14 @@ def head_to_head(
     ).subquery()
 
     rating = func.nullif(MatchDB.match_rating, 0)
-    total_matches, a_wins, b_wins, avg_rating, best_rating = (
+    winner = MatchDB.winner_id
+    total_matches, a_wins, b_wins, draws, other_wins, avg_rating, best_rating = (
         db.query(
             func.count(MatchDB.id),
-            func.count(case((MatchDB.winner_id == wrestler_a_id, 1))),
-            func.count(case((MatchDB.winner_id == wrestler_b_id, 1))),
+            func.count(case((winner == wrestler_a_id, 1))),
+            func.count(case(((winner == wrestler_b_id) & (winner != wrestler_a_id), 1))),
+            func.count(case((winner.is_(None), 1))),
+            func.count(case((winner.notin_((wrestler_a_id, wrestler_b_id)), 1))),
             func.avg(rating),
             func.max(rating),
         )
@@ -210,7 +213,8 @@ def head_to_head(
         "total_matches": total_matches,
         "a_wins": a_wins,
         "b_wins": b_wins,
-        "draws": total_matches - a_wins - b_wins,
+        "draws": draws,
+        "other_wins": other_wins,
         "avg_match_rating": round(avg_rating or 0.0, 2),
         "best_match_rating": best_rating or 0.0,
     }
