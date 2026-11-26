@@ -55,6 +55,13 @@ export interface ShowSummary {
   federation_name: string;
 }
 
+export type ShowStatus = 'all' | 'completed' | 'upcoming';
+
+interface WorldShowsPage {
+  shows: ShowSummary[];
+  counts: Record<ShowStatus, number>;
+}
+
 export interface SchedulerStatus {
   running: boolean;
   interval_seconds: number;
@@ -143,6 +150,11 @@ export const api = {
 
   getWorldShows: (worldId: string, limit: number) =>
     requestJson<ShowSummary[]>(`/worlds/${worldId}/shows?limit=${limit}`),
+
+  getWorldShowsPage: (worldId: string, status: ShowStatus, limit: number, offset: number, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ status, limit: String(limit), offset: String(offset), include_counts: 'true' });
+    return requestJson<WorldShowsPage>(`/worlds/${worldId}/shows?${params}`, { signal });
+  },
 
   // Auto-ticker
   getSchedulerStatus: (signal?: AbortSignal) =>
