@@ -19,6 +19,7 @@ from game_service.character_prompts import (
     FALLBACK_DECISIONS, FALLBACK_REACTIONS,
     BOOKER_SYSTEM, MATCH_NARRATOR_SYSTEM,
     build_character_system_prompt, build_decide_prompt,
+    _build_character_system_prompt,
     build_speak_prompt,
     build_react_prompt,
     build_social_media_prompt,
@@ -118,6 +119,10 @@ def character_decide(db: Session, wrestler_id: str,
         return {"action": "noop", "reasoning": "Wrestler not found"}
 
     gimmick = get_active_gimmick(db, wrestler_id)
+    return _character_decide(db, wrestler, gimmick, situation, options)
+
+
+def _character_decide(db, wrestler, gimmick, situation, options):
     archetype = gimmick.archetype if gimmick else "anti_hero"
 
     # Template fallback
@@ -128,7 +133,7 @@ def character_decide(db: Session, wrestler_id: str,
     if not USE_LLM:
         return fallback
 
-    system_prompt = build_character_system_prompt(db, wrestler_id)
+    system_prompt = _build_character_system_prompt(db, wrestler, gimmick)
     user_prompt = build_decide_prompt(wrestler.name, situation, options)
 
     result = _llm_call(system_prompt, user_prompt, "", max_tokens=100)
@@ -377,7 +382,7 @@ def tick_character_agency(db: Session, world_id: str, game_date: str) -> List[st
     """
     from models.game_models import (
         GameWrestlerDB, GameNarrativeLogDB, StorylineDB,
-        StorylineParticipantDB,
+        StorylineParticipantDB, GimmickHistoryDB,
     )
 
     events = []
@@ -390,10 +395,22 @@ def tick_character_agency(db: Session, world_id: str, game_date: str) -> List[st
         GameWrestlerDB.popularity >= 40,
     ).all()
 
+    if not wrestlers:
+        return events
+
+    gimmicks = None
     for wrestler in wrestlers:
         # 5% chance per day for a character-driven action
         if random.random() > 0.05:
             continue
+
+        if gimmicks is None:
+            gimmicks = {}
+            for gimmick in db.query(GimmickHistoryDB).filter(
+                GimmickHistoryDB.wrestler_id.in_([w.id for w in wrestlers]),
+                GimmickHistoryDB.is_active.is_(True),
+            ).order_by(GimmickHistoryDB.created_at, GimmickHistoryDB.id).all():
+                gimmicks.setdefault(gimmick.wrestler_id, gimmick)
 
         # Gather context for the decision
         storyline_parts = db.query(StorylineParticipantDB).filter(
@@ -450,7 +467,7 @@ def tick_character_agency(db: Session, world_id: str, game_date: str) -> List[st
                 "create_viral_moment", "train_and_improve", "form_alliance",
             ]
 
-        decision = character_decide(db, wrestler.id, situation, options)
+        decision = _character_decide(db, wrestler, gimmicks.get(wrestler.id), situation, options)
         action = decision["action"]
         reasoning = decision["reasoning"]
 

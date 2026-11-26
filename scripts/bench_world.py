@@ -47,6 +47,8 @@ def main():
                 counts["stable_match_selects"] += 1
             if phase == "momentum":
                 counts["momentum_selects"] += 1
+            if phase == "agency":
+                counts["agency_selects"] += 1
         if phase == "show":
             counts["show_sql"] += 1
         if "count(" in statement and "championships" in statement:
@@ -58,6 +60,19 @@ def main():
     show_seconds = 0.0
     original_momentum = inter_federation_service.update_federation_momentum
     momentum_seconds = 0.0
+    original_agency = WorldTicker._character_agency_tick
+    agency_seconds = 0.0
+
+    def agency(self, *a, **kw):
+        nonlocal phase, agency_seconds
+        previous_phase = phase
+        phase = "agency"
+        start = time.perf_counter()
+        try:
+            return original_agency(self, *a, **kw)
+        finally:
+            agency_seconds += time.perf_counter() - start
+            phase = previous_phase
     original_stable_match = stable_service.process_match_result_for_stables
     stable_match_seconds = 0.0
 
@@ -105,6 +120,8 @@ def main():
     ), patch.object(
         inter_federation_service, "update_federation_momentum", momentum,
     ), patch.object(
+        WorldTicker, "_character_agency_tick", agency,
+    ), patch.object(
         stable_service, "process_match_result_for_stables", stable_match,
     ):
         with patch(
@@ -122,7 +139,7 @@ def main():
         event.remove(engine, "commit", commit)
         result = dict(seconds=seconds, show_seconds=show_seconds,
                       stable_match_seconds=stable_match_seconds,
-                      momentum_seconds=momentum_seconds, **counts)
+                      momentum_seconds=momentum_seconds, agency_seconds=agency_seconds, **counts)
         print(json.dumps(result, sort_keys=True), flush=True)
         (args.output / "results.json").write_text(json.dumps(result, indent=2))
         fingerprint = {"tick_results": tick_results}
