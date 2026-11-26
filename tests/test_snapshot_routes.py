@@ -1,4 +1,4 @@
-"""HTTP tests for world access on snapshot routes."""
+"""HTTP tests for world access on snapshot and manual tick routes."""
 
 import pytest
 import pytest_asyncio
@@ -11,6 +11,7 @@ from agent_service.database import get_db, get_db_sync
 from api_gateway.main import app
 from api_gateway.routes import snapshot_routes
 from api_gateway.security import create_access_token
+from game_service.world_ticker import WorldTicker
 from models.db_models import Base
 from models.game_models import PlayerDB, UserDB, WorldDB
 
@@ -110,3 +111,35 @@ def test_compare_snapshots_requires_access_to_both_worlds(snapshot_client, forei
     params[foreign_side] = owner_id
     response = client.get(f"{SNAPSHOTS}/compare", params=params, headers=headers["other"])
     assert response.status_code == 404
+
+
+@pytest.mark.parametrize("days", [1, 0])
+def test_manual_tick_requires_world_access(snapshot_client, monkeypatch, days):
+    client, headers = snapshot_client
+    path = "/game/worlds/owner-world"
+    before = client.get(path, headers=headers["owner"]).json()
+
+    def unexpected_tick(*args, **kwargs):
+        raise AssertionError("A non-member must not run the world ticker")
+
+    monkeypatch.setattr(WorldTicker, "tick", unexpected_tick)
+    response = client.post(f"{path}/tick", params={"days": days}, headers=headers["other"])
+
+    assert response.status_code == 404, response.text
+    assert response.json()["message"] == "No player in this world"
+    after = client.get(path, headers=headers["owner"]).json()
+    assert after["current_game_date"] == before["current_game_date"]
+    assert after["current_tick"] == before["current_tick"]
+
+
+def test_manual_tick_advances_world_for_member(snapshot_client):
+    client, headers = snapshot_client
+    path = "/game/worlds/owner-world"
+    response = client.post(f"{path}/tick", headers=headers["owner"])
+
+    assert response.status_code == 200, response.text
+    assert response.json()["current_game_date"] == "2026-01-02"
+    assert response.json()["current_tick"] == 1
+    world = client.get(path, headers=headers["owner"]).json()
+    assert world["current_game_date"] == "2026-01-02"
+    assert world["current_tick"] == 1
