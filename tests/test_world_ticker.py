@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from models.db_models import Base
 from models.game_models import (
     GameWrestlerDB, WrestlerStatsDB, PlayerActionDB, UserDB,
-    GameNarrativeLogDB,
+    ContractDB, GameFederationDB, GameNarrativeLogDB, WorldDB,
 )
 from game_service.world_service import create_world, create_player
 from game_service.world_ticker import WorldTicker, advance_game_date, get_day_of_week
@@ -52,6 +52,39 @@ class TestDateUtils:
 
 
 class TestWorldTicker:
+    def test_expiring_contract_does_not_count_as_underpaid(self, db_session):
+        db_session.autoflush = False
+        world = WorldDB(name="Expiry Test World", current_game_date="2026-01-05")
+        federation = GameFederationDB(world=world, name="Test Fed", is_npc=False)
+        departing = GameWrestlerDB(
+            world=world, name="Departing", is_npc=False, popularity=80, morale=75,
+            stats=WrestlerStatsDB(injury_prone=0),
+        )
+        staying = GameWrestlerDB(
+            world=world, name="Staying", is_npc=False, popularity=80, morale=75,
+            stats=WrestlerStatsDB(injury_prone=0),
+        )
+        db_session.add_all([world, federation, departing, staying])
+        db_session.flush()
+        expiring = ContractDB(
+            world_id=world.id, wrestler=departing, federation=federation,
+            salary_weekly=1000, start_date="2025-07-06", end_date="2026-01-06",
+        )
+        ongoing = ContractDB(
+            world_id=world.id, wrestler=staying, federation=federation,
+            salary_weekly=1000, start_date="2025-07-06", end_date="2026-02-06",
+        )
+        db_session.add_all([expiring, ongoing])
+        db_session.commit()
+
+        result = WorldTicker(db_session, world.id).tick(1)
+
+        assert "Contract expired: Departing is now a free agent" in result["day_results"][0]["events"]
+        assert expiring.status == "expired"
+        assert ongoing.status == "active"
+        assert staying.morale == 73
+        assert departing.morale == 75
+
     def test_tick_advances_date(self, db_session, world_with_player):
         world, _ = world_with_player
         ticker = WorldTicker(db_session, world.id)

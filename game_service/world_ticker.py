@@ -664,6 +664,9 @@ class WorldTicker:
 
                 self._adapt_vision_for_departure(wrestler.id, contract.federation_id, game_date)
 
+        if expiring:
+            self.db.flush()
+
     def _adapt_vision_for_departure(self, wrestler_id: str, federation_id: str, game_date: str):
         """Drop a departing wrestler from the federation's booking vision."""
         def _tick_vision_departure():
