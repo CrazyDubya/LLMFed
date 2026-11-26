@@ -1,6 +1,7 @@
 """HTTP regression tests for show booking."""
 
 import random
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -212,6 +213,54 @@ def test_tick_runs_show_booked_for_current_game_date(booking_client):
     events = next_tick.json()["events_today"]
     assert not any(event.startswith("Show completed: Booking Show (") for event in events)
     assert b.client.get(f"/game/shows/{future_id}/card").json()["show"]["is_completed"]
+
+
+@pytest.mark.parametrize(
+    "game_date, message",
+    [
+        ("2026-01-03", "Show date 2026-01-03 cannot be before the current game date (2026-01-04)"),
+        ("2025-12-31", "Show date 2025-12-31 cannot be before the current game date (2026-01-04)"),
+        ("2026-02-30", "Invalid show date '2026-02-30': expected a valid YYYY-MM-DD date"),
+        ("2026-02-29", "Invalid show date '2026-02-29': expected a valid YYYY-MM-DD date"),
+        ("2026-1-05", "Invalid show date '2026-1-05': expected a valid YYYY-MM-DD date"),
+        ("2026-W02-1", "Invalid show date '2026-W02-1': expected a valid YYYY-MM-DD date"),
+        ("not-a-date", "Invalid show date 'not-a-date': expected a valid YYYY-MM-DD date"),
+        ("", "Invalid show date '': expected a valid YYYY-MM-DD date"),
+    ],
+    ids=[
+        "yesterday", "prior-year", "feb-30", "non-leap-feb-29",
+        "non-canonical-month", "iso-week", "malformed", "empty",
+    ],
+)
+@pytest.mark.parametrize("via_http", [False, True], ids=["service", "http"])
+def test_create_show_rejects_past_and_invalid_dates(booking_client, game_date, message, via_http):
+    from game_service.show_service import create_show
+
+    b = booking_client
+    if via_http:
+        response = b.client.post(
+            f"/game/federations/{b.federation_id}/shows",
+            json={"name": "Bad Date Show", "game_date": game_date},
+        )
+        assert response.status_code == 400, response.text
+        assert response.json()["message"] == message
+    else:
+        with b.sessions() as db:
+            with pytest.raises(ValueError, match=f"^{re.escape(message)}$"):
+                create_show(db, b.world_id, b.federation_id, "Bad Date Show", game_date=game_date)
+
+    with b.sessions() as db:
+        assert db.query(ShowDB).count() == 1
+
+
+def test_create_show_accepts_leap_day(booking_client):
+    b = booking_client
+    response = b.client.post(
+        f"/game/federations/{b.federation_id}/shows",
+        json={"name": "Leap Day Special", "game_date": "2028-02-29"},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["game_date"] == "2028-02-29"
 
 
 @pytest.mark.parametrize(
