@@ -19,6 +19,7 @@ from models.game_models import (
     WorldDB, GameFederationDB, GameWrestlerDB,
     ContractDB, ShowDB, TalentOfferDB,
 )
+from game_service.manager_service import end_foreign_bonds
 from game_service.player_action_handler import get_active_contract
 from game_service.salary_calculator import calculate_salary_from_db
 
@@ -251,6 +252,8 @@ def process_talent_offers(db: Session, world: WorldDB, events: List[str],
             )
             db.add(new_contract)
             offer.status = "accepted"
+            end_foreign_bonds(db, world.id, wrestler, offer.federation_id, game_date)
+            db.flush()
 
             fed = db.query(GameFederationDB).filter(
                 GameFederationDB.id == offer.federation_id
