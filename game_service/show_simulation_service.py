@@ -18,6 +18,7 @@ from models.game_models import (
     ShowDB, ShowSegmentDB, MatchDB, MatchParticipantDB,
     PromoDB, WorldDB,
 )
+from game_service.wrestler_lifecycle_service import recover_injury
 
 logger = logging.getLogger(__name__)
 
@@ -265,6 +266,9 @@ def _simulate_match_segment(
         MatchParticipantDB.role == "competitor",
         GameWrestlerDB.world_id == world.id,
     ).order_by(MatchParticipantDB.id).all()
+    for wrestler in competitors:
+        if recover_injury(wrestler, show.game_date):
+            events.append(f"{wrestler.name} returns from injury")
     injured = [w for w in competitors if w.is_injured]
     if injured:
         match.winner_id = None
@@ -273,7 +277,8 @@ def _simulate_match_segment(
         verb = "is" if len(injured) == 1 else "are"
         description = f"Match cancelled at {show.name}: {names} {verb} injured."
         log_event("match_cancelled", description, [w.id for w in competitors], importance=5)
-        return show_momentum, [description]
+        events.append(description)
+        return show_momentum, events
 
     # Determine card position from segment index
     match_idx = match_segments.index(seg)

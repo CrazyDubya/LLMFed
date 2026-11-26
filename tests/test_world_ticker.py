@@ -103,6 +103,32 @@ class TestWorldTicker:
         assert not injured.is_injured
         assert not match.is_completed
 
+    def test_tick_runs_match_on_competitor_injury_return_date(self, db_session, world_with_player):
+        db_session.autoflush = False
+        world, player = world_with_player
+        show = create_show(db_session, world.id, player.federation_id, "Return Show", game_date="2026-01-02")
+        returning = GameWrestlerDB(world_id=world.id, name="Returning competitor")
+        opponent = GameWrestlerDB(world_id=world.id, name="Opponent")
+        db_session.add_all([returning, opponent])
+        db_session.flush()
+        db_session.add_all(
+            WrestlerStatsDB(wrestler_id=w.id, injury_prone=0) for w in (returning, opponent)
+        )
+        segment = book_match(db_session, show.id, world.id, [returning.id, opponent.id])
+        db_session.commit()
+        returning.is_injured = True
+        returning.injury_return_date = show.game_date
+        returning.condition = 20
+        db_session.commit()
+
+        day = WorldTicker(db_session, world.id).tick(1)["day_results"][0]
+
+        assert segment.is_completed
+        assert returning.last_booked_date == show.game_date
+        assert not returning.is_injured
+        assert returning.injury_return_date is None
+        assert day["events"].count("Returning competitor returns from injury") == 1
+
     def test_tick_advances_date(self, db_session, world_with_player):
         world, _ = world_with_player
         ticker = WorldTicker(db_session, world.id)
