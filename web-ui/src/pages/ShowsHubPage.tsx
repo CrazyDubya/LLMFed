@@ -6,14 +6,18 @@
  * attendance, and financials.  Looks like a real wrestling results site.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
+import { skipToken, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { api, type ShowSummary } from '../api/client';
+import { api, type ShowStatus } from '../api/client';
 import { useGame } from '../context/GameContext';
 import { useWorldSocket } from '../hooks/useWorldSocket';
 import LiveFeed from '../components/LiveFeed';
 import SchedulerControls from '../components/SchedulerControls';
 import { getErrorMessage } from '../utils/errors';
+
+const pageSize = 25;
+const pageButtonClass = 'rounded border border-gray-800 bg-[#1a1a24] px-3 py-1 text-gray-300 hover:border-gray-600 disabled:opacity-50';
 
 const typeColors: Record<string, string> = {
   weekly:  'bg-blue-900/50 text-blue-300',
@@ -28,40 +32,33 @@ function ratingStars(rating: number): string {
 }
 
 export default function ShowsHubPage() {
-  const navigate = useNavigate();
   const { worldId } = useGame();
-  const [shows, setShows] = useState<ShowSummary[]>([]);
-  const [filter, setFilter] = useState<'all' | 'completed' | 'upcoming'>('all');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  return <ShowsHub key={worldId} worldId={worldId} />;
+}
 
-  const loadShows = useCallback(async () => {
-    if (!worldId) return;
-    try {
-      setShows(await api.getWorldShows(worldId, 100));
-      setError(null);
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [worldId]);
-
-  useEffect(() => { loadShows(); }, [loadShows]);
+function ShowsHub({ worldId }: { worldId: string | null }) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [filter, setFilter] = useState<ShowStatus>('all');
+  const [page, setPage] = useState(0);
+  const { data, error, isFetching, isPending, isPlaceholderData, refetch } = useQuery({
+    queryKey: ['world-shows', worldId, filter, page],
+    queryFn: worldId
+      ? ({ signal }) => api.getWorldShowsPage(worldId, filter, pageSize, page * pageSize, signal)
+      : skipToken,
+    placeholderData: previous => previous,
+    retry: false,
+  });
+  const totalPages = Math.ceil((data?.counts[filter] ?? 0) / pageSize);
+  const refreshShows = () => queryClient.invalidateQueries({ queryKey: ['world-shows', worldId] });
 
   // Auto-refresh when ticks or show completions arrive
   const { connected, eventLog } = useWorldSocket(worldId, {
-    onTick: () => loadShows(),
-    onShowCompleted: () => loadShows(),
+    onTick: refreshShows,
+    onShowCompleted: refreshShows,
   });
 
-  const filtered = shows.filter(s => {
-    if (filter === 'completed') return s.is_completed;
-    if (filter === 'upcoming') return !s.is_completed;
-    return true;
-  });
-
-  if (loading) {
+  if (isPending) {
     return (
       <div className="min-h-screen bg-[#0f0f14] flex items-center justify-center text-gray-400">
         Loading shows...
@@ -98,39 +95,66 @@ export default function ShowsHubPage() {
           {/* Main content */}
           <div className="lg:col-span-3">
             {/* Filters */}
-            <div className="flex gap-2 mb-4" hidden={error !== null}>
+            {data && error === null && <div className="flex gap-2 mb-4">
               {(['all', 'completed', 'upcoming'] as const).map(f => (
                 <button
                   key={f}
-                  onClick={() => setFilter(f)}
+                  onClick={() => {
+                    if (filter !== f) {
+                      setFilter(f);
+                      setPage(0);
+                    }
+                  }}
                   className={`px-4 py-1.5 text-sm rounded transition ${
                     filter === f
                       ? 'bg-amber-800 text-amber-200'
                       : 'bg-[#1a1a24] text-gray-400 hover:text-gray-200 border border-gray-800'
                   }`}
                 >
-                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                  {f.charAt(0).toUpperCase() + f.slice(1)}{' '}
                   <span className="ml-1.5 text-xs opacity-70">
-                    ({shows.filter(s =>
-                      f === 'all' ? true : f === 'completed' ? s.is_completed : !s.is_completed
-                    ).length})
+                    {`(${data.counts[f]})`}
                   </span>
                 </button>
               ))}
-            </div>
+            </div>}
+
+            {error === null && (totalPages > 1 || page > 0) && (
+              <nav aria-label="Shows pagination" className="mb-4 flex items-center gap-3 text-sm text-gray-400">
+                <button type="button" className={pageButtonClass} disabled={isPlaceholderData || page === 0}
+                  onClick={() => setPage(Math.max(0, Math.min(page - 1, totalPages - 1)))}>
+                  Previous
+                </button>
+                <span>{page < totalPages ? `Page ${page + 1} of ${totalPages}` : `${totalPages} pages`}</span>
+                <button type="button" className={pageButtonClass} disabled={isPlaceholderData || page + 1 >= totalPages}
+                  onClick={() => setPage(page + 1)}>
+                  Next
+                </button>
+              </nav>
+            )}
 
             {/* Shows grid */}
             {error !== null ? (
-              <div role="alert" className="rounded-lg border border-red-800/50 bg-red-900/20 p-4 text-sm text-red-400">
-                Could not load shows: {error}
+              <div className="rounded-lg border border-red-800/50 bg-red-900/20 p-4 text-sm text-red-400">
+                <p role="alert">Could not load shows: {getErrorMessage(error)}</p>
+                <button
+                  type="button"
+                  className={`mt-3 ${pageButtonClass}`}
+                  disabled={isFetching}
+                  onClick={() => void refetch()}
+                >
+                  Retry
+                </button>
               </div>
-            ) : filtered.length === 0 ? (
+            ) : isPlaceholderData ? (
+              <div role="status" className="py-12 text-center text-gray-400">Loading shows...</div>
+            ) : !data?.shows.length ? (
               <div className="text-center text-gray-500 py-12 bg-[#1a1a24] rounded-lg border border-gray-800">
-                No shows found.
+                {page > 0 ? 'This page is no longer available.' : 'No shows found.'}
               </div>
             ) : (
               <div className="space-y-3">
-                {filtered.map(show => (
+                {data.shows.map(show => (
                   <div
                     key={show.id}
                     onClick={() => navigate(`/show/${show.id}`)}
