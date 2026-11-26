@@ -18,7 +18,6 @@ function eventIcon(type: string): string {
     case 'tick':          return '\u23F1';
     case 'show_completed': return '\u2B50';
     case 'connected':     return '\u2705';
-    case 'pong':          return '\u2764';
     default:              return '\u26A1';
   }
 }
@@ -50,7 +49,7 @@ function formatEvent(ev: WorldEvent): string {
 }
 
 export default function LiveFeed({ events, connected, maxItems = 50 }: LiveFeedProps) {
-  const visible = events.filter(e => e.type !== 'pong').slice(0, maxItems);
+  const visible = events.slice(0, maxItems);
 
   return (
     <div className="bg-[#12121a] border border-gray-800 rounded-lg overflow-hidden">

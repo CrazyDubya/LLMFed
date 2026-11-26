@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api, type World } from '../api/client';
+import { api, type World, type WorldNewsArticle } from '../api/client';
 import { getErrorMessage } from '../utils/errors';
 
 interface Wrestler {
@@ -13,7 +13,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
   const [freeAgents, setFreeAgents] = useState<Wrestler[]>([]);
   const [shows, setShows] = useState<any[]>([]);
   const [championships, setChampionships] = useState<any[]>([]);
-  const [narrative, setNarrative] = useState<any[]>([]);
+  const [news, setNews] = useState<WorldNewsArticle[] | 'error' | null>(null);
   const [worldData, setWorldData] = useState<World | null>(null);
   const [storylines, setStorylines] = useState<any[]>([]);
   const [stables, setStables] = useState<any[]>([]);
@@ -25,17 +25,17 @@ export function usePromoterData(worldId: string | null, federationId: string | n
   const loadData = useCallback(async () => {
     if (!worldId || !federationId) return;
     try {
-      const [fed, rost, agents, sh, champs, narr, world, sls, stbs, bonds, mgrs] = await Promise.all([
+      const [fed, rost, agents, sh, champs, articles, world, sls, stbs, bonds, mgrs] = await Promise.all([
         api.getFederation(federationId),
         api.getRoster(federationId),
         api.listFreeAgents(worldId),
         api.getShows(federationId),
         api.getChampionships(federationId),
-        api.getNarrative(worldId, 20),
+        api.getNews(worldId).catch(() => 'error' as const),
         api.getWorld(worldId),
         api.listStorylines(worldId, undefined, federationId),
         api.listStables(worldId, federationId).catch(() => []),
-        api.listManagerBonds(worldId).catch(() => []),
+        api.listManagerBonds(worldId, federationId).catch(() => []),
         api.listManagers(worldId, federationId).catch(() => []),
       ]);
       setFederation(fed);
@@ -43,7 +43,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
       setFreeAgents(agents);
       setShows(sh);
       setChampionships(champs);
-      setNarrative(narr);
+      setNews(articles);
       setWorldData(world);
       setStorylines(sls);
       setStables(stbs);
@@ -90,7 +90,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
     freeAgents,
     shows,
     championships,
-    narrative,
+    news,
     worldData,
     storylines,
     stables,

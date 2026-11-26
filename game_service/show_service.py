@@ -138,6 +138,8 @@ def _book_match(db: Session, show: ShowDB, world_id: str,
                 position: int = None,
                 planned_duration_minutes: int | None = None) -> ShowSegmentDB:
     show_id = show.id
+    if is_title_match and not championship_id:
+        raise ValueError("A championship is required for a title match")
     if championship_id:
         championship = db.query(ChampionshipDB).filter(
             ChampionshipDB.id == championship_id,

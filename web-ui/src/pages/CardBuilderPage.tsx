@@ -42,6 +42,7 @@ export default function CardBuilderPage() {
   const [stipulation, setStipulation] = useState('');
   const [isTitleMatch, setIsTitleMatch] = useState(false);
   const [selectedChampionship, setSelectedChampionship] = useState('');
+  const missingChampionship = isTitleMatch && !championships.some(c => c.id === selectedChampionship);
 
   // Promo booking form
   const [promoMode, setPromoMode] = useState(false);
@@ -87,7 +88,7 @@ export default function CardBuilderPage() {
   };
 
   const bookMatch = async () => {
-    if (!showId || selectedWrestlers.length < 2) return;
+    if (!showId || selectedWrestlers.length < 2 || missingChampionship) return;
     setBooking(true);
     setError('');
     try {
@@ -98,7 +99,7 @@ export default function CardBuilderPage() {
         planned_finish: plannedFinish,
         stipulation: stipulation || undefined,
         is_title_match: isTitleMatch,
-        championship_id: isTitleMatch ? selectedChampionship || undefined : undefined,
+        championship_id: isTitleMatch ? selectedChampionship : undefined,
       });
       // Reset form and reload
       setSelectedWrestlers([]);
@@ -312,6 +313,9 @@ export default function CardBuilderPage() {
               </label>
               {isTitleMatch && championships.length > 0 && (
                 <select
+                  aria-label="Championship"
+                  aria-invalid={missingChampionship}
+                  aria-describedby={missingChampionship ? 'championship-error' : undefined}
                   value={selectedChampionship}
                   onChange={e => setSelectedChampionship(e.target.value)}
                   className="bg-[#0f0f14] border border-gray-700 rounded p-1 text-white text-sm flex-1"
@@ -323,11 +327,18 @@ export default function CardBuilderPage() {
                 </select>
               )}
             </div>
+            {missingChampionship && (
+              <p id="championship-error" role="alert" className="text-sm text-red-400">
+                {championships.length > 0
+                  ? 'Select a championship to book a title match.'
+                  : 'No active championships are available for a title match.'}
+              </p>
+            )}
 
             {/* Book Button */}
             <button
               onClick={bookMatch}
-              disabled={selectedWrestlers.length < 2 || booking}
+              disabled={selectedWrestlers.length < 2 || booking || missingChampionship}
               className="w-full py-3 bg-amber-600 hover:bg-amber-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded font-medium text-sm transition-colors"
             >
               {booking ? 'Booking...' : `Book Match (${selectedWrestlers.length} wrestlers)`}

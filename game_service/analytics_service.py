@@ -102,27 +102,28 @@ def federation_health(
         ContractDB.status == "active",
     ).scalar() or 0
 
-    # Show stats
-    shows = db.query(ShowDB).filter(
+    shows_completed, avg_show_rating, avg_tv_rating, avg_gate_revenue, total_gate_revenue = db.query(
+        func.count(ShowDB.id),
+        func.avg(func.nullif(ShowDB.overall_rating, 0)),
+        func.avg(func.nullif(ShowDB.tv_rating, 0)),
+        func.avg(func.nullif(ShowDB.gate_revenue, 0)),
+        func.sum(ShowDB.gate_revenue),
+    ).filter(
         ShowDB.federation_id == federation_id,
         ShowDB.world_id == world_id,
         ShowDB.is_completed,
-    ).order_by(ShowDB.game_date.desc()).limit(20).all()
-
-    show_ratings = [s.overall_rating for s in shows if s.overall_rating]
-    tv_ratings = [s.tv_rating for s in shows if s.tv_rating]
-    gate_revenues = [s.gate_revenue for s in shows if s.gate_revenue]
+    ).one()
 
     return {
         "federation_id": federation_id,
         "name": fed.name,
         "roster_count": roster_count,
         "balance": fed.budget,
-        "shows_completed": len(shows),
-        "avg_show_rating": round(sum(show_ratings) / len(show_ratings), 2) if show_ratings else 0.0,
-        "avg_tv_rating": round(sum(tv_ratings) / len(tv_ratings), 2) if tv_ratings else 0.0,
-        "avg_gate_revenue": round(sum(gate_revenues) / len(gate_revenues), 0) if gate_revenues else 0.0,
-        "total_gate_revenue": round(sum(gate_revenues), 0) if gate_revenues else 0.0,
+        "shows_completed": shows_completed,
+        "avg_show_rating": round(avg_show_rating or 0.0, 2),
+        "avg_tv_rating": round(avg_tv_rating or 0.0, 2),
+        "avg_gate_revenue": round(avg_gate_revenue or 0.0, 0),
+        "total_gate_revenue": round(total_gate_revenue or 0.0, 0),
     }
 
 

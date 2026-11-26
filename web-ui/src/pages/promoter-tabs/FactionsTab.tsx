@@ -26,6 +26,12 @@ export default function FactionsTab({
   formData, setFormData,
   loadData, advanceDay, setError,
 }: FactionsTabProps) {
+  const availableWrestlers = roster.filter(w => !stableMemberMap[w.id]);
+  const additionalWrestlers = availableWrestlers.filter(w => w.id !== formData.leader_id);
+  const selectedMemberIds: string[] = formData.member_ids || [];
+  const additionalMemberIds = selectedMemberIds.filter(id => additionalWrestlers.some(w => w.id === id));
+  const hasEnoughFoundingMembers = !!formData.leader_id && additionalMemberIds.length > 0;
+
   return (
     <div className="space-y-4">
       {/* Form Faction Button/Form */}
@@ -61,14 +67,22 @@ export default function FactionsTab({
               </select>
             </div>
             <div>
-              <label className="text-xs text-gray-400 block mb-1">Leader</label>
+              <label htmlFor="faction-leader" className="text-xs text-gray-400 block mb-1">Leader</label>
               <select
+                id="faction-leader"
                 className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm"
                 value={formData.leader_id || ''}
-                onChange={e => setFormData({ ...formData, leader_id: e.target.value })}
+                onChange={e => {
+                  const leaderId = e.target.value;
+                  setFormData({
+                    ...formData,
+                    leader_id: leaderId,
+                    member_ids: additionalMemberIds.filter(id => id !== leaderId),
+                  });
+                }}
               >
                 <option value="">Select leader...</option>
-                {roster.filter(w => !stableMemberMap[w.id]).map(w => (
+                {availableWrestlers.map(w => (
                   <option key={w.id} value={w.id}>{w.name} (Pop: {w.popularity})</option>
                 ))}
               </select>
@@ -84,29 +98,34 @@ export default function FactionsTab({
             </div>
           </div>
           <div className="mb-4">
-            <label className="text-xs text-gray-400 block mb-1">Additional Members (hold Ctrl/Cmd to select multiple)</label>
+            <label htmlFor="faction-members" className="text-xs text-gray-400 block mb-1">Additional Members (hold Ctrl/Cmd to select multiple)</label>
             <select
+              id="faction-members"
               multiple
+              aria-describedby="faction-member-minimum"
               className="w-full p-2 bg-[#0f0f14] border border-gray-700 rounded text-white text-sm h-28"
-              value={formData.member_ids || []}
+              value={additionalMemberIds}
               onChange={e => setFormData({ ...formData, member_ids: Array.from(e.target.selectedOptions, o => o.value) })}
             >
-              {roster.filter(w => !stableMemberMap[w.id] && w.id !== formData.leader_id).map(w => (
+              {additionalWrestlers.map(w => (
                 <option key={w.id} value={w.id}>{w.name}</option>
               ))}
             </select>
+            <p id="faction-member-minimum" className="mt-1 text-xs text-gray-400">
+              A faction needs at least 2 founding members: the leader and at least one additional member.
+            </p>
           </div>
           <button
+            disabled={!hasEnoughFoundingMembers}
             onClick={async () => {
               if (!worldId || !formData.name || !formData.leader_id) {
                 setError('Name and leader required'); return;
               }
               try {
-                const allMembers = [formData.leader_id, ...(formData.member_ids || [])];
                 await api.createStable(worldId, {
                   name: formData.name,
                   leader_id: formData.leader_id,
-                  founding_member_ids: allMembers,
+                  founding_member_ids: [formData.leader_id, ...additionalMemberIds],
                   alignment: formData.alignment || 'heel',
                   catchphrase: formData.catchphrase || undefined,
                 });
@@ -115,7 +134,7 @@ export default function FactionsTab({
                 await loadData();
               } catch (err) { setError(getErrorMessage(err)); }
             }}
-            className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded text-sm font-medium"
+            className="px-4 py-2 bg-purple-600 enabled:hover:bg-purple-500 disabled:bg-gray-700 disabled:text-gray-300 disabled:cursor-not-allowed text-white rounded text-sm font-medium"
           >Create Faction</button>
         </div>
       )}

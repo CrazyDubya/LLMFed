@@ -1,8 +1,8 @@
-"""HTTP regression tests for stable membership validation."""
+"""HTTP regression tests for stables and their members."""
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -12,7 +12,7 @@ from api_gateway.security import TokenData, get_current_user
 from models.core_models import PlayerDB
 from models.db_models import Base
 from models.game_models import (
-    ContractDB, GameFederationDB, GameWrestlerDB, StableDB, StableMemberDB, WorldDB,
+    ContractDB, GameFederationDB, GameWrestlerDB, ManagerDB, StableDB, StableMemberDB, WorldDB,
 )
 
 USER_ID = "stable-user"
@@ -57,6 +57,64 @@ def _create_stable(client, leader_id="a1", member_ids=("a1", "a2")):
     return client.post("/game/worlds/world-a/stables", json={
         "name": "The Pack", "leader_id": leader_id, "founding_member_ids": list(member_ids),
     })
+
+
+def test_list_stables_batches_active_members_and_names(stable_api):
+    client, sessions = stable_api
+    with sessions.begin() as db:
+        db.add(GameFederationDB(id="fed-a2", world_id="world-a", name="Other fed"))
+        db.add(ManagerDB(id="manager", world_id="world-a", name="The Mouth", is_active=False))
+        for i in range(31):
+            stable_id = f"stable-{30 - i:02d}"
+            db.add(StableDB(id=stable_id, world_id="world-a", federation_id="fed-a",
+                            name=stable_id, manager_id="manager" if i else "missing-manager"))
+            for wrestler_id in ("a2", "missing-wrestler", "a1"):
+                db.add(StableMemberDB(stable_id=stable_id, wrestler_id=wrestler_id,
+                                      is_active=wrestler_id != "a1"))
+        for stable_id, world_id, federation_id, is_active in (
+            ("empty-stable", "world-a", "fed-a2", True),
+            ("inactive-stable", "world-a", "fed-a", False),
+            ("out-of-world", "world-b", "fed-b", True),
+        ):
+            db.add(StableDB(id=stable_id, world_id=world_id, federation_id=federation_id,
+                            name=stable_id, is_active=is_active))
+
+    selects = []
+
+    def count_selects(_conn, _cursor, statement, _params, _context, _executemany):
+        if statement.lstrip().upper().startswith("SELECT"):
+            selects.append(statement)
+
+    engine = sessions.kw["bind"]
+    event.listen(engine, "before_cursor_execute", count_selects)
+    try:
+        url = "/game/worlds/world-a/stables"
+        response = client.get(url, params={"federation_id": "fed-a"})
+        assert response.status_code == 200, response.text
+        rows = response.json()
+        assert [row["id"] for row in rows] == [f"stable-{i:02d}" for i in range(30, -1, -1)]
+        assert rows[0]["manager_name"] is None
+        assert all(row["manager_name"] == "The Mouth" for row in rows[1:])
+        assert all(
+            [(m["wrestler_id"], m["wrestler_name"]) for m in row["members"]]
+            == [("a2", "Wrestler a2"), ("missing-wrestler", "Unknown")] for row in rows
+        )
+        assert len(selects) == 4
+
+        selects.clear()
+        response = client.get(url, params={"federation_id": "fed-a2"})
+        assert response.status_code == 200, response.text
+        [row] = response.json()
+        assert (row["id"], row["manager_name"], row["members"]) == ("empty-stable", None, [])
+        assert len(selects) == 2
+
+        selects.clear()
+        response = client.get(url, params={"federation_id": "absent"})
+        assert response.status_code == 200, response.text
+        assert response.json() == []
+        assert len(selects) == 1
+    finally:
+        event.remove(engine, "before_cursor_execute", count_selects)
 
 
 @pytest.mark.parametrize("bad_member", ["ghost", "b1"])

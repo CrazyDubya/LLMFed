@@ -103,8 +103,11 @@ def test_championship_booking_scope(booking_client, scope, via_http):
             db.commit()
             title_id = title.id
 
-    valid = scope in {"valid", "none"}
-    message = "Championship must be active and belong to the show's world and federation"
+    valid = scope == "valid"
+    message = (
+        "A championship is required for a title match" if scope == "none"
+        else "Championship must be active and belong to the show's world and federation"
+    )
     if via_http:
         response = b.client.post(f"/game/shows/{b.show_id}/matches", json={
             "participant_ids": b.wrestler_ids, "is_title_match": True, "championship_id": title_id,
@@ -125,6 +128,20 @@ def test_championship_booking_scope(booking_client, scope, via_http):
     with b.sessions() as db:
         assert db.query(MatchDB).count() == int(valid)
         assert db.query(ShowSegmentDB).count() == int(valid)
+
+
+@pytest.mark.parametrize("championship_fields", [{}, {"championship_id": ""}], ids=["omitted", "empty"])
+def test_title_match_requires_championship(booking_client, championship_fields):
+    b = booking_client
+    response = b.client.post(f"/game/shows/{b.show_id}/matches", json={
+        "participant_ids": b.wrestler_ids, "is_title_match": True, **championship_fields,
+    })
+
+    assert response.status_code == 400, response.text
+    assert response.json()["message"] == "A championship is required for a title match"
+    with b.sessions() as db:
+        assert db.query(MatchDB).count() == 0
+        assert db.query(ShowSegmentDB).count() == 0
 
 
 @pytest.mark.parametrize(

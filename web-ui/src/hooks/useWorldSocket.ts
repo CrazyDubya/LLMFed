@@ -76,8 +76,10 @@ export function useWorldSocket(worldId: string | null, options: UseWorldSocketOp
     ws.onmessage = (e) => {
       try {
         const data: WorldEvent = JSON.parse(e.data);
-        setLastEvent(data);
-        setEventLog(prev => [data, ...prev].slice(0, 200));
+        if (data.type !== 'pong') {
+          setLastEvent(data);
+          setEventLog(prev => [data, ...prev].slice(0, 200));
+        }
 
         // Dispatch to callbacks
         optionsRef.current.onMessage?.(data);
