@@ -26,6 +26,11 @@ function mockRequest(t, { path, method = 'GET', body, response, status = 200 }) 
 
 const cases = [
   {
+    path: '/game/worlds/world-1/storylines?status=active&federation_id=home-fed',
+    request: () => api.listStorylines('world-1', 'active', 'home-fed'),
+    response: [{ id: 'story-1', federation_id: 'home-fed' }],
+  },
+  {
     path: '/worlds/world-1/shows?limit=100',
     request: () => api.getWorldShows('world-1', 100),
     response: [{ id: 'show-1' }],

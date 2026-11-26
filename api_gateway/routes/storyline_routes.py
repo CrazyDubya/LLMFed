@@ -67,6 +67,7 @@ def _storyline_response(storyline: StorylineDB, participants: list) -> Storyline
 def api_list_storylines(
     world_id: str,
     status: Optional[str] = None,
+    federation_id: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     current_user: TokenData = Depends(get_current_user),
     db: Session = Depends(get_db_sync),
@@ -75,6 +76,8 @@ def api_list_storylines(
     query = db.query(StorylineDB).filter(StorylineDB.world_id == world_id)
     if status:
         query = query.filter(StorylineDB.status == status)
+    if federation_id:
+        query = query.filter(StorylineDB.federation_id == federation_id)
     storylines = query.order_by(StorylineDB.heat.desc()).limit(limit).all()
 
     storyline_ids = [sl.id for sl in storylines]
