@@ -78,6 +78,7 @@ export default function CardBuilderPage() {
   }, [showId, federationId]);
 
   const toggleWrestler = (id: string) => {
+    if (id === plannedWinner) setPlannedWinner('');
     setSelectedWrestlers(prev => {
       if (prev.includes(id)) return prev.filter(w => w !== id);
       if (matchType === 'singles' && prev.length >= 2) return prev;
@@ -216,6 +217,7 @@ export default function CardBuilderPage() {
                 onChange={e => {
                   setMatchType(e.target.value);
                   setSelectedWrestlers([]);
+                  setPlannedWinner('');
                 }}
                 className="w-full bg-[#0f0f14] border border-gray-700 rounded p-2 text-white text-sm"
               >
