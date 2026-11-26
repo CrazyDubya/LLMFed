@@ -41,6 +41,12 @@ PROTECTION_BONUS = 30
 FINISH_TYPE_WEIGHTS = [60, 15, 10, 15]  # pinfall, submission, count_out, DQ
 FINISH_TYPES = ["pinfall", "submission", "count_out", "disqualification"]
 
+STANDARD_PARTICIPANT_COUNTS = {
+    "singles": (2, "Singles", "two"),
+    "triple_threat": (3, "Triple threat", "three"),
+    "fatal_four_way": (4, "Fatal four way", "four"),
+}
+
 # Data-driven gimmick match configuration
 GIMMICK_MATCH_CONFIG = {
     "Steel Cage": {"match_type": "cage", "finish": "pinfall"},
@@ -147,6 +153,10 @@ def book_match(db: Session, show_id: str, world_id: str,
                planned_duration_minutes: int | None = None) -> ShowSegmentDB:
     """Book a match segment on a show."""
     show = _require_bookable_show(db, show_id)
+    if match_type in STANDARD_PARTICIPANT_COUNTS:
+        count, label, count_word = STANDARD_PARTICIPANT_COUNTS[match_type]
+        if len(wrestler_ids) != count:
+            raise ValueError(f"{label} matches require exactly {count_word} wrestlers")
     return _book_match(
         db, show, world_id, wrestler_ids, match_type, stipulation,
         is_title_match, championship_id, planned_winner_id, planned_finish,

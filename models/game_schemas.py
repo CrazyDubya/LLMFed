@@ -230,7 +230,10 @@ class MatchBooking(BaseModel):
     championship_id: Optional[str] = None
     participant_ids: List[str] = Field(
         min_length=2,
-        description="For tag_team, list exactly four wrestlers: two for the first team, then two for the second.",
+        description=(
+            "List exactly two wrestlers for singles, three for triple_threat, or four for fatal_four_way. "
+            "For tag_team, list exactly four wrestlers: two for the first team, then two for the second."
+        ),
     )
     planned_winner_id: Optional[str] = None  # Promoter's planned finish
     planned_finish: Optional[str] = None

@@ -65,6 +65,8 @@ export interface ShowSummary {
   federation_name: string;
 }
 
+type FederationShow = Omit<ShowSummary, 'ppv_buys' | 'federation_name'>;
+
 export interface Championship {
   id: string;
   name: string;
@@ -163,8 +165,8 @@ export const api = {
   getChampionships: (fedId: string) =>
     request<Championship[]>(`/federations/${fedId}/championships`),
 
-  getShows: (fedId: string, limit = 20) =>
-    request<any[]>(`/federations/${fedId}/shows?limit=${limit}`),
+  getShows: (fedId: string, limit = 20, order?: 'booking') =>
+    request<FederationShow[]>(`/federations/${fedId}/shows?limit=${limit}${order ? `&order=${order}` : ''}`),
 
   getWorldShows: (worldId: string, limit: number) =>
     requestJson<ShowSummary[]>(`/worlds/${worldId}/shows?limit=${limit}`),
@@ -243,7 +245,7 @@ export const api = {
   createShow: (fedId: string, data: {
     name: string; show_type?: string; venue?: string; capacity?: number; game_date: string;
   }) =>
-    request<any>(`/federations/${fedId}/shows`, { method: 'POST', body: JSON.stringify(data) }),
+    request<FederationShow>(`/federations/${fedId}/shows`, { method: 'POST', body: JSON.stringify(data) }),
 
   getShowCard: (showId: string) =>
     request<any>(`/shows/${showId}/card`),
