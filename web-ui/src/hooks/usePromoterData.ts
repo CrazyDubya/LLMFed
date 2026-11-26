@@ -27,7 +27,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
   const loadData = useCallback(async () => {
     if (!worldId || !federationId) return;
     try {
-      const [fed, roster, freeAgents, sh, champs, narr, world, sls, stbs, bonds, mgrs] = await Promise.all([
+      const [fed, rost, agents, sh, champs, narr, world, sls, stbs, bonds, mgrs] = await Promise.all([
         api.getFederation(federationId),
         api.getRoster(federationId),
         api.listFreeAgents(worldId),
@@ -41,7 +41,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
         api.listManagers(worldId, federationId).catch(() => []),
       ]);
       const wrestlerNames = new Map<string, string>(
-        [...freeAgents, ...roster].map((w: Wrestler) => [w.id, w.name]),
+        [...agents, ...rost].map((w: Wrestler) => [w.id, w.name]),
       );
       const missingHolderIds = new Set(champs.flatMap(({ current_holder_id }) =>
         current_holder_id && !wrestlerNames.has(current_holder_id) ? [current_holder_id] : [],
@@ -51,8 +51,8 @@ export function usePromoterData(worldId: string | null, federationId: string | n
         if (detail?.wrestler?.name) wrestlerNames.set(id, detail.wrestler.name);
       }));
       setFederation(fed);
-      setRoster(roster);
-      setFreeAgents(freeAgents);
+      setRoster(rost);
+      setFreeAgents(agents);
       setShows(sh);
       setChampionships(champs.map(champ => ({
         ...champ,
