@@ -206,7 +206,7 @@ async function renderRefreshDashboard() {
   const federationPath = '/game/federations/refresh-fed';
   const routes = [
     federationPath, `${federationPath}/roster`, `${worldPath}/free-agents`,
-    `${federationPath}/shows?limit=20`, `${federationPath}/championships`,
+    `${federationPath}/shows?limit=20&order=booking`, `${federationPath}/championships`,
     `${worldPath}/news?limit=20`, worldPath,
     `${worldPath}/storylines?federation_id=refresh-fed`,
     `${worldPath}/stables?federation_id=refresh-fed`,
