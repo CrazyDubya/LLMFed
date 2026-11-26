@@ -193,6 +193,39 @@ class TestCLIExitCodes:
         with replay_db() as db:
             assert db.query(WorldDB).count() == 2
 
+    def test_import_overwrite_preserves_player_links(self, replay_db, tmp_path):
+        from sqlalchemy import text
+        from game_service.snapshot_service import create_snapshot
+        from models.game_models import UserDB, PlayerDB, GameFederationDB
+
+        with replay_db() as db:
+            fed = GameFederationDB(world_id="replay-world", name="CLI Fed", short_name="CF")
+            user = UserDB(email="cli@example.com", username="cli_promoter", password_hash="unused")
+            db.add_all([fed, user])
+            db.flush()
+            player = PlayerDB(
+                user_id=user.id, world_id="replay-world", player_type="promoter", federation_id=fed.id,
+            )
+            db.add(player)
+            db.commit()
+            old_fed_id = fed.id
+            player_id = player.id
+            data = create_snapshot(db, world_id="replay-world")["data"]
+
+        path = tmp_path / "backup.gz"
+        path.write_bytes(data)
+
+        result = runner.invoke(app, ["snapshot", "import", str(path), "--target", "replay-world"])
+
+        assert result.exit_code == 0
+        assert "Restored:" in result.stdout
+        with replay_db() as db:
+            assert db.execute(text("PRAGMA foreign_key_check")).fetchall() == []
+            restored_fed = db.query(GameFederationDB).filter_by(world_id="replay-world").one()
+            restored_player = db.get(PlayerDB, player_id)
+            assert restored_fed.id != old_fed_id
+            assert restored_player.federation_id == restored_fed.id
+
     def test_export_missing_world(self, replay_db, tmp_path):
         result = runner.invoke(app, [
             "snapshot", "export", "missing-world", str(tmp_path / "snapshot.json"),

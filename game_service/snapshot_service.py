@@ -199,7 +199,9 @@ def restore_snapshot(
     # real datetime objects for DateTime-typed columns.
     world_data = {k: _remap(v) for k, v in world_data.items() if k != "id"}
     world_data["id"] = new_world_id
+    player_links: List[tuple] = []
     if not create_new_world:
+        player_links = _detach_player_links(db, new_world_id)
         _delete_existing_world_data(db, new_world_id, model_by_table)
     _upsert_world_row(db, model_by_table["worlds"], world_data, DateTimeType)
     db.flush()
@@ -213,6 +215,9 @@ def restore_snapshot(
                 row.pop("id", None)  # let autoincrement assign
             _insert_row(db, model_cls, row, DateTimeType)
         db.flush()
+
+    if player_links:
+        _reattach_player_links(db, player_links, tables, id_map)
 
     db.commit()
 
@@ -264,6 +269,43 @@ def _upsert_world_row(db: Session, model_cls, row: dict, datetime_type) -> None:
             setattr(existing, key, val)
     else:
         db.add(model_cls(**kwargs))
+
+
+def _detach_player_links(db: Session, world_id: str) -> List[tuple]:
+    """Record and clear world players' federation/wrestler links before overwrite."""
+    from models.core_models import PlayerDB
+
+    players = db.query(PlayerDB).filter(PlayerDB.world_id == world_id).all()
+    links = [(player, player.federation_id, player.wrestler_id) for player in players]
+    for player in players:
+        player.federation_id = None
+        player.wrestler_id = None
+    if players:
+        db.flush()
+    return links
+
+
+def _reattach_player_links(
+    db: Session,
+    player_links: List[tuple],
+    tables: Dict[str, List[Dict[str, Any]]],
+    id_map: Dict[str, str],
+) -> None:
+    """Restore world players' federation/wrestler links to remapped snapshot rows."""
+    fed_ids = {
+        row["id"]: id_map[row["id"]]
+        for row in tables.get("game_federations", [])
+        if row.get("id") in id_map
+    }
+    wrestler_ids = {
+        row["id"]: id_map[row["id"]]
+        for row in tables.get("game_wrestlers", [])
+        if row.get("id") in id_map
+    }
+    for player, old_fed_id, old_wrestler_id in player_links:
+        player.federation_id = fed_ids.get(old_fed_id) if old_fed_id else None
+        player.wrestler_id = wrestler_ids.get(old_wrestler_id) if old_wrestler_id else None
+    db.flush()
 
 
 def _delete_existing_world_data(db: Session, world_id: str, model_by_table: dict) -> None:
