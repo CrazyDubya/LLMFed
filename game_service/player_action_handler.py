@@ -266,6 +266,9 @@ class PlayerActionHandler:
             is_exclusive=True,
         )
         self.db.add(contract)
+        _get_manager_service().end_foreign_bonds(
+            self.db, self.world.id, wrestler, federation_id, self.world.current_game_date,
+        )
         self.db.flush()
         self._log_event("signing", f"{wrestler.name} signed with {federation.name}", [wrestler_id, federation_id])
         return {"contract_id": contract.id, "wrestler": wrestler.name}

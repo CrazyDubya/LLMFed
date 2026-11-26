@@ -227,22 +227,17 @@ def assign_manager(
     return bond
 
 
-def remove_manager(
+def _end_manager_bond(
     db: Session,
-    bond_id: str,
-    game_date: str = None,
+    bond: ManagerClientDB,
+    manager: ManagerDB | None,
+    wrestler: GameWrestlerDB | None,
+    game_date: str | None,
     was_fired: bool = False,
-) -> bool:
-    """End a manager-client relationship."""
-    bond = db.query(ManagerClientDB).filter_by(id=bond_id, is_active=True).first()
-    if not bond:
-        return False
-
+) -> None:
     bond.is_active = False
     bond.contract_ended = game_date
 
-    manager = db.query(ManagerDB).filter_by(id=bond.manager_id).first()
-    wrestler = db.query(GameWrestlerDB).filter_by(id=bond.client_wrestler_id).first()
     if manager and wrestler:
         verb = "has been fired by" if was_fired else "has parted ways with"
         db.add(GameNarrativeLogDB(
@@ -254,8 +249,38 @@ def remove_manager(
             importance=6,
         ))
 
+
+def remove_manager(
+    db: Session,
+    bond_id: str,
+    game_date: str = None,
+    was_fired: bool = False,
+) -> bool:
+    """End a manager-client relationship."""
+    bond = db.query(ManagerClientDB).filter_by(id=bond_id, is_active=True).first()
+    if not bond:
+        return False
+
+    manager = db.query(ManagerDB).filter_by(id=bond.manager_id).first()
+    wrestler = db.query(GameWrestlerDB).filter_by(id=bond.client_wrestler_id).first()
+    _end_manager_bond(db, bond, manager, wrestler, game_date, was_fired)
     db.commit()
     return True
+
+
+def end_foreign_bonds(
+    db: Session, world_id: str, wrestler: GameWrestlerDB, federation_id: str, game_date: str,
+) -> None:
+    """End active bonds with other federations' managers in the signing transaction."""
+    bonds = db.query(ManagerClientDB, ManagerDB).join(ManagerClientDB.manager).filter(
+        ManagerClientDB.world_id == world_id,
+        ManagerClientDB.client_wrestler_id == wrestler.id,
+        ManagerClientDB.is_active,
+        ManagerDB.federation_id.is_not(None),
+        ManagerDB.federation_id != federation_id,
+    ).all()
+    for bond, manager in bonds:
+        _end_manager_bond(db, bond, manager, wrestler, game_date)
 
 
 def get_manager_clients(db: Session, manager_id: str) -> list:
