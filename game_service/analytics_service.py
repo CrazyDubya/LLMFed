@@ -9,7 +9,7 @@ import logging
 from typing import Dict, Any, List, Optional
 from collections import defaultdict
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -185,31 +185,33 @@ def head_to_head(
         MatchParticipantDB.wrestler_id == wrestler_b_id
     ).subquery()
 
-    shared_matches = (
-        db.query(MatchDB)
+    rating = func.nullif(MatchDB.match_rating, 0)
+    total_matches, a_wins, b_wins, avg_rating, best_rating = (
+        db.query(
+            func.count(MatchDB.id),
+            func.count(case((MatchDB.winner_id == wrestler_a_id, 1))),
+            func.count(case((MatchDB.winner_id == wrestler_b_id, 1))),
+            func.avg(rating),
+            func.max(rating),
+        )
         .filter(
             MatchDB.id.in_(db.query(a_matches)),
             MatchDB.id.in_(db.query(b_matches)),
             MatchDB.world_id == world_id,
             MatchDB.is_completed,
-            MatchDB.winner_id.isnot(None),
         )
-        .all()
+        .one()
     )
-
-    a_wins = sum(1 for m in shared_matches if m.winner_id == wrestler_a_id)
-    b_wins = sum(1 for m in shared_matches if m.winner_id == wrestler_b_id)
-    ratings = [m.match_rating for m in shared_matches if m.match_rating]
 
     return {
         "wrestler_a_id": wrestler_a_id,
         "wrestler_b_id": wrestler_b_id,
-        "total_matches": len(shared_matches),
+        "total_matches": total_matches,
         "a_wins": a_wins,
         "b_wins": b_wins,
-        "draws": len(shared_matches) - a_wins - b_wins,
-        "avg_match_rating": round(sum(ratings) / len(ratings), 2) if ratings else 0.0,
-        "best_match_rating": max(ratings) if ratings else 0.0,
+        "draws": total_matches - a_wins - b_wins,
+        "avg_match_rating": round(avg_rating or 0.0, 2),
+        "best_match_rating": best_rating or 0.0,
     }
 
 
