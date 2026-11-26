@@ -1,5 +1,8 @@
 """Tests for the world ticker - game day advancement."""
 
+from random import Random
+from unittest.mock import Mock
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -7,8 +10,9 @@ from sqlalchemy.orm import sessionmaker
 from models.db_models import Base
 from models.game_models import (
     GameWrestlerDB, WrestlerStatsDB, PlayerActionDB, UserDB,
-    GameNarrativeLogDB,
+    GameNarrativeLogDB, PPVEventDB, ShowDB,
 )
+from game_service import ppv_calendar_service
 from game_service.world_service import create_world, create_player
 from game_service.world_ticker import WorldTicker, advance_game_date, get_day_of_week
 
@@ -52,6 +56,42 @@ class TestDateUtils:
 
 
 class TestWorldTicker:
+    @pytest.mark.parametrize("calendar", ["new_world", "annual_rollover"])
+    @pytest.mark.parametrize(("jitter", "days_until_opening"), [(-7, 1), (0, 1), (7, 7)])
+    def test_opening_ppvs_run_after_calendar_start(
+        self, db_session, monkeypatch, calendar, jitter, days_until_opening,
+    ):
+        rng = Random(42)
+        calendar_rng = Mock(wraps=rng)
+        calendar_rng.randint.side_effect = (
+            lambda a, b: jitter if (a, b) == (-7, 7) else rng.randint(a, b)
+        )
+        monkeypatch.setattr(ppv_calendar_service, "random", calendar_rng)
+
+        world = create_world(db_session, "PPV Calendar Test World")
+        ticker = WorldTicker(db_session, world.id)
+        events = db_session.query(PPVEventDB).filter(PPVEventDB.world_id == world.id)
+        if calendar == "annual_rollover":
+            original_ids = [event.id for event in events]
+            world.current_game_date = "2026-12-31"
+            db_session.commit()
+            ticker.tick(1)
+            assert world.current_game_date == "2027-01-01"
+            events = events.filter(PPVEventDB.id.notin_(original_ids))
+
+        opening_ppvs = {}
+        for event in events.order_by(PPVEventDB.scheduled_date):
+            opening_ppvs.setdefault(event.federation_id, event)
+
+        expected_date = advance_game_date(world.current_game_date, days_until_opening)
+        assert opening_ppvs
+        assert {event.scheduled_date for event in opening_ppvs.values()} == {expected_date}
+
+        ticker.tick(days_until_opening)
+        for event in opening_ppvs.values():
+            assert event.is_completed
+            assert db_session.get(ShowDB, event.show_id).is_completed
+
     def test_tick_advances_date(self, db_session, world_with_player):
         world, _ = world_with_player
         ticker = WorldTicker(db_session, world.id)
