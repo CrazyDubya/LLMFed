@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useGame } from '../context/GameContext';
 import { useNavigate } from 'react-router-dom';
 import { api, type World } from '../api/client';
 import { getErrorMessage } from '../utils/errors';
 import { useWorldSocket } from '../hooks/useWorldSocket';
+import { useWrestlerRefresh } from '../hooks/useWrestlerRefresh';
 import LiveFeed from '../components/LiveFeed';
 import SchedulerControls from '../components/SchedulerControls';
 
@@ -20,21 +21,23 @@ export default function WrestlerDashboard() {
   const [stableInfo, setStableInfo] = useState<any>(null);
   const [managerInfo, setManagerInfo] = useState<any>(null);
   const [tab, setTab] = useState<'stats' | 'career' | 'train' | 'world'>('stats');
-  const [advancing, setAdvancing] = useState(false);
   const [trainingStat, setTrainingStat] = useState('stamina');
   const [error, setError] = useState('');
 
-  const loadData = useCallback(async () => {
-    if (!worldId || !wrestlerId) return;
-    try {
-      const [wd, wData, narr, feds, stbl, mgr] = await Promise.all([
-        api.getWorld(worldId),
-        api.getWrestler(wrestlerId),
-        api.getNarrative(worldId, 20),
-        api.listFederations(worldId),
-        api.getWrestlerStable(wrestlerId).catch(() => null),
-        api.getWrestlerManager(wrestlerId).catch(() => null),
-      ]);
+  const loadData = useCallback(async (worldId: string, wrestlerId: string) => {
+    const requests = [
+      api.getWorld(worldId),
+      api.getWrestler(wrestlerId),
+      api.getNarrative(worldId, 20),
+      api.listFederations(worldId),
+      api.getWrestlerStable(wrestlerId).catch(() => null),
+      api.getWrestlerManager(wrestlerId).catch(() => null),
+    ] as const;
+    const [wd, wData, narr, feds, stbl, mgr] = await Promise.all(requests).catch(async err => {
+      await Promise.allSettled(requests);
+      throw err;
+    });
+    return () => {
       setWorldData(wd);
       setWrestler(wData.wrestler);
       setCareer(wData);
@@ -43,31 +46,12 @@ export default function WrestlerDashboard() {
       setFederations(feds);
       setStableInfo(stbl);
       setManagerInfo(mgr);
-    } catch (err) {
-      setError(getErrorMessage(err));
-    }
-  }, [worldId, wrestlerId]);
+    };
+  }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
-
-  const { connected: wsConnected, eventLog } = useWorldSocket(worldId, {
-    onTick: loadData,
-    onShowCompleted: loadData,
-    onReconnect: loadData,
-  });
-
-  const advanceDay = async (days: number = 1) => {
-    if (!worldId) return;
-    setAdvancing(true);
-    try {
-      await api.advanceWorld(worldId, days);
-      await loadData();
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setAdvancing(false);
-    }
-  };
+  const { advancing, advanceDay, onTick, onShowCompleted, onReconnect } =
+    useWrestlerRefresh(worldId, wrestlerId, loadData, setError);
+  const { connected: wsConnected, eventLog } = useWorldSocket(worldId, { onTick, onShowCompleted, onReconnect });
 
   const trainStat = async () => {
     if (!worldId || !wrestlerId) return;
