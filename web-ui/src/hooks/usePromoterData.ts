@@ -13,7 +13,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
   const [federation, setFederation] = useState<any>(null);
   const [roster, setRoster] = useState<Wrestler[]>([]);
   const [freeAgents, setFreeAgents] = useState<Wrestler[]>([]);
-  const [shows, setShows] = useState<any[]>([]);
+  const [shows, setShows] = useState<Awaited<ReturnType<typeof api.getShows>>>([]);
   const [championships, setChampionships] = useState<PromoterChampionship[]>([]);
   const [news, setNews] = useState<WorldNewsArticle[] | 'error' | null>(null);
   const [worldData, setWorldData] = useState<World | null>(null);
@@ -31,7 +31,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
         api.getFederation(federationId),
         api.getRoster(federationId),
         api.listFreeAgents(worldId),
-        api.getShows(federationId),
+        api.getShows(federationId, 20, 'booking'),
         api.getChampionships(federationId),
         api.getNews(worldId).catch(() => 'error' as const),
         api.getWorld(worldId),
