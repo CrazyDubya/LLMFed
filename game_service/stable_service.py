@@ -194,6 +194,15 @@ def promote_member(
         return False
 
     old_role = member.role
+    if old_role == "leader" and new_role != "leader":
+        other_leader = db.query(StableMemberDB).filter(
+            StableMemberDB.stable_id == stable_id,
+            StableMemberDB.role == "leader",
+            StableMemberDB.is_active == True,  # noqa: E712
+            StableMemberDB.wrestler_id != wrestler_id,
+        ).first()
+        if not other_leader:
+            raise ValueError("Cannot demote the stable's only active leader")
     member.role = new_role
 
     # If promoting to leader, demote current leader to lieutenant
