@@ -138,3 +138,139 @@ it('shows written world news separately from the Live Feed', async () => {
   expect(screen.getByText(liveEvent)).toBeTruthy();
   expect(article.queryByText(liveEvent)).toBeNull();
 });
+
+function deferredResponse() {
+  let resolve!: (response: Response) => void;
+  const promise = new Promise<Response>(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+async function renderRefreshDashboard() {
+  const worldPath = '/game/worlds/refresh-world';
+  const federationPath = '/game/federations/refresh-fed';
+  const routes = [
+    federationPath, `${federationPath}/roster`, `${worldPath}/free-agents`,
+    `${federationPath}/shows?limit=20`, `${federationPath}/championships`,
+    `${worldPath}/news?limit=20`, worldPath,
+    `${worldPath}/storylines?federation_id=refresh-fed`,
+    `${worldPath}/stables?federation_id=refresh-fed`,
+    `${worldPath}/manager-bonds?federation_id=refresh-fed`,
+    `${worldPath}/managers?federation_id=refresh-fed`,
+  ].sort();
+  class Socket {
+    static current: Socket;
+    onopen?: () => void;
+    onclose?: () => void;
+    onmessage?: (event: { data: string }) => void;
+    constructor() { Socket.current = this; }
+    close() {}
+  }
+  vi.stubGlobal('WebSocket', Socket);
+  const advance = deferredResponse();
+  let federationResponse: Promise<Response> | undefined;
+  const fetchMock = vi.fn(async (path: string) => {
+    if (path === `${worldPath}/tick?days=1`) return advance.promise;
+    if (path === federationPath && federationResponse) return federationResponse;
+    const responses: Record<string, unknown> = {
+      '/game/auth/me': { id: 'refresh-user', username: 'promoter' },
+      [worldPath]: { current_game_date: '2026-01-01', current_tick: 1 },
+      [federationPath]: { name: 'Summit Wrestling' },
+    };
+    return Response.json(responses[path] ?? []);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  Object.entries({ token: 'test-token', worldId: 'refresh-world', federationId: 'refresh-fed', playerType: 'promoter' })
+    .forEach(([key, value]) => localStorage.setItem(key, value));
+  window.history.replaceState(null, '', '/promoter');
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Summit Wrestling' });
+  await act(async () => Socket.current.onopen?.());
+  fetchMock.mockClear();
+  const emit = (type: string, tick?: number | string) =>
+    Socket.current.onmessage?.({ data: JSON.stringify({ type, tick }) });
+  return {
+    advance,
+    emit,
+    burst: (tick: number) => {
+      emit('tick', tick);
+      emit('show_completed');
+      emit('show_completed');
+    },
+    reconnect: async () => {
+      vi.useFakeTimers();
+      try {
+        Socket.current.onclose?.();
+        await vi.advanceTimersByTimeAsync(1000);
+        Socket.current.onopen?.();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+    blockRefresh: () => {
+      const response = deferredResponse();
+      federationResponse = response.promise;
+      return () => {
+        federationResponse = undefined;
+        response.resolve(Response.json({ name: 'Summit Wrestling' }));
+      };
+    },
+    expectRefreshes: (count: number) => expect(
+      fetchMock.mock.calls.map(([path]) => path).filter(path => routes.includes(path)).sort(),
+    ).toEqual(Array.from({ length: count }, () => routes).flat().sort()),
+  };
+}
+
+it.each(['before', 'after'] as const)('refreshes once when the tick burst arrives %s the Next Day response', async (when) => {
+  const { advance, burst, expectRefreshes } = await renderRefreshDashboard();
+  fireEvent.click(screen.getByRole('button', { name: 'Next Day' }));
+  if (when === 'before') await act(async () => burst(2));
+  await act(async () => advance.resolve(Response.json({ current_tick: 2 })));
+  if (when === 'after') await act(async () => burst(2));
+  expectRefreshes(1);
+});
+
+it('refreshes once for an external tick and its completed shows', async () => {
+  const { burst, expectRefreshes } = await renderRefreshDashboard();
+  await act(async () => burst(2));
+  expectRefreshes(1);
+});
+
+it('refreshes on reconnect and when a show arrives without a tick after reconnect', async () => {
+  const { burst, emit, reconnect, expectRefreshes } = await renderRefreshDashboard();
+  await act(async () => burst(2));
+  await act(reconnect);
+  expectRefreshes(2);
+  await act(async () => emit('show_completed'));
+  expectRefreshes(3);
+});
+
+it('coalesces genuinely newer requests during a load into one trailing refresh', async () => {
+  const { blockRefresh, burst, expectRefreshes } = await renderRefreshDashboard();
+  const unblock = blockRefresh();
+  await act(async () => burst(2));
+  await act(async () => { burst(3); burst(4); });
+  expectRefreshes(1);
+  await act(async () => unblock());
+  expectRefreshes(2);
+  await act(async () => burst(4));
+  expectRefreshes(2);
+});
+
+it('refreshes after Next Day without a socket notification', async () => {
+  const { advance, expectRefreshes } = await renderRefreshDashboard();
+  fireEvent.click(screen.getByRole('button', { name: 'Next Day' }));
+  await act(async () => advance.resolve(Response.json({ current_tick: 2 })));
+  expectRefreshes(1);
+});
+
+it('still refreshes for malformed ticks and for deferred events when Next Day fails', async () => {
+  const { advance, burst, emit, expectRefreshes } = await renderRefreshDashboard();
+  await act(async () => emit('tick', 'unknown'));
+  expectRefreshes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Next Day' }));
+  await act(async () => burst(2));
+  expectRefreshes(1);
+  await act(async () => advance.resolve(Response.json({ message: 'Could not advance' }, { status: 500 })));
+  expect(screen.getByText('Could not advance')).toBeTruthy();
+  expectRefreshes(2);
+});

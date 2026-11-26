@@ -74,6 +74,7 @@ export default function PromoterDashboard() {
     federation, roster, freeAgents, shows, championships, news,
     worldData, storylines, stables, managerBonds, managers,
     advancing, error, setError,
+    onTick, onShowCompleted, onReconnect,
     loadData, advanceDay, signWrestler,
   } = usePromoterData(worldId, federationId);
   const budget: number = federation?.budget ?? 0;
@@ -90,9 +91,9 @@ export default function PromoterDashboard() {
   const [formData, setFormData] = useState<any>({});
 
   const { connected: wsConnected, eventLog } = useWorldSocket(worldId, {
-    onTick: loadData,
-    onShowCompleted: loadData,
-    onReconnect: loadData,
+    onTick,
+    onShowCompleted,
+    onReconnect,
   });
 
   const exitGame = () => {

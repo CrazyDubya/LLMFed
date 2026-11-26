@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api, type Championship, type World, type WorldNewsArticle } from '../api/client';
 import { getErrorMessage } from '../utils/errors';
+import type { WorldEvent } from './useWorldSocket';
 
 interface Wrestler {
   id: string; name: string; popularity: number; alignment: string;
@@ -8,6 +9,29 @@ interface Wrestler {
 }
 
 type PromoterChampionship = Championship & { holderName: string | null };
+
+const unknownTick = -Infinity;
+
+function tickNumber(tick: unknown) {
+  return typeof tick === 'number' && Number.isFinite(tick) ? tick : unknownTick;
+}
+
+type Scope = { worldId: string | null; federationId: string | null };
+
+function createRefreshState(scope: Scope) {
+  return {
+    scope,
+    active: true,
+    running: null as Promise<void> | null,
+    queuedTick: null as number | null,
+    coveredTick: unknownTick,
+    lastSocketTick: unknownTick,
+    advancing: 0,
+    deferredTick: null as number | null,
+  };
+}
+
+type RefreshState = ReturnType<typeof createRefreshState>;
 
 export function usePromoterData(worldId: string | null, federationId: string | null) {
   const [federation, setFederation] = useState<any>(null);
@@ -21,13 +45,21 @@ export function usePromoterData(worldId: string | null, federationId: string | n
   const [stables, setStables] = useState<any[]>([]);
   const [managerBonds, setManagerBonds] = useState<any[]>([]);
   const [managers, setManagers] = useState<any[]>([]);
-  const [advancing, setAdvancing] = useState(false);
+  const [advancingScope, setAdvancingScope] = useState<Scope | null>(null);
   const [error, setError] = useState('');
 
-  const loadData = useCallback(async () => {
+  const scope = useMemo(() => ({ worldId, federationId }), [worldId, federationId]);
+  const refreshRef = useRef<RefreshState | null>(null);
+  const getRefresh = useCallback(() => {
+    const refresh = refreshRef.current;
+    return refresh?.scope === scope ? refresh : null;
+  }, [scope]);
+
+  const fetchData = useCallback(async (refresh: RefreshState) => {
+    const { worldId, federationId } = refresh.scope;
     if (!worldId || !federationId) return;
     try {
-      const [fed, rost, agents, sh, champs, articles, world, sls, stbs, bonds, mgrs] = await Promise.all([
+      const requests = [
         api.getFederation(federationId),
         api.getRoster(federationId),
         api.listFreeAgents(worldId),
@@ -39,7 +71,12 @@ export function usePromoterData(worldId: string | null, federationId: string | n
         api.listStables(worldId, federationId).catch(() => []),
         api.listManagerBonds(worldId, federationId).catch(() => []),
         api.listManagers(worldId, federationId).catch(() => []),
-      ]);
+      ] as const;
+      const [fed, rost, agents, sh, champs, articles, world, sls, stbs, bonds, mgrs] =
+        await Promise.all(requests).catch(async err => {
+          await Promise.allSettled(requests);
+          throw err;
+        });
       const wrestlerNames = new Map<string, string>(
         [...agents, ...rost].map((w: Wrestler) => [w.id, w.name]),
       );
@@ -50,6 +87,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
         const detail = await api.getWrestler(id).catch(() => null);
         if (detail?.wrestler?.name) wrestlerNames.set(id, detail.wrestler.name);
       }));
+      if (!refresh.active) return;
       setFederation(fed);
       setRoster(rost);
       setFreeAgents(agents);
@@ -65,38 +103,110 @@ export function usePromoterData(worldId: string | null, federationId: string | n
       setManagerBonds(bonds);
       setManagers(mgrs);
     } catch (err) {
-      setError(getErrorMessage(err));
+      if (refresh.active) setError(getErrorMessage(err));
     }
-  }, [worldId, federationId]);
+  }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  const requestRefresh = useCallback(async (refresh: RefreshState | null, tick: number) => {
+    if (!refresh?.active || !refresh.scope.worldId || !refresh.scope.federationId) return;
+    refresh.queuedTick = Math.max(refresh.queuedTick ?? unknownTick, tick);
+    return refresh.running ??= Promise.resolve().then(async () => {
+      try {
+        while (refresh.active && refresh.queuedTick !== null) {
+          refresh.coveredTick = Math.max(refresh.coveredTick, refresh.queuedTick);
+          refresh.queuedTick = null;
+          await fetchData(refresh);
+        }
+      } finally {
+        refresh.running = null;
+      }
+    });
+  }, [fetchData]);
+
+  const loadData = useCallback(() => requestRefresh(getRefresh(), unknownTick), [getRefresh, requestRefresh]);
+
+  useEffect(() => {
+    const refresh = createRefreshState(scope);
+    refreshRef.current = refresh;
+    requestRefresh(refresh, unknownTick);
+    return () => {
+      refresh.active = false;
+      refreshRef.current = null;
+    };
+  }, [requestRefresh, scope]);
+
+  const refreshFromSocket = useCallback((refresh: RefreshState, tick: number) => {
+    if (refresh.advancing > 0) {
+      refresh.deferredTick = Math.max(refresh.deferredTick ?? unknownTick, tick);
+    } else {
+      requestRefresh(refresh, tick);
+    }
+  }, [requestRefresh]);
+
+  const onTick = useCallback((event: WorldEvent) => {
+    const refresh = getRefresh();
+    if (!refresh || (event.world_id && event.world_id !== worldId)) return;
+    const tick = refresh.lastSocketTick = tickNumber(event.tick);
+    if (tick === unknownTick || tick > refresh.coveredTick) refreshFromSocket(refresh, tick);
+  }, [getRefresh, refreshFromSocket, worldId]);
+
+  const onShowCompleted = useCallback((event: WorldEvent) => {
+    const refresh = getRefresh();
+    if (!refresh || (event.world_id && event.world_id !== worldId)) return;
+    const tick = refresh.lastSocketTick;
+    // The server commits the show's data before broadcasting its tick.
+    if (tick === unknownTick || tick > refresh.coveredTick) refreshFromSocket(refresh, tick);
+  }, [getRefresh, refreshFromSocket, worldId]);
+
+  const onReconnect = useCallback(() => {
+    const refresh = getRefresh();
+    if (refresh) refresh.lastSocketTick = unknownTick;
+    return requestRefresh(refresh, unknownTick);
+  }, [getRefresh, requestRefresh]);
 
   const advanceDay = useCallback(async (days: number = 1) => {
-    if (!worldId) return;
-    setAdvancing(true);
+    const refresh = getRefresh();
+    if (!worldId || !refresh) return;
+    setAdvancingScope(scope);
+    refresh.advancing++;
     try {
-      await api.advanceWorld(worldId, days);
-      await loadData();
+      let tick: number;
+      try {
+        const result = await api.advanceWorld(worldId, days);
+        tick = tickNumber(result.current_tick);
+      } finally {
+        refresh.advancing--;
+      }
+      const deferredTick = refresh.deferredTick;
+      refresh.deferredTick = null;
+      await requestRefresh(refresh, Math.max(tick, deferredTick ?? unknownTick));
     } catch (err) {
+      if (!refresh.active) return;
       setError(getErrorMessage(err));
+      if (!refresh.advancing && refresh.deferredTick !== null) {
+        const tick = refresh.deferredTick;
+        refresh.deferredTick = null;
+        await requestRefresh(refresh, tick);
+      }
     } finally {
-      setAdvancing(false);
+      if (refresh.active && !refresh.advancing) setAdvancingScope(null);
     }
-  }, [worldId, loadData]);
+  }, [worldId, scope, getRefresh, requestRefresh]);
 
   const signWrestler = useCallback(async (wrestlerId: string) => {
-    if (!worldId || !federationId) return;
+    const refresh = getRefresh();
+    if (!worldId || !federationId || !refresh) return;
     try {
       await api.submitAction(worldId, 'sign_wrestler', {
         wrestler_id: wrestlerId,
         federation_id: federationId,
         salary_weekly: 2000,
       });
-      await advanceDay(1);
+      if (refresh.active) await advanceDay(1);
     } catch (err) {
-      setError(getErrorMessage(err));
+      if (refresh.active) setError(getErrorMessage(err));
     }
-  }, [worldId, federationId, advanceDay]);
+  }, [worldId, federationId, advanceDay, getRefresh]);
 
   return {
     // Data state
@@ -112,9 +222,12 @@ export function usePromoterData(worldId: string | null, federationId: string | n
     managerBonds,
     managers,
     // UI state
-    advancing,
+    advancing: advancingScope === scope,
     error,
     setError,
+    onTick,
+    onShowCompleted,
+    onReconnect,
     // Actions
     loadData,
     advanceDay,
