@@ -81,7 +81,6 @@ export default function PromoterDashboard() {
   const isNegativeBudget = budget < 0 && roundedBudgetMagnitude > 0;
 
   const [tab, setTab] = useState<TabKey>('warroom');
-  const [createdShows, setCreatedShows] = useState<Awaited<ReturnType<typeof api.createShow>>[]>([]);
   const [expandedStable, setExpandedStable] = useState<string | null>(null);
   // Form states for management actions
   const [showStableForm, setShowStableForm] = useState(false);
@@ -116,14 +115,6 @@ export default function PromoterDashboard() {
   if (!worldId || !federationId) {
     return <div className="p-8 text-center text-gray-400">No active game. <button onClick={() => navigate('/setup')} className="text-amber-400">Start a new game</button></div>;
   }
-
-  const gameDate = worldData?.current_game_date || '2026-01-01';
-  const listedShowIds = new Set(shows.map(show => show.id));
-  const visibleShows = [
-    ...createdShows.filter(show => show.federation_id === federationId
-      && show.game_date === gameDate && !listedShowIds.has(show.id)),
-    ...shows,
-  ];
 
   return (
     <div className="min-h-screen bg-[#0f0f14]">
@@ -307,16 +298,14 @@ export default function PromoterDashboard() {
                 onClick={async () => {
                   if (!worldId || !federationId) return;
                   try {
-                    const createdShow = await api.createShow(federationId, {
+                    const nextDate = worldData?.current_game_date || '2026-01-01';
+                    await api.createShow(federationId, {
                       name: `${federation?.short_name || 'My'} Live Event`,
                       show_type: 'weekly',
                       venue: `${federation?.home_region || 'Local'} Arena`,
                       capacity: 5000,
-                      game_date: gameDate,
+                      game_date: nextDate,
                     });
-                    setCreatedShows(previous => [createdShow, ...previous.filter(show =>
-                      show.federation_id === federationId && show.game_date === gameDate,
-                    )]);
                     await loadData();
                   } catch (err) { setError(getErrorMessage(err)); }
                 }}
@@ -325,7 +314,7 @@ export default function PromoterDashboard() {
                 Book New Show
               </button>
             </div>
-            {visibleShows.map(s => (
+            {shows.map(s => (
               <div key={s.id} className="bg-[#1a1a24] rounded-lg border border-gray-800 p-4 flex items-center justify-between">
                 <div>
                   <h3 className="text-white font-medium">{s.name}</h3>
@@ -345,7 +334,7 @@ export default function PromoterDashboard() {
                 </div>
               </div>
             ))}
-            {visibleShows.length === 0 && <div className="text-center text-gray-500 py-8">No shows yet. Book your first show!</div>}
+            {shows.length === 0 && <div className="text-center text-gray-500 py-8">No shows yet. Book your first show!</div>}
           </div>
         )}
 

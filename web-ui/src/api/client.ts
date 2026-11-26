@@ -165,8 +165,8 @@ export const api = {
   getChampionships: (fedId: string) =>
     request<Championship[]>(`/federations/${fedId}/championships`),
 
-  getShows: (fedId: string, limit = 20) =>
-    request<FederationShow[]>(`/federations/${fedId}/shows?limit=${limit}`),
+  getShows: (fedId: string, limit = 20, order?: 'booking') =>
+    request<FederationShow[]>(`/federations/${fedId}/shows?limit=${limit}${order ? `&order=${order}` : ''}`),
 
   getWorldShows: (worldId: string, limit: number) =>
     requestJson<ShowSummary[]>(`/worlds/${worldId}/shows?limit=${limit}`),

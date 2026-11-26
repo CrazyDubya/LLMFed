@@ -68,12 +68,12 @@ it('shows the reigning champion and distinguishes vacant titles', async () => {
   expect(screen.getAllByText('Vacant')).toHaveLength(1);
 });
 
-it.each(['omits', 'includes'] as const)('shows one new booking with a Build Card action when the refreshed list %s it', async listBehavior => {
+it('shows a newly booked show with its Build Card action after the dashboard reloads', async () => {
   const endpoint = '/game/federations/shows-fed/shows';
   const date = '2026-01-01';
   const laterShows = Array.from({ length: 20 }, (_, index) => ({
     id: `later-${index}`,
-    name: `Future Event ${index + 1}`,
+    name: `Future Event ${20 - index}`,
     game_date: `2026-02-${String(20 - index).padStart(2, '0')}`,
     is_completed: false,
   }));
@@ -81,6 +81,7 @@ it.each(['omits', 'includes'] as const)('shows one new booking with a Build Card
     id: 'new-show', name: 'Summit Live Event', game_date: date,
     federation_id: 'shows-fed', show_type: 'weekly', venue: 'Local Arena', is_completed: false,
   };
+  const soonestFirst = [...laterShows].reverse();
   let booked = false;
   const fetch = vi.fn(async (path: string, options?: RequestInit) => {
     if (path === endpoint && options?.method === 'POST') {
@@ -91,9 +92,8 @@ it.each(['omits', 'includes'] as const)('shows one new booking with a Build Card
       '/game/auth/me': { id: 'shows-user', username: 'promoter' },
       '/game/worlds/shows-world': { current_game_date: date },
       '/game/federations/shows-fed': { name: 'Summit Wrestling', short_name: 'Summit' },
-      [`${endpoint}?limit=20`]: booked && listBehavior === 'includes'
-        ? [...laterShows.slice(0, 19), created]
-        : laterShows,
+      [`${endpoint}?limit=20`]: laterShows,
+      [`${endpoint}?limit=20&order=booking`]: booked ? [created, ...soonestFirst.slice(0, 19)] : soonestFirst,
       '/game/shows/new-show/card': { show: created, segments: [] },
     };
     return Response.json(responses[path] ?? []);
@@ -103,7 +103,7 @@ it.each(['omits', 'includes'] as const)('shows one new booking with a Build Card
   Object.entries({ token: 'test-token', worldId: 'shows-world', federationId: 'shows-fed', playerType: 'promoter' })
     .forEach(([key, value]) => localStorage.setItem(key, value));
   window.history.replaceState(null, '', '/promoter');
-  render(<App />);
+  const dashboard = render(<App />);
   await screen.findByRole('heading', { name: 'Summit Wrestling' });
   fireEvent.click(screen.getByRole('button', { name: 'Shows' }));
   expect(screen.getByRole('heading', { name: 'Future Event 1' })).toBeTruthy();
@@ -111,7 +111,12 @@ it.each(['omits', 'includes'] as const)('shows one new booking with a Build Card
 
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Book New Show' })));
   expect(fetch).toHaveBeenCalledWith(endpoint, expect.objectContaining({ method: 'POST' }));
-  expect(fetch.mock.calls.filter(([path]) => path === `${endpoint}?limit=20`)).toHaveLength(2);
+  expect(screen.getByRole('heading', { name: created.name })).toBeTruthy();
+
+  dashboard.unmount();
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Summit Wrestling' });
+  fireEvent.click(screen.getByRole('button', { name: 'Shows' }));
   const newShow = screen.getByRole('heading', { name: created.name }).parentElement!.parentElement!;
   expect(screen.getByRole('heading', { name: 'Future Event 1' })).toBeTruthy();
   fireEvent.click(within(newShow).getByRole('button', { name: 'Build Card' }));

@@ -31,7 +31,7 @@ export function usePromoterData(worldId: string | null, federationId: string | n
         api.getFederation(federationId),
         api.getRoster(federationId),
         api.listFreeAgents(worldId),
-        api.getShows(federationId),
+        api.getShows(federationId, 20, 'booking'),
         api.getChampionships(federationId),
         api.getNews(worldId).catch(() => 'error' as const),
         api.getWorld(worldId),
