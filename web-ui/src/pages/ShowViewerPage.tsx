@@ -302,6 +302,8 @@ export default function ShowViewerPage() {
                           </div>
                         )}
                       </div>
+                    ) : showData?.is_completed && !match.is_completed ? (
+                      <p className="text-gray-400">Did not run</p>
                     ) : (
                       <p className="text-yellow-400">Awaiting simulation...</p>
                     )}
