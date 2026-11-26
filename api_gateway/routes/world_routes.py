@@ -181,6 +181,11 @@ async def api_advance_world(
     db: Session = Depends(get_db_sync),
 ):
     """Advance the world by N game days."""
+    try:
+        get_player_for_user(db, current_user.user_id, world_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="No player in this world")
+
     if days < 1 or days > 30:
         raise HTTPException(status_code=400, detail="days must be 1-30")
 
