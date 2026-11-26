@@ -5,6 +5,8 @@ import { api } from '../api/client';
 import { getErrorMessage } from '../utils/errors';
 import { formatMatchup, type MatchParticipant } from '../utils/matchup';
 
+const TAG_TEAM_SIZE = 4;
+
 interface Wrestler {
   id: string;
   name: string;
@@ -37,6 +39,10 @@ export default function CardBuilderPage() {
   // Match booking form
   const [selectedWrestlers, setSelectedWrestlers] = useState<string[]>([]);
   const [matchType, setMatchType] = useState('singles');
+  const isTagTeam = matchType === 'tag_team';
+  const hasRequiredParticipants = isTagTeam
+    ? selectedWrestlers.length === TAG_TEAM_SIZE
+    : selectedWrestlers.length >= 2;
   const [plannedWinner, setPlannedWinner] = useState('');
   const [plannedFinish, setPlannedFinish] = useState('pinfall');
   const [stipulation, setStipulation] = useState('');
@@ -84,12 +90,13 @@ export default function CardBuilderPage() {
       if (matchType === 'singles' && prev.length >= 2) return prev;
       if (matchType === 'triple_threat' && prev.length >= 3) return prev;
       if (matchType === 'fatal_four_way' && prev.length >= 4) return prev;
+      if (isTagTeam && prev.length >= TAG_TEAM_SIZE) return prev;
       return [...prev, id];
     });
   };
 
   const bookMatch = async () => {
-    if (!showId || selectedWrestlers.length < 2 || missingChampionship) return;
+    if (!showId || !hasRequiredParticipants || missingChampionship) return;
     setBooking(true);
     setError('');
     try {
@@ -229,31 +236,41 @@ export default function CardBuilderPage() {
             </div>
 
             {/* Wrestler Selection */}
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">
+            <div role="group" aria-labelledby="participants-label" aria-describedby={isTagTeam ? 'tag-team-hint' : undefined}>
+              <div id="participants-label" className="text-sm text-gray-400 mb-1">
                 Participants ({selectedWrestlers.length} selected)
                 {selectedNames && <span className="text-amber-400 ml-2">{selectedNames}</span>}
-              </label>
+              </div>
+              {isTagTeam && (
+                <p id="tag-team-hint" className="text-sm text-gray-400 mb-2">
+                  Select exactly {TAG_TEAM_SIZE} wrestlers for a tag team match.
+                </p>
+              )}
               <div className="max-h-48 overflow-y-auto bg-[#0f0f14] border border-gray-700 rounded">
-                {availableRoster.map(w => (
-                  <button
-                    key={w.id}
-                    onClick={() => toggleWrestler(w.id)}
-                    className={`w-full text-left px-3 py-2 text-sm border-b border-gray-800 transition-colors ${
-                      selectedWrestlers.includes(w.id)
-                        ? 'bg-amber-900/30 text-amber-300'
-                        : 'text-gray-300 hover:bg-[#1a1a24]'
-                    }`}
-                  >
-                    <span className="font-medium">{w.name}</span>
-                    <span className="text-gray-500 ml-2">Pop: {w.popularity}</span>
-                    <span className={`ml-2 text-xs px-1 rounded ${
-                      w.alignment === 'face' ? 'bg-blue-900/50 text-blue-300' :
-                      w.alignment === 'heel' ? 'bg-red-900/50 text-red-300' :
-                      'bg-gray-800 text-gray-300'
-                    }`}>{w.alignment}</span>
-                  </button>
-                ))}
+                {availableRoster.map(w => {
+                  const isSelected = selectedWrestlers.includes(w.id);
+                  return (
+                    <button
+                      key={w.id}
+                      onClick={() => toggleWrestler(w.id)}
+                      aria-pressed={isSelected}
+                      disabled={isTagTeam && selectedWrestlers.length >= TAG_TEAM_SIZE && !isSelected}
+                      className={`w-full text-left px-3 py-2 text-sm border-b border-gray-800 transition-colors ${
+                        isSelected
+                          ? 'bg-amber-900/30 text-amber-300'
+                          : 'text-gray-300 enabled:hover:bg-[#1a1a24] disabled:opacity-50'
+                      }`}
+                    >
+                      <span className="font-medium">{w.name}</span>
+                      <span className="text-gray-500 ml-2">Pop: {w.popularity}</span>
+                      <span className={`ml-2 text-xs px-1 rounded ${
+                        w.alignment === 'face' ? 'bg-blue-900/50 text-blue-300' :
+                        w.alignment === 'heel' ? 'bg-red-900/50 text-red-300' :
+                        'bg-gray-800 text-gray-300'
+                      }`}>{w.alignment}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -340,7 +357,7 @@ export default function CardBuilderPage() {
             {/* Book Button */}
             <button
               onClick={bookMatch}
-              disabled={selectedWrestlers.length < 2 || booking || missingChampionship}
+              disabled={!hasRequiredParticipants || booking || missingChampionship}
               className="w-full py-3 bg-amber-600 hover:bg-amber-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded font-medium text-sm transition-colors"
             >
               {booking ? 'Booking...' : `Book Match (${selectedWrestlers.length} wrestlers)`}
