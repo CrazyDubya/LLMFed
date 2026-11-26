@@ -75,6 +75,9 @@ export default function PromoterDashboard() {
     advancing, error, setError,
     loadData, advanceDay, signWrestler,
   } = usePromoterData(worldId, federationId);
+  const budget: number = federation?.budget ?? 0;
+  const roundedBudgetMagnitude = Math.round(Math.abs(budget));
+  const isNegativeBudget = budget < 0 && roundedBudgetMagnitude > 0;
 
   const [tab, setTab] = useState<TabKey>('warroom');
   const [expandedStable, setExpandedStable] = useState<string | null>(null);
@@ -129,8 +132,8 @@ export default function PromoterDashboard() {
             </p>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-green-400">
-              Budget: ${federation?.budget?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || '0'}
+            <span className={`text-sm ${isNegativeBudget ? 'text-red-400' : 'text-green-400'}`}>
+              Budget: {isNegativeBudget ? '-' : ''}${roundedBudgetMagnitude.toLocaleString()}
             </span>
             <button
               onClick={() => advanceDay(1)}
