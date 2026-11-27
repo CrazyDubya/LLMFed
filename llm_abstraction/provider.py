@@ -198,6 +198,8 @@ def _retry_with_backoff(
             return fn()
         except retryable_exceptions as e:
             last_exc = e
+            if isinstance(_classify_llm_error(e), LLMPermanentError):
+                break  # auth/config errors: retrying cannot help
             if attempt == max_retries:
                 break
             delay = min(base_delay * (2**attempt), max_delay)
@@ -225,6 +227,8 @@ async def _async_retry_with_backoff(
             return await fn()
         except retryable_exceptions as e:
             last_exc = e
+            if isinstance(_classify_llm_error(e), LLMPermanentError):
+                break  # auth/config errors: retrying cannot help
             if attempt == max_retries:
                 break
             delay = min(base_delay * (2**attempt), max_delay)
